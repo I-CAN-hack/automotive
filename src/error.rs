@@ -16,11 +16,10 @@ impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         match self {
             Error::LibUsbError(err) => err.fmt(fmt),
-            _ =>
-                fmt.write_str(match self {
-                    Error::NotFound => "Not found",
-                    Error::LibUsbError(_) => unreachable!(),
-                })
+            _ => fmt.write_str(match self {
+                Error::NotFound => "Not found",
+                Error::LibUsbError(_) => unreachable!(),
+            }),
         }
     }
 }

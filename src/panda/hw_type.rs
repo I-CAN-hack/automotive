@@ -1,17 +1,17 @@
 #[derive(Debug, PartialEq, Copy, Clone)]
 #[repr(u8)]
 pub enum HwType {
-  Unknown = 0x0,
-  WhitePanda = 0x1,
-  GreyPanda = 0x2,
-  BlackPanda = 0x3,
-  Pedal = 0x4,
-  Uno = 0x5,
-  Dos = 0x6,
-  RedPanda = 0x7,
-  RedPandaV2 = 0x8,
-  Tres = 0x9,
-  Quatro = 0x10,
+    Unknown = 0x0,
+    WhitePanda = 0x1,
+    GreyPanda = 0x2,
+    BlackPanda = 0x3,
+    Pedal = 0x4,
+    Uno = 0x5,
+    Dos = 0x6,
+    RedPanda = 0x7,
+    RedPandaV2 = 0x8,
+    Tres = 0x9,
+    Quatro = 0x10,
 }
 
 impl From<u8> for HwType {
@@ -31,5 +31,4 @@ impl From<u8> for HwType {
             _ => panic!("Invalid HwType value"),
         }
     }
-
 }

@@ -1,2 +1,2 @@
-pub mod panda;
 pub mod error;
+pub mod panda;
