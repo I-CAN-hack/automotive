@@ -6,16 +6,16 @@ mod unpack;
 
 extern crate rusb;
 
-use std;
 use crate::can::CanAdapter;
 use crate::error::Error;
 use crate::panda::endpoint::Endpoint;
 use crate::panda::hw_type::HwType;
 use crate::panda::safety_model::SafetyModel;
+use std;
 
-static VENDOR_ID: u16 = 0xbbaa;
-static PRODUCT_ID: u16 = 0xddcc;
-static EXPECTED_CAN_PACKET_VERSION: u8 = 4;
+const VENDOR_ID: u16 = 0xbbaa;
+const PRODUCT_ID: u16 = 0xddcc;
+const EXPECTED_CAN_PACKET_VERSION: u8 = 4;
 
 pub struct Panda {
     handle: rusb::DeviceHandle<rusb::GlobalContext>,
@@ -50,7 +50,9 @@ impl Panda {
 
             let versions = panda.get_packets_versions()?;
             if versions.can_version != EXPECTED_CAN_PACKET_VERSION {
-                return Err(Error::PandaError(crate::panda::error::Error::WrongFirmwareVersion));
+                return Err(Error::PandaError(
+                    crate::panda::error::Error::WrongFirmwareVersion,
+                ));
             }
 
             panda.set_safety_model(SafetyModel::AllOutput)?;
@@ -106,14 +108,8 @@ impl Panda {
         );
 
         // TOOD: Check if we got the expected amount of data?
-        self.handle.read_control(
-            request_type,
-            endpoint as u8,
-            0,
-            0,
-            &mut buf,
-            self.timeout,
-        )?;
+        self.handle
+            .read_control(request_type, endpoint as u8, 0, 0, &mut buf, self.timeout)?;
         Ok(buf)
     }
 
@@ -133,8 +129,6 @@ impl Panda {
         )?;
         Ok(())
     }
-
-
 }
 
 impl CanAdapter for Panda {
@@ -143,10 +137,12 @@ impl CanAdapter for Panda {
     }
 
     fn recv(&mut self) -> Result<Vec<crate::can::Frame>, Error> {
-        const N : usize = 16384;
-        let mut buf : [u8; N] = [0; N];
+        const N: usize = 16384;
+        let mut buf: [u8; N] = [0; N];
 
-        let recv : usize = self.handle.read_bulk(Endpoint::CanRead as u8, &mut buf, self.timeout)?;
+        let recv: usize = self
+            .handle
+            .read_bulk(Endpoint::CanRead as u8, &mut buf, self.timeout)?;
         self.dat.extend_from_slice(&buf[0..recv]);
 
         unpack::unpack_can_buffer(&mut self.dat)

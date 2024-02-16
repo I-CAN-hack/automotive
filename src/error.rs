@@ -3,6 +3,7 @@ use std::{fmt, result};
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Error {
     NotFound,
+    MalformedFrame,
     PandaError(crate::panda::error::Error),
     LibUsbError(rusb::Error),
 }
@@ -19,6 +20,7 @@ impl fmt::Display for Error {
             Error::LibUsbError(err) => err.fmt(fmt),
             _ => fmt.write_str(match self {
                 Error::NotFound => "Not found",
+                Error::MalformedFrame => "Malformed Frame",
                 Error::PandaError(_) => unreachable!(),
                 Error::LibUsbError(_) => unreachable!(),
             }),

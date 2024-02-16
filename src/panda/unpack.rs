@@ -2,7 +2,7 @@ use crate::can::Frame;
 use crate::can::Identifier;
 use crate::error::Error;
 
-static CANPACKET_HEAD_SIZE: usize = 0x6;
+const CANPACKET_HEAD_SIZE: usize = 0x6;
 static DLC_TO_LEN: &'static [usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64];
 
 // Header layout
@@ -29,6 +29,45 @@ fn calculate_checksum(dat: &[u8]) -> u8 {
     dat.iter().fold(0, |acc, &x| acc ^ x)
 }
 
+pub fn pack_can_buffer(frames: &Vec<Frame>) -> Result<Vec<u8>, Error> {
+    let mut ret = vec![];
+
+    for frame in frames {
+        let extended: u32 = match frame.id {
+            Identifier::Standard(_) => 0,
+            Identifier::Extended(_) => 1,
+        };
+
+        let id: u32 = frame.id.into();
+
+        // Check if the id is valid
+        if id > 0x7ff && extended == 0 {
+            return Err(Error::MalformedFrame);
+        }
+
+        let dlc = DLC_TO_LEN.iter().position(|&x| x == frame.data.len());
+        let dlc = dlc.ok_or(Error::MalformedFrame)? as u8;
+
+        let word_4b: u32 = (id << 3) | (extended << 2);
+
+        let header: [u8; CANPACKET_HEAD_SIZE - 1] = [
+            (dlc << 4) | (frame.bus << 2),
+            ((word_4b >> 0) & 0xff) as u8,
+            ((word_4b >> 8) & 0xff) as u8,
+            ((word_4b >> 16) & 0xff) as u8,
+            ((word_4b >> 24) & 0xff) as u8,
+        ];
+
+        let checksum = calculate_checksum(&header) ^ calculate_checksum(&frame.data);
+
+        ret.extend_from_slice(&header);
+        ret.push(checksum);
+        ret.extend_from_slice(&frame.data);
+    }
+
+    Ok(ret)
+}
+
 pub fn unpack_can_buffer(dat: &mut Vec<u8>) -> Result<Vec<Frame>, Error> {
     let mut ret = vec![];
     while dat.len() >= CANPACKET_HEAD_SIZE {
@@ -40,7 +79,13 @@ pub fn unpack_can_buffer(dat: &mut Vec<u8>) -> Result<Vec<Frame>, Error> {
             | (dat[1] as u32))
             >> 3;
 
-        let extended: bool = (dat[1] & 0b100) == 1;
+        let extended: bool = (dat[1] & 0b100) != 0;
+
+        // Check if the id is valid
+        if id > 0x7ff && !extended {
+            return Err(Error::MalformedFrame);
+        }
+
         let id = match extended {
             true => Identifier::Extended(id),
             false => Identifier::Standard(id),
@@ -107,5 +152,48 @@ mod tests {
 
         unpack_can_buffer(&mut buffer).unwrap();
         assert_eq!(buffer.len(), 2);
+    }
+
+    #[test]
+    fn test_round_trip() {
+        let frames = vec![
+            Frame {
+                bus: 0,
+                id: Identifier::Standard(0x123),
+                data: vec![1, 2, 3, 4, 5, 6, 7, 8],
+            },
+            Frame {
+                bus: 0,
+                id: Identifier::Extended(0x123),
+                data: vec![1, 2, 3, 4],
+            },
+        ];
+
+        let mut buffer = pack_can_buffer(&frames).unwrap();
+        let unpacked = unpack_can_buffer(&mut buffer).unwrap();
+
+        assert_eq!(frames, unpacked);
+    }
+
+    #[test]
+    fn test_round_malformed_dlc() {
+        let frames = vec![Frame {
+            bus: 0,
+            id: Identifier::Standard(0x123),
+            data: vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
+        }];
+        let r = pack_can_buffer(&frames);
+        assert_eq!(r, Err(Error::MalformedFrame));
+    }
+
+    #[test]
+    fn test_round_malformed_id() {
+        let frames = vec![Frame {
+            bus: 0,
+            id: Identifier::Standard(0xfff),
+            data: vec![1, 2, 3, 4, 5, 6, 7, 8],
+        }];
+        let r = pack_can_buffer(&frames);
+        assert_eq!(r, Err(Error::MalformedFrame));
     }
 }
