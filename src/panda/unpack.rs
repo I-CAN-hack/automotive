@@ -39,7 +39,12 @@ pub fn unpack_can_buffer(dat: &mut Vec<u8>) -> Result<Vec<Frame>, Error> {
             | (dat[2] as u32) << 8
             | (dat[1] as u32))
             >> 3;
-        let id: Identifier = id.into(); // TODO: Handle extended identifiers explicitly
+
+        let extended: bool = (dat[1] & 0b100) == 1;
+        let id = match extended {
+            true => Identifier::Extended(id),
+            false => Identifier::Standard(id),
+        };
 
         // Check if we have enough data to unpack the whole frame
         let data_len = DLC_TO_LEN[dlc as usize];
