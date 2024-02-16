@@ -1,6 +1,7 @@
 mod endpoint;
 mod hw_type;
 mod safety_model;
+mod unpack;
 
 extern crate rusb;
 
