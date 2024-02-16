@@ -1,3 +1,3 @@
+pub mod can;
 pub mod error;
 pub mod panda;
-pub mod can;

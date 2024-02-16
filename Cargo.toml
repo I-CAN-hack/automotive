@@ -10,3 +10,4 @@ description = "WIP. Rust crate providing a variety of automotive related librari
 
 [dependencies]
 rusb = "^0.9"
+hex = "^0.4"

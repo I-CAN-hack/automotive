@@ -1,14 +1,15 @@
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Identifier {
     Standard(u32),
     Extended(u32),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Frame {
-    id: Identifier,
-    data: Vec<u8>,
-    // TODO: Add timestamp, can-fd, rtr
+    pub id: Identifier,
+    pub bus: u8, // TODO: Add enum to also support things like "vcan0"
+    pub data: Vec<u8>,
+    // TODO: Add timestamp, can-fd, rtr, dlc
 }
 
 impl From<u32> for Identifier {
@@ -28,4 +29,9 @@ impl Into<u32> for Identifier {
             Identifier::Extended(id) => id,
         }
     }
+}
+
+pub trait CanAdapter {
+    fn send(&mut self, frames: &[Frame]) -> Result<(), crate::error::Error>;
+    fn recv(&mut self) -> Result<Vec<Frame>, crate::error::Error>;
 }

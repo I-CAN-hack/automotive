@@ -1,22 +1,32 @@
 mod endpoint;
+pub mod error;
 mod hw_type;
 mod safety_model;
 mod unpack;
 
 extern crate rusb;
 
+use std;
+use crate::can::CanAdapter;
 use crate::error::Error;
 use crate::panda::endpoint::Endpoint;
 use crate::panda::hw_type::HwType;
 use crate::panda::safety_model::SafetyModel;
-use std;
 
 static VENDOR_ID: u16 = 0xbbaa;
 static PRODUCT_ID: u16 = 0xddcc;
+static EXPECTED_CAN_PACKET_VERSION: u8 = 4;
 
 pub struct Panda {
     handle: rusb::DeviceHandle<rusb::GlobalContext>,
     timeout: std::time::Duration,
+    dat: Vec<u8>,
+}
+
+pub struct Versions {
+    pub health_version: u8,
+    pub can_version: u8,
+    pub can_health_version: u8,
 }
 
 impl Panda {
@@ -32,17 +42,82 @@ impl Panda {
             }
 
             let panda = Panda {
+                dat: vec![],
                 handle: device.open()?,
                 timeout: std::time::Duration::from_millis(100),
             };
+            panda.can_reset_communications()?;
+
+            let versions = panda.get_packets_versions()?;
+            if versions.can_version != EXPECTED_CAN_PACKET_VERSION {
+                return Err(Error::PandaError(crate::panda::error::Error::WrongFirmwareVersion));
+            }
+
             panda.set_safety_model(SafetyModel::AllOutput)?;
+            panda.set_power_save(false)?;
+            panda.set_heartbeat_disabled()?;
 
             return Ok(panda);
         }
         Err(Error::NotFound)
     }
 
-    fn usb_write(&self, endpoint: Endpoint, value: u16, index: u16) -> Result<(), Error> {
+    pub fn set_safety_model(&self, safety_model: SafetyModel) -> Result<(), Error> {
+        let safety_param: u16 = 0;
+        self.usb_write_control(Endpoint::SafetyModel, safety_model as u16, safety_param)
+    }
+
+    pub fn set_heartbeat_disabled(&self) -> Result<(), Error> {
+        self.usb_write_control(Endpoint::HeartbeatDisabled, 0, 0)
+    }
+
+    pub fn set_power_save(&self, power_save_enabled: bool) -> Result<(), Error> {
+        self.usb_write_control(Endpoint::PowerSave, power_save_enabled as u16, 0)
+    }
+
+    pub fn get_hw_type(&self) -> Result<HwType, Error> {
+        let hw_type = self.usb_read_control(Endpoint::HwType, 1)?;
+        Ok(hw_type[0].into())
+    }
+
+    pub fn get_packets_versions(&self) -> Result<Versions, Error> {
+        let versions = self.usb_read_control(Endpoint::PacketsVersions, 3)?;
+        Ok({
+            Versions {
+                health_version: versions[0],
+                can_version: versions[1],
+                can_health_version: versions[2],
+            }
+        })
+    }
+
+    pub fn can_reset_communications(&self) -> Result<(), Error> {
+        self.usb_write_control(Endpoint::CanResetCommunications, 0, 0)
+    }
+
+    fn usb_read_control(&self, endpoint: Endpoint, n: usize) -> Result<Vec<u8>, Error> {
+        let mut buf: Vec<u8> = Vec::with_capacity(n);
+        buf.resize(n, 0);
+
+        let request_type = rusb::request_type(
+            rusb::Direction::In,
+            rusb::RequestType::Standard,
+            rusb::Recipient::Device,
+        );
+
+        // TOOD: Check if we got the expected amount of data?
+        self.handle.read_control(
+            request_type,
+            endpoint as u8,
+            0,
+            0,
+            &mut buf,
+            self.timeout,
+        )?;
+        Ok(buf)
+    }
+
+    fn usb_write_control(&self, endpoint: Endpoint, value: u16, index: u16) -> Result<(), Error> {
         let request_type = rusb::request_type(
             rusb::Direction::Out,
             rusb::RequestType::Standard,
@@ -59,26 +134,21 @@ impl Panda {
         Ok(())
     }
 
-    pub fn set_safety_model(&self, safety_model: SafetyModel) -> Result<(), Error> {
-        let safety_param: u16 = 0;
-        self.usb_write(Endpoint::SafetyModel, safety_model as u16, safety_param)
+
+}
+
+impl CanAdapter for Panda {
+    fn send(&mut self, _frames: &[crate::can::Frame]) -> Result<(), Error> {
+        unimplemented!()
     }
 
-    pub fn get_hw_type(&self) -> Result<HwType, Error> {
-        let mut buf: [u8; 1] = [0];
-        let request_type = rusb::request_type(
-            rusb::Direction::In,
-            rusb::RequestType::Standard,
-            rusb::Recipient::Device,
-        );
-        self.handle.read_control(
-            request_type,
-            Endpoint::HwType as u8,
-            0,
-            0,
-            &mut buf,
-            self.timeout,
-        )?;
-        Ok(buf[0].into())
+    fn recv(&mut self) -> Result<Vec<crate::can::Frame>, Error> {
+        const N : usize = 16384;
+        let mut buf : [u8; N] = [0; N];
+
+        let recv : usize = self.handle.read_bulk(Endpoint::CanRead as u8, &mut buf, self.timeout)?;
+        self.dat.extend_from_slice(&buf[0..recv]);
+
+        unpack::unpack_can_buffer(&mut self.dat)
     }
 }
