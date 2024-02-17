@@ -29,7 +29,7 @@ fn calculate_checksum(dat: &[u8]) -> u8 {
     dat.iter().fold(0, |acc, &x| acc ^ x)
 }
 
-pub fn pack_can_buffer(frames: &Vec<Frame>) -> Result<Vec<u8>, Error> {
+pub fn pack_can_buffer(frames: &[Frame]) -> Result<Vec<u8>, Error> {
     let mut ret = vec![];
 
     for frame in frames {
@@ -51,7 +51,7 @@ pub fn pack_can_buffer(frames: &Vec<Frame>) -> Result<Vec<u8>, Error> {
         let word_4b: u32 = (id << 3) | (extended << 2);
 
         let header: [u8; CANPACKET_HEAD_SIZE - 1] = [
-            (dlc << 4) | (frame.bus << 2),
+            (dlc << 4) | (frame.bus << 1),
             ((word_4b >> 0) & 0xff) as u8,
             ((word_4b >> 8) & 0xff) as u8,
             ((word_4b >> 16) & 0xff) as u8,
@@ -80,6 +80,7 @@ pub fn unpack_can_buffer(dat: &mut Vec<u8>) -> Result<Vec<Frame>, Error> {
             >> 3;
 
         let extended: bool = (dat[1] & 0b100) != 0;
+        let returned: bool = (dat[1] & 0b010) != 0;
 
         // Check if the id is valid
         if id > 0x7ff && !extended {
@@ -107,6 +108,7 @@ pub fn unpack_can_buffer(dat: &mut Vec<u8>) -> Result<Vec<Frame>, Error> {
             id,
             bus,
             data: dat[CANPACKET_HEAD_SIZE..(CANPACKET_HEAD_SIZE + data_len)].to_vec(),
+            returned,
         });
 
         dat.drain(0..(CANPACKET_HEAD_SIZE + data_len));
@@ -161,11 +163,13 @@ mod tests {
                 bus: 0,
                 id: Identifier::Standard(0x123),
                 data: vec![1, 2, 3, 4, 5, 6, 7, 8],
+                returned: false,
             },
             Frame {
-                bus: 0,
+                bus: 1,
                 id: Identifier::Extended(0x123),
                 data: vec![1, 2, 3, 4],
+                returned: false,
             },
         ];
 
@@ -181,6 +185,7 @@ mod tests {
             bus: 0,
             id: Identifier::Standard(0x123),
             data: vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
+            returned: false,
         }];
         let r = pack_can_buffer(&frames);
         assert_eq!(r, Err(Error::MalformedFrame));
@@ -192,6 +197,7 @@ mod tests {
             bus: 0,
             id: Identifier::Standard(0xfff),
             data: vec![1, 2, 3, 4, 5, 6, 7, 8],
+            returned: false,
         }];
         let r = pack_can_buffer(&frames);
         assert_eq!(r, Err(Error::MalformedFrame));

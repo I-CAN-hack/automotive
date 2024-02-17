@@ -2,7 +2,7 @@ mod endpoint;
 pub mod error;
 mod hw_type;
 mod safety_model;
-mod unpack;
+mod usb_protocol;
 
 extern crate rusb;
 
@@ -132,8 +132,10 @@ impl Panda {
 }
 
 impl CanAdapter for Panda {
-    fn send(&mut self, _frames: &[crate::can::Frame]) -> Result<(), Error> {
-        unimplemented!()
+    fn send(&mut self, frames: &[crate::can::Frame]) -> Result<(), Error> {
+        let buf = usb_protocol::pack_can_buffer(frames)?;
+        self.handle.write_bulk(Endpoint::CanWrite as u8, &buf, self.timeout)?;
+        Ok(())
     }
 
     fn recv(&mut self) -> Result<Vec<crate::can::Frame>, Error> {
@@ -145,6 +147,6 @@ impl CanAdapter for Panda {
             .read_bulk(Endpoint::CanRead as u8, &mut buf, self.timeout)?;
         self.dat.extend_from_slice(&buf[0..recv]);
 
-        unpack::unpack_can_buffer(&mut self.dat)
+        usb_protocol::unpack_can_buffer(&mut self.dat)
     }
 }

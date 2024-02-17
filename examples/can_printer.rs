@@ -3,7 +3,6 @@ use automotive::panda::Panda;
 
 fn main() {
     let mut panda = Panda::new().unwrap();
-    println!("{:?}", panda.get_hw_type().unwrap());
 
     loop {
         let frames = panda.recv().unwrap();

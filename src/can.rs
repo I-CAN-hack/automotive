@@ -1,3 +1,4 @@
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Identifier {
     Standard(u32),
@@ -6,10 +7,23 @@ pub enum Identifier {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Frame {
-    pub id: Identifier,
     pub bus: u8, // TODO: Add enum to also support things like "vcan0"
+    pub id: Identifier,
     pub data: Vec<u8>,
+    pub returned: bool,
+
     // TODO: Add timestamp, can-fd, rtr, dlc
+}
+
+impl Frame {
+    pub fn new(bus: u8, id: u32, data: &[u8]) -> Frame {
+        Frame {
+            bus: bus,
+            id: id.into(),
+            data: data.to_vec(),
+            returned: false,
+        }
+    }
 }
 
 impl From<u32> for Identifier {
