@@ -1,4 +1,4 @@
-use automotive::async_can::AsyncCanWrapper;
+use automotive::async_can::AsyncCanAdapter;
 use automotive::panda::Panda;
 
 // use tokio::time::{sleep, Duration};
@@ -9,10 +9,11 @@ async fn main() {
     let panda = Box::new(Panda::new().unwrap());
     let panda: &'static mut Panda = Box::leak(panda);
 
-    let _async_can = AsyncCanWrapper::new(panda);
+    let async_can = AsyncCanAdapter::new(panda);
 
     loop {
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        println!("ping");
+        let frame = async_can.recv().await.unwrap();
+        let id: u32 = frame.id.into();
+        println!("[{}]\t0x{:x}\t{}", frame.bus, id, hex::encode(frame.data));
     }
 }

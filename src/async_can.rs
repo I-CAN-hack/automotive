@@ -1,46 +1,53 @@
 use crate::can::CanAdapter;
 use crate::can::Frame;
 use std::borrow::BorrowMut;
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use tokio::sync::broadcast;
 
-// TODO make async
-pub trait AsyncCanAdapter {
-    fn send(&mut self, frames: &[Frame]) -> Result<(), crate::error::Error>;
-    fn recv() -> Result<Frame, crate::error::Error>; // TODO: return iterator
-}
-
-async fn process<T: CanAdapter + Send + Sync>(adapter: Arc<Mutex<&mut T>>) {
+async fn process<T: CanAdapter + Send + Sync>(
+    adapter: Arc<Mutex<&mut T>>,
+    rx_sender: broadcast::Sender<Frame>,
+) {
     loop {
         let frames: Vec<Frame> = adapter.lock().unwrap().borrow_mut().recv().unwrap();
         for frame in frames {
-            // TODO: Send frames on broadcast channel
-            let id: u32 = frame.id.into();
-            println!("[{}]\t0x{:x}\t{}", frame.bus, id, hex::encode(frame.data));
+            rx_sender.send(frame).unwrap();
         }
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
     }
 }
 
-pub struct AsyncCanWrapper {
+pub struct AsyncCanAdapter {
+    recv_queue: (broadcast::Sender<Frame>, broadcast::Receiver<Frame>),
 }
 
-impl AsyncCanWrapper {
+impl AsyncCanAdapter {
     pub fn new<T: CanAdapter + Send + Sync>(can_adapter: &'static mut T) -> Self {
-        // TX
-        // let (tx, rx) = tokio::sync::mpsc::channel();
+        let ret = AsyncCanAdapter {
+            recv_queue: broadcast::channel::<Frame>(16),
+        };
 
-        // RX
-        // let (tx, mut rx1) = broadcast::channel::<Frame>(16);
+        let rx2 = ret.recv_queue.0.clone();
 
         let adapter = Arc::new(Mutex::new(can_adapter));
-        tokio::spawn(
+        tokio::spawn({
             async move {
-                process(adapter).await;
+                process(adapter, rx2).await;
             }
-        );
+        });
 
-        AsyncCanWrapper {
+        ret
+    }
+
+    // TODO: return some kind of async iterator so you receive without dropping
+    pub async fn recv(&self) -> Result<Frame, crate::error::Error> {
+        let mut rx = self.recv_queue.0.subscribe();
+
+        loop {
+            match rx.recv().await {
+                Ok(frame) => return Ok(frame),
+                Err(_) => continue,
+            }
         }
     }
 }
