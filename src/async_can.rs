@@ -2,7 +2,7 @@ use crate::can::CanAdapter;
 use crate::can::Frame;
 use tokio::sync::broadcast;
 
-async fn process<T: CanAdapter + Send + Sync>(
+async fn process<T: CanAdapter>(
     mut adapter: T,
     rx_sender: broadcast::Sender<Frame>,
 ) {
