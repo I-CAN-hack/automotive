@@ -1,8 +1,11 @@
 use automotive::async_can::AsyncCanAdapter;
 use automotive::panda::Panda;
+use tracing_subscriber;
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt::init();
+
     let panda = Panda::new().unwrap();
     let async_can = AsyncCanAdapter::new(panda);
 

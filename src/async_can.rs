@@ -2,10 +2,7 @@ use crate::can::CanAdapter;
 use crate::can::Frame;
 use tokio::sync::broadcast;
 
-async fn process<T: CanAdapter>(
-    mut adapter: T,
-    rx_sender: broadcast::Sender<Frame>,
-) {
+async fn process<T: CanAdapter>(mut adapter: T, rx_sender: broadcast::Sender<Frame>) {
     loop {
         let frames: Vec<Frame> = adapter.recv().unwrap();
         for frame in frames {

@@ -12,3 +12,5 @@ description = "WIP. Rust crate providing a variety of automotive related librari
 rusb = "^0.9"
 hex = "^0.4"
 tokio = {version = "^1.36.0", features=["full"]}
+tracing = "^0.1"
+tracing-subscriber = "^0.3"

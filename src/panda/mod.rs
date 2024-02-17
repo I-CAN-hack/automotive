@@ -9,7 +9,7 @@ use crate::error::Error;
 use crate::panda::endpoint::Endpoint;
 use crate::panda::hw_type::HwType;
 use crate::panda::safety_model::SafetyModel;
-use std;
+use tracing::{info, warn};
 
 const VENDOR_ID: u16 = 0xbbaa;
 const PRODUCT_ID: u16 = 0xddcc;
@@ -59,6 +59,8 @@ impl Panda {
             panda.set_power_save(false)?;
             panda.set_heartbeat_disabled()?;
             panda.can_reset_communications()?;
+
+            info!("Connected to panda");
 
             return Ok(panda);
         }
@@ -154,7 +156,8 @@ impl CanAdapter for Panda {
         // Recover from unpacking errors, can_reset_communications() doesn't work properly
         match frames {
             Ok(frames) => Ok(frames),
-            Err(_) => {
+            Err(e) => {
+                warn!("Error unpacking: {:}", e);
                 self.dat.clear();
                 Ok(vec![])
             }
