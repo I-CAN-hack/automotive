@@ -11,3 +11,4 @@ description = "WIP. Rust crate providing a variety of automotive related librari
 [dependencies]
 rusb = "^0.9"
 hex = "^0.4"
+tokio = {version = "^1.36.0", features=["full"]}

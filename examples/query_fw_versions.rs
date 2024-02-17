@@ -5,7 +5,7 @@ use automotive::panda::Panda;
 fn main() {
     let mut panda = Panda::new().unwrap();
 
-    let tester_present = Frame::new(0, 0x7a1,&[0x02, 0x3e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    let tester_present = Frame::new(0, 0x7a1, &[0x02, 0x3e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
     panda.send(&[tester_present]).unwrap();
 
     loop {
@@ -16,7 +16,13 @@ fn main() {
                 continue;
             }
             let tx_rx = if frame.returned { "TX" } else { "RX" };
-            println!("[{}] {}\t0x{:x}\t{}", tx_rx, frame.bus, id, hex::encode(frame.data));
+            println!(
+                "[{}] {}\t0x{:x}\t{}",
+                tx_rx,
+                frame.bus,
+                id,
+                hex::encode(frame.data)
+            );
         }
     }
 }

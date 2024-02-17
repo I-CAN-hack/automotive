@@ -1,4 +1,3 @@
-
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Identifier {
     Standard(u32),
@@ -11,7 +10,6 @@ pub struct Frame {
     pub id: Identifier,
     pub data: Vec<u8>,
     pub returned: bool,
-
     // TODO: Add timestamp, can-fd, rtr, dlc
 }
 

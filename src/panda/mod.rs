@@ -4,8 +4,6 @@ mod hw_type;
 mod safety_model;
 mod usb_protocol;
 
-extern crate rusb;
-
 use crate::can::CanAdapter;
 use crate::error::Error;
 use crate::panda::endpoint::Endpoint;
@@ -29,6 +27,8 @@ pub struct Versions {
     pub can_health_version: u8,
 }
 
+unsafe impl Send for Panda {}
+
 impl Panda {
     pub fn new() -> Result<Panda, Error> {
         for device in rusb::devices().unwrap().iter() {
@@ -46,8 +46,8 @@ impl Panda {
                 handle: device.open()?,
                 timeout: std::time::Duration::from_millis(100),
             };
-            panda.can_reset_communications()?;
 
+            // Check panda firmware version
             let versions = panda.get_packets_versions()?;
             if versions.can_version != EXPECTED_CAN_PACKET_VERSION {
                 return Err(Error::PandaError(
@@ -58,6 +58,7 @@ impl Panda {
             panda.set_safety_model(SafetyModel::AllOutput)?;
             panda.set_power_save(false)?;
             panda.set_heartbeat_disabled()?;
+            panda.can_reset_communications()?;
 
             return Ok(panda);
         }
@@ -134,7 +135,8 @@ impl Panda {
 impl CanAdapter for Panda {
     fn send(&mut self, frames: &[crate::can::Frame]) -> Result<(), Error> {
         let buf = usb_protocol::pack_can_buffer(frames)?;
-        self.handle.write_bulk(Endpoint::CanWrite as u8, &buf, self.timeout)?;
+        self.handle
+            .write_bulk(Endpoint::CanWrite as u8, &buf, self.timeout)?;
         Ok(())
     }
 
