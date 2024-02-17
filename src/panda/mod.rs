@@ -149,6 +149,15 @@ impl CanAdapter for Panda {
             .read_bulk(Endpoint::CanRead as u8, &mut buf, self.timeout)?;
         self.dat.extend_from_slice(&buf[0..recv]);
 
-        usb_protocol::unpack_can_buffer(&mut self.dat)
+        let frames = usb_protocol::unpack_can_buffer(&mut self.dat);
+
+        // Recover from unpacking errors, can_reset_communications() doesn't work properly
+        match frames {
+            Ok(frames) => Ok(frames),
+            Err(_) => {
+                self.dat.clear();
+                Ok(vec![])
+            }
+        }
     }
 }
