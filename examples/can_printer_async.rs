@@ -1,14 +1,9 @@
 use automotive::async_can::AsyncCanAdapter;
 use automotive::panda::Panda;
 
-// use tokio::time::{sleep, Duration};
-
 #[tokio::main]
 async fn main() {
-    // Can this be cleaned up?
-    let panda = Box::new(Panda::new().unwrap());
-    let panda: &'static mut Panda = Box::leak(panda);
-
+    let panda = Panda::new().unwrap();
     let async_can = AsyncCanAdapter::new(panda);
 
     loop {
