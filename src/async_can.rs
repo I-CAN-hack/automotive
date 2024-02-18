@@ -1,8 +1,8 @@
 use crate::can::CanAdapter;
 use crate::can::Frame;
-use tokio::sync::broadcast;
 use async_stream::stream;
 use futures_core::stream::Stream;
+use tokio::sync::broadcast;
 
 fn process<T: CanAdapter>(mut adapter: T, rx_sender: broadcast::Sender<Frame>) {
     loop {
@@ -34,11 +34,21 @@ impl AsyncCanAdapter {
     }
 
     pub fn recv(&self) -> impl Stream<Item = Frame> {
+        self.recv_filter(|_| true)
+    }
+
+    pub fn recv_filter(&self, filter: fn(&Frame) -> bool) -> impl Stream<Item = Frame> {
         let mut rx = self.recv_queue.0.subscribe();
 
         Box::pin(stream! {
             loop { match rx.recv().await {
-                    Ok(frame) => yield frame,
+                    Ok(frame) => {
+                        if filter(&frame) {
+                            yield frame
+                        } else {
+                            continue
+                        }
+                    }
                     Err(_) => continue,
                 }
             }
