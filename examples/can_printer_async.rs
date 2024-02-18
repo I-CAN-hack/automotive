@@ -11,8 +11,7 @@ async fn main() {
     let panda = Panda::new().unwrap();
     let async_can = AsyncCanAdapter::new(panda);
 
-    let stream = async_can.recv();
-    pin_mut!(stream);
+    let mut stream = async_can.recv();
 
     while let Some(frame) = stream.next().await {
         let id: u32 = frame.id.into();

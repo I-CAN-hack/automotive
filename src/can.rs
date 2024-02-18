@@ -4,6 +4,8 @@ pub enum Identifier {
     Extended(u32),
 }
 
+impl Unpin for Identifier {}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Frame {
     pub bus: u8, // TODO: Add enum to also support things like "vcan0"
@@ -12,6 +14,7 @@ pub struct Frame {
     pub returned: bool,
     // TODO: Add timestamp, can-fd, rtr, dlc
 }
+impl Unpin for Frame {}
 
 impl Frame {
     pub fn new(bus: u8, id: u32, data: &[u8]) -> Frame {

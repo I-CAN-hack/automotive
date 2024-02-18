@@ -36,12 +36,12 @@ impl AsyncCanAdapter {
     pub fn recv(&self) -> impl Stream<Item = Frame> {
         let mut rx = self.recv_queue.0.subscribe();
 
-        stream! {
+        Box::pin(stream! {
             loop { match rx.recv().await {
                     Ok(frame) => yield frame,
                     Err(_) => continue,
                 }
             }
-        }
+        })
     }
 }
