@@ -2,13 +2,13 @@ use crate::can::CanAdapter;
 use crate::can::Frame;
 use tokio::sync::broadcast;
 
-async fn process<T: CanAdapter>(mut adapter: T, rx_sender: broadcast::Sender<Frame>) {
+fn process<T: CanAdapter>(mut adapter: T, rx_sender: broadcast::Sender<Frame>) {
     loop {
         let frames: Vec<Frame> = adapter.recv().unwrap();
         for frame in frames {
             rx_sender.send(frame).unwrap();
         }
-        tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+        std::thread::sleep(std::time::Duration::from_millis(1));
     }
 }
 
@@ -24,10 +24,8 @@ impl AsyncCanAdapter {
 
         let rx2 = ret.recv_queue.0.clone();
 
-        tokio::spawn({
-            async move {
-                process(adapter, rx2).await;
-            }
+        std::thread::spawn(move || {
+            process(adapter, rx2);
         });
 
         ret
