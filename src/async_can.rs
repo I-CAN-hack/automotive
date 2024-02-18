@@ -33,12 +33,12 @@ impl AsyncCanAdapter {
         ret
     }
 
-    pub fn recv(&self) -> impl Stream<Item = Result<Frame, crate::error::Error>> {
+    pub fn recv(&self) -> impl Stream<Item = Frame> {
         let mut rx = self.recv_queue.0.subscribe();
 
         stream! {
             loop { match rx.recv().await {
-                    Ok(frame) => yield Ok(frame),
+                    Ok(frame) => yield frame,
                     Err(_) => continue,
                 }
             }

@@ -14,7 +14,7 @@ async fn main() {
     let stream = async_can.recv();
     pin_mut!(stream);
 
-    while let Some(Ok(frame)) = stream.next().await {
+    while let Some(frame) = stream.next().await {
         let id: u32 = frame.id.into();
         println!("[{}]\t0x{:x}\t{}", frame.bus, id, hex::encode(frame.data));
     }
