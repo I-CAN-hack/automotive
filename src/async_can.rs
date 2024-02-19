@@ -2,10 +2,10 @@ use crate::can::CanAdapter;
 use crate::can::Frame;
 use async_stream::stream;
 use futures_core::stream::Stream;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, oneshot};
 
-fn process<T: CanAdapter>(mut adapter: T, rx_sender: broadcast::Sender<Frame>) {
-    loop {
+fn process<T: CanAdapter>(mut adapter: T, mut shutdown_receiver: oneshot::Receiver<()>, rx_sender: broadcast::Sender<Frame>) {
+    while !shutdown_receiver.try_recv().is_ok() {
         let frames: Vec<Frame> = adapter.recv().unwrap();
         for frame in frames {
             rx_sender.send(frame).unwrap();
@@ -15,20 +15,26 @@ fn process<T: CanAdapter>(mut adapter: T, rx_sender: broadcast::Sender<Frame>) {
 }
 
 pub struct AsyncCanAdapter {
+    processing_handle: Option<std::thread::JoinHandle<()>>,
     recv_queue: (broadcast::Sender<Frame>, broadcast::Receiver<Frame>),
+    shutdown: Option<oneshot::Sender<()>>,
 }
 
 impl AsyncCanAdapter {
     pub fn new<T: CanAdapter + Send + Sync + 'static>(adapter: T) -> Self {
-        let ret = AsyncCanAdapter {
+        let (shutdown_sender, shutdown_receiver) = oneshot::channel();
+
+        let mut ret = AsyncCanAdapter {
+            shutdown: Some(shutdown_sender),
+            processing_handle: None,
             recv_queue: broadcast::channel::<Frame>(16),
         };
 
-        let rx2 = ret.recv_queue.0.clone();
+        let rx_sender = ret.recv_queue.0.clone();
 
-        std::thread::spawn(move || {
-            process(adapter, rx2);
-        });
+        ret.processing_handle = Some(std::thread::spawn(move || {
+            process(adapter, shutdown_receiver, rx_sender);
+        }));
 
         ret
     }
@@ -53,5 +59,19 @@ impl AsyncCanAdapter {
                 }
             }
         })
+    }
+}
+
+
+impl Drop for AsyncCanAdapter {
+    fn drop(&mut self) {
+        match self.processing_handle.take() {
+            Some(handle) => {
+                // Send shutdown signal to background tread
+                self.shutdown.take().unwrap().send(()).unwrap();
+                handle.join().unwrap();
+            }
+            None => {}
+        }
     }
 }
