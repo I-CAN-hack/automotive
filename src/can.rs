@@ -17,10 +17,10 @@ pub struct Frame {
 impl Unpin for Frame {}
 
 impl Frame {
-    pub fn new(bus: u8, id: u32, data: &[u8]) -> Frame {
+    pub fn new(bus: u8, id: Identifier, data: &[u8]) -> Frame {
         Frame {
             bus: bus,
-            id: id.into(),
+            id: id,
             data: data.to_vec(),
             returned: false,
         }

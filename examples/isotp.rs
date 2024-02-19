@@ -1,5 +1,6 @@
 use automotive::async_can::AsyncCanAdapter;
-use automotive::can::{Frame, Identifier};
+use automotive::isotp::{IsoTP, IsoTPConfig};
+use automotive::can::Identifier;
 use automotive::panda::Panda;
 use futures_util::stream::StreamExt;
 use tracing_subscriber;
@@ -11,11 +12,23 @@ async fn main() {
     let panda = Panda::new().unwrap();
     let async_can = AsyncCanAdapter::new(panda);
 
+    // Debug stream
     let mut stream = async_can.recv_filter(|frame| frame.id > Identifier::Standard(0x700));
 
-    let tester_present = Frame::new(0, 0x7a1, &[0x02, 0x3e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-    async_can.send(&tester_present).await;
+    let config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
+    let isotp = IsoTP::new(&async_can, config);
 
+    // Send tester present
+    let response = isotp.recv();
+    isotp.send(&[0x3e, 0x00]).await;
+
+    // Now actually wait for the response
+    let response = response.await.unwrap();
+
+    println!("Response: {}", hex::encode(response));
+
+
+    // Print all frames for debugging
     while let Some(frame) = stream.next().await {
         let id: u32 = frame.id.into();
         let tx_rx = if frame.returned { "TX" } else { "RX" };

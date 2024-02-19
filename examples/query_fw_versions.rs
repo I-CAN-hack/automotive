@@ -5,7 +5,7 @@ use automotive::panda::Panda;
 fn main() {
     let mut panda = Panda::new().unwrap();
 
-    let tester_present = Frame::new(0, 0x7a1, &[0x02, 0x3e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    let tester_present = Frame::new(0, 0x7a1.into(), &[0x02, 0x3e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
     panda.send(&[tester_present]).unwrap();
 
     loop {

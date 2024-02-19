@@ -68,7 +68,7 @@ impl AsyncCanAdapter {
         self.recv_filter(|_| true)
     }
 
-    pub fn recv_filter(&self, filter: fn(&Frame) -> bool) -> impl Stream<Item = Frame> {
+    pub fn recv_filter(&self, filter: impl Fn(&Frame) -> bool) -> impl Stream<Item = Frame> {
         let mut rx = self.recv_receiver.resubscribe();
 
         Box::pin(stream! {
