@@ -73,7 +73,7 @@ impl<'a> IsoTP<'a> {
         self.adapter.send(&frame).await;
     }
 
-    pub async fn send(&self, data: &[u8]) -> Result<(), Error>{
+    pub async fn send(&self, data: &[u8]) -> Result<(), Error> {
         info!("TX {}", hex::encode(&data));
 
         if data.len() <= self.config.max_sf_dl {

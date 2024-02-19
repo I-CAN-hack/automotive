@@ -57,11 +57,29 @@ impl Panda {
             panda.set_heartbeat_disabled()?;
             panda.can_reset_communications()?;
 
+            // can_reset_communications() doesn't work properly, flush manually
+            panda.flush_rx()?;
+
             info!("Connected to panda");
 
             return Ok(panda);
         }
         Err(Error::NotFound)
+    }
+
+    pub fn flush_rx(&self) -> Result<(), Error> {
+        const N: usize = 16384;
+        let mut buf: [u8; N] = [0; N];
+
+        loop {
+            let recv: usize = self
+                .handle
+                .read_bulk(Endpoint::CanRead as u8, &mut buf, self.timeout)?;
+
+            if recv == 0 {
+                return Ok(());
+            }
+        }
     }
 
     pub fn set_safety_model(&self, safety_model: SafetyModel) -> Result<(), Error> {
