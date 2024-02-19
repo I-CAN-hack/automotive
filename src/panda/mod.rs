@@ -1,14 +1,10 @@
-mod endpoint;
 pub mod error;
-mod hw_type;
-mod safety_model;
+mod constants;
 mod usb_protocol;
 
 use crate::can::CanAdapter;
 use crate::error::Error;
-use crate::panda::endpoint::Endpoint;
-use crate::panda::hw_type::HwType;
-use crate::panda::safety_model::SafetyModel;
+use crate::panda::constants::{Endpoint, HwType, SafetyModel};
 use tracing::{info, warn};
 
 const VENDOR_ID: u16 = 0xbbaa;
