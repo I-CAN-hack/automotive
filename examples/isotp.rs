@@ -19,11 +19,11 @@ async fn main() {
     let isotp = IsoTP::new(&async_can, config);
 
     let response = isotp.recv();
-    isotp.send(&[0x3e, 0x00]).await;
+    isotp.send(&[0x3e, 0x00]).await.unwrap();
     response.await.unwrap();
 
     let response = isotp.recv();
-    isotp.send(&[0x22, 0xf1, 0x81]).await;
+    isotp.send(&[0x22, 0xf1, 0x81]).await.unwrap();
     response.await.unwrap();
 
     // Print all frames for debugging

@@ -73,14 +73,16 @@ impl<'a> IsoTP<'a> {
         self.adapter.send(&frame).await;
     }
 
-    pub async fn send(&self, data: &[u8]) {
+    pub async fn send(&self, data: &[u8]) -> Result<(), Error>{
         info!("TX {}", hex::encode(&data));
 
         if data.len() <= self.config.max_sf_dl {
-            return self.send_single_frame(data).await;
+            self.send_single_frame(data).await;
+        } else {
+            unimplemented!("Multi-frame ISO-TP not implemented");
         }
 
-        unimplemented!("Multi-frame ISO-TP not implemented");
+        Ok(())
     }
 
     async fn handle_single_frame(
