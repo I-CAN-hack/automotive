@@ -1,4 +1,4 @@
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialOrd, PartialEq)]
 pub enum Identifier {
     Standard(u32),
     Extended(u32),
@@ -49,4 +49,19 @@ impl Into<u32> for Identifier {
 pub trait CanAdapter {
     fn send(&mut self, frames: &[Frame]) -> Result<(), crate::error::Error>;
     fn recv(&mut self) -> Result<Vec<Frame>, crate::error::Error>;
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn id_compare() {
+        assert_eq!(true, Identifier::Standard(0x123) < Identifier::Standard(0x124));
+        assert_eq!(true, Identifier::Standard(0x7ff) > Identifier::Standard(0x100));
+
+        // Extended IDs always have lower priority than standard IDs
+        assert_eq!(true, Identifier::Extended(0x1) > Identifier::Standard(0x100));
+    }
 }
