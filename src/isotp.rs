@@ -97,9 +97,8 @@ impl<'a> IsoTP<'a> {
     pub async fn recv(&self) -> Result<Vec<u8>, Error> {
         let stream = self
             .adapter
-            .recv_filter(|frame| frame.id == self.config.rx_id);
-
-        let stream = stream.timeout(self.config.timeout);
+            .recv_filter(|frame| frame.id == self.config.rx_id)
+            .timeout(self.config.timeout);
         tokio::pin!(stream);
 
         let mut buf = Vec::new();
