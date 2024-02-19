@@ -138,6 +138,10 @@ impl Drop for Panda {
 
 impl CanAdapter for Panda {
     fn send(&mut self, frames: &[crate::can::Frame]) -> Result<(), Error> {
+        if frames.is_empty() {
+            return Ok(());
+        }
+
         let buf = usb_protocol::pack_can_buffer(frames)?;
         self.handle
             .write_bulk(Endpoint::CanWrite as u8, &buf, self.timeout)?;

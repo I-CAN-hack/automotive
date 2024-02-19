@@ -11,12 +11,10 @@ async fn main() {
     let panda = Panda::new().unwrap();
     let async_can = AsyncCanAdapter::new(panda);
 
-    // let mut stream = async_can.recv_filter(|frame| frame.id > Identifier::Standard(0x700));
-    let mut stream = async_can.recv();
+    let mut stream = async_can.recv_filter(|frame| frame.id > Identifier::Standard(0x700));
 
     let tester_present = Frame::new(0, 0x7a1, &[0x02, 0x3e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
     async_can.send(&tester_present).await;
-    println!("{:?}", tester_present);
 
     while let Some(frame) = stream.next().await {
         let id: u32 = frame.id.into();

@@ -3,21 +3,26 @@ use crate::can::Frame;
 use async_stream::stream;
 use futures_core::stream::Stream;
 use tokio::sync::{broadcast, oneshot, mpsc};
-use tracing::{info, warn};
 
 const CAN_TX_BUFFER_SIZE: usize = 128;
+const CAN_RX_BUFFER_SIZE: usize = 1024;
 
 fn process<T: CanAdapter>(mut adapter: T, mut shutdown_receiver: oneshot::Receiver<()>, rx_sender: broadcast::Sender<Frame>, mut tx_receiver: mpsc::Receiver<Frame>) {
+    let mut buffer: Vec<Frame> = Vec::new();
+
     while !shutdown_receiver.try_recv().is_ok() {
         let frames: Vec<Frame> = adapter.recv().unwrap();
         for frame in frames {
             rx_sender.send(frame).unwrap();
         }
 
-        // TODO: use poll_recv_many
+        // TODO: use poll_recv_many?
+        buffer.clear();
         while let Ok(frame) = tx_receiver.try_recv() {
-            info!("Sending frame: {:?}", frame);
-            adapter.send(&[frame]).unwrap();
+            buffer.push(frame);
+        }
+        if !buffer.is_empty() {
+            adapter.send(&buffer).unwrap();
         }
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
@@ -34,7 +39,7 @@ impl AsyncCanAdapter {
     pub fn new<T: CanAdapter + Send + Sync + 'static>(adapter: T) -> Self {
         let (shutdown_sender, shutdown_receiver) = oneshot::channel();
         let (send_sender, send_receiver) = mpsc::channel(CAN_TX_BUFFER_SIZE);
-        let (recv_sender, recv_receiver) = broadcast::channel(16);
+        let (recv_sender, recv_receiver) = broadcast::channel(CAN_RX_BUFFER_SIZE);
 
         let mut ret = AsyncCanAdapter {
             shutdown: Some(shutdown_sender),
