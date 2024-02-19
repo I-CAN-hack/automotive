@@ -51,17 +51,25 @@ pub trait CanAdapter {
     fn recv(&mut self) -> Result<Vec<Frame>, crate::error::Error>;
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn id_compare() {
-        assert_eq!(true, Identifier::Standard(0x123) < Identifier::Standard(0x124));
-        assert_eq!(true, Identifier::Standard(0x7ff) > Identifier::Standard(0x100));
+        assert_eq!(
+            true,
+            Identifier::Standard(0x123) < Identifier::Standard(0x124)
+        );
+        assert_eq!(
+            true,
+            Identifier::Standard(0x7ff) > Identifier::Standard(0x100)
+        );
 
         // Extended IDs always have lower priority than standard IDs
-        assert_eq!(true, Identifier::Extended(0x1) > Identifier::Standard(0x100));
+        assert_eq!(
+            true,
+            Identifier::Extended(0x1) > Identifier::Standard(0x100)
+        );
     }
 }

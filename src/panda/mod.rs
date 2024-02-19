@@ -1,5 +1,5 @@
-pub mod error;
 mod constants;
+pub mod error;
 mod usb_protocol;
 
 use crate::can::CanAdapter;

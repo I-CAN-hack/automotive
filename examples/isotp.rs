@@ -19,6 +19,12 @@ async fn main() {
     while let Some(frame) = stream.next().await {
         let id: u32 = frame.id.into();
         let tx_rx = if frame.returned { "TX" } else { "RX" };
-        println!("[{}]\t{}\t0x{:x}\t{}", tx_rx, frame.bus, id, hex::encode(frame.data));
+        println!(
+            "[{}]\t{}\t0x{:x}\t{}",
+            tx_rx,
+            frame.bus,
+            id,
+            hex::encode(frame.data)
+        );
     }
 }

@@ -2,12 +2,17 @@ use crate::can::CanAdapter;
 use crate::can::Frame;
 use async_stream::stream;
 use futures_core::stream::Stream;
-use tokio::sync::{broadcast, oneshot, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
 
 const CAN_TX_BUFFER_SIZE: usize = 128;
 const CAN_RX_BUFFER_SIZE: usize = 1024;
 
-fn process<T: CanAdapter>(mut adapter: T, mut shutdown_receiver: oneshot::Receiver<()>, rx_sender: broadcast::Sender<Frame>, mut tx_receiver: mpsc::Receiver<Frame>) {
+fn process<T: CanAdapter>(
+    mut adapter: T,
+    mut shutdown_receiver: oneshot::Receiver<()>,
+    rx_sender: broadcast::Sender<Frame>,
+    mut tx_receiver: mpsc::Receiver<Frame>,
+) {
     let mut buffer: Vec<Frame> = Vec::new();
 
     while !shutdown_receiver.try_recv().is_ok() {
@@ -81,7 +86,6 @@ impl AsyncCanAdapter {
         })
     }
 }
-
 
 impl Drop for AsyncCanAdapter {
     fn drop(&mut self) {
