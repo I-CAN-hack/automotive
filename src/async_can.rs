@@ -25,7 +25,7 @@ fn process<T: CanAdapter>(mut adapter: T, mut shutdown_receiver: oneshot::Receiv
 
 pub struct AsyncCanAdapter {
     processing_handle: Option<std::thread::JoinHandle<()>>,
-    recv_queue: (broadcast::Sender<Frame>, broadcast::Receiver<Frame>),
+    recv_receiver: broadcast::Receiver<Frame>,
     send_sender: mpsc::Sender<Frame>,
     shutdown: Option<oneshot::Sender<()>>,
 }
@@ -34,15 +34,14 @@ impl AsyncCanAdapter {
     pub fn new<T: CanAdapter + Send + Sync + 'static>(adapter: T) -> Self {
         let (shutdown_sender, shutdown_receiver) = oneshot::channel();
         let (send_sender, send_receiver) = mpsc::channel(CAN_TX_BUFFER_SIZE);
+        let (recv_sender, recv_receiver) = broadcast::channel(16);
 
         let mut ret = AsyncCanAdapter {
             shutdown: Some(shutdown_sender),
             processing_handle: None,
-            recv_queue: broadcast::channel::<Frame>(16),
-            send_sender: send_sender,
+            recv_receiver,
+            send_sender,
         };
-
-        let recv_sender = ret.recv_queue.0.clone();
 
         ret.processing_handle = Some(std::thread::spawn(move || {
             process(adapter, shutdown_receiver, recv_sender, send_receiver);
@@ -60,7 +59,7 @@ impl AsyncCanAdapter {
     }
 
     pub fn recv_filter(&self, filter: fn(&Frame) -> bool) -> impl Stream<Item = Frame> {
-        let mut rx = self.recv_queue.0.subscribe();
+        let mut rx = self.recv_receiver.resubscribe();
 
         Box::pin(stream! {
             loop { match rx.recv().await {
