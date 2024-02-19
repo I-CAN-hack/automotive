@@ -1,6 +1,6 @@
 use automotive::async_can::AsyncCanAdapter;
-use automotive::isotp::{IsoTP, IsoTPConfig};
 use automotive::can::Identifier;
+use automotive::isotp::{IsoTP, IsoTPConfig};
 use automotive::panda::Panda;
 use futures_util::stream::StreamExt;
 use tracing_subscriber;
@@ -20,13 +20,14 @@ async fn main() {
 
     // Send tester present
     let response = isotp.recv();
-    isotp.send(&[0x3e, 0x00]).await;
+    let request = [0x3e, 0x00];
+    isotp.send(&request).await;
 
     // Now actually wait for the response
     let response = response.await.unwrap();
 
-    println!("Response: {}", hex::encode(response));
-
+    println!("ISO-TP Request: {}", hex::encode(request));
+    println!("ISO-TP Response: {}", hex::encode(response));
 
     // Print all frames for debugging
     while let Some(frame) = stream.next().await {

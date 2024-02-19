@@ -4,6 +4,7 @@ use std::{fmt, result};
 pub enum Error {
     NotFound,
     MalformedFrame,
+    Timeout,
     PandaError(crate::panda::error::Error),
     LibUsbError(rusb::Error),
 }
@@ -21,6 +22,7 @@ impl fmt::Display for Error {
             Error::PandaError(err) => err.fmt(fmt),
             _ => fmt.write_str(match self {
                 Error::NotFound => "Not found",
+                Error::Timeout => "Timeout",
                 Error::MalformedFrame => "Malformed Frame",
                 Error::PandaError(_) => unreachable!(),
                 Error::LibUsbError(_) => unreachable!(),

@@ -1,9 +1,11 @@
 use crate::async_can::AsyncCanAdapter;
-use crate::can::Identifier;
 use crate::can::Frame;
+use crate::can::Identifier;
 use crate::error::Error;
 
-use futures_util::stream::StreamExt;
+use tokio_stream::StreamExt;
+
+const DEFAULT_TIMEOUT_MS: u64 = 1000;
 
 pub struct IsoTPConfig {
     bus: u8,
@@ -13,6 +15,7 @@ pub struct IsoTPConfig {
     tx_dl: usize,
     max_sf_dl: usize,
     padding: u8,
+    timeout: std::time::Duration,
 }
 
 impl IsoTPConfig {
@@ -33,10 +36,11 @@ impl IsoTPConfig {
             max_sf_dl: 7, // 7 bytes with normal addressing, 6 bytes with extended addressing
 
             padding: 0xaa,
+
+            timeout: std::time::Duration::from_millis(DEFAULT_TIMEOUT_MS),
         }
     }
 }
-
 
 pub struct IsoTP<'a> {
     adapter: &'a AsyncCanAdapter,
@@ -45,10 +49,7 @@ pub struct IsoTP<'a> {
 
 impl<'a> IsoTP<'a> {
     pub fn new(adapter: &'a AsyncCanAdapter, config: IsoTPConfig) -> Self {
-        Self {
-            adapter,
-            config,
-        }
+        Self { adapter, config }
     }
 
     pub async fn send_single_frame(&self, data: &[u8]) {
@@ -77,15 +78,51 @@ impl<'a> IsoTP<'a> {
         unimplemented!("Multi-frame ISO-TP not implemented");
     }
 
-    pub async fn recv(&self) -> Result<Vec<u8>, Error> {
-        // TODO: Implement timeout
-        // let rx_id = self.config.rx_id;
-        let mut stream = self.adapter.recv_filter(|frame| frame.id == self.config.rx_id);
-
-        while let Some(frame) = stream.next().await {
-            return Ok(frame.data);
+    fn handle_single_frame(
+        &self,
+        frame: Frame,
+        buf: &mut Vec<u8>,
+        len: &mut usize,
+    ) -> Result<(), Error> {
+        *len = (frame.data[0] & 0xF) as usize;
+        if *len == 0 {
+            unimplemented!("CAN FD escape sequence for single frame not supported");
         }
 
-        unreachable!()
+        buf.extend(&frame.data[1..*len + 1]);
+
+        return Ok(());
+    }
+
+    pub async fn recv(&self) -> Result<Vec<u8>, Error> {
+        let stream = self
+            .adapter
+            .recv_filter(|frame| frame.id == self.config.rx_id);
+
+        let stream = stream.timeout(self.config.timeout);
+        tokio::pin!(stream);
+
+        let mut buf = Vec::new();
+        let mut len: usize = 0;
+
+        while let Some(frame) = stream.next().await {
+            match frame {
+                Ok(frame) => {
+                    match (frame.data[0] & 0xF0) >> 4 {
+                        0x0 => self.handle_single_frame(frame, &mut buf, &mut len)?,
+                        _ => unimplemented!("Unhandeled ISO-TP frame type"),
+                    };
+                }
+                Err(_) => {
+                    return Err(Error::Timeout);
+                }
+            };
+
+            if buf.len() >= len {
+                break;
+            }
+        }
+
+        Ok(buf)
     }
 }
