@@ -6,7 +6,7 @@ use tracing::{info, warn};
 
 use tokio_stream::StreamExt;
 
-const DEFAULT_TIMEOUT_MS: u64 = 1000;
+const DEFAULT_TIMEOUT_MS: u64 = 100;
 
 pub struct IsoTPConfig {
     bus: u8,
