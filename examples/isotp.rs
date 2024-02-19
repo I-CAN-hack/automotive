@@ -18,16 +18,13 @@ async fn main() {
     let config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
     let isotp = IsoTP::new(&async_can, config);
 
-    // Send tester present
     let response = isotp.recv();
-    let request = [0x3e, 0x00];
-    isotp.send(&request).await;
+    isotp.send(&[0x3e, 0x00]).await;
+    response.await.unwrap();
 
-    // Now actually wait for the response
-    let response = response.await.unwrap();
-
-    println!("ISO-TP Request: {}", hex::encode(request));
-    println!("ISO-TP Response: {}", hex::encode(response));
+    let response = isotp.recv();
+    isotp.send(&[0x22, 0xf1, 0x81]).await;
+    response.await.unwrap();
 
     // Print all frames for debugging
     while let Some(frame) = stream.next().await {
