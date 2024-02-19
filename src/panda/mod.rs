@@ -17,10 +17,11 @@ pub struct Panda {
     dat: Vec<u8>,
 }
 
-pub struct Versions {
-    pub health_version: u8,
-    pub can_version: u8,
-    pub can_health_version: u8,
+#[allow(dead_code)]
+struct Versions {
+    health_version: u8,
+    can_version: u8,
+    can_health_version: u8,
 }
 
 unsafe impl Send for Panda {}
@@ -81,7 +82,7 @@ impl Panda {
         Ok(hw_type[0].into())
     }
 
-    pub fn get_packets_versions(&self) -> Result<Versions, Error> {
+    fn get_packets_versions(&self) -> Result<Versions, Error> {
         let versions = self.usb_read_control(Endpoint::PacketsVersions, 3)?;
         Ok({
             Versions {
