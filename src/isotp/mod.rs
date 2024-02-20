@@ -1,11 +1,13 @@
+mod constants;
+pub mod error;
+
 use crate::async_can::AsyncCanAdapter;
 use crate::can::Frame;
 use crate::can::Identifier;
 use crate::error::Error;
+use crate::isotp::constants::FrameType;
 use tokio_stream::StreamExt;
 use tracing::info;
-
-pub mod error;
 
 const DEFAULT_TIMEOUT_MS: u64 = 100;
 
@@ -54,7 +56,7 @@ impl<'a> IsoTP<'a> {
     }
 
     pub async fn send_single_frame(&self, data: &[u8]) {
-        let mut buf = vec![data.len() as u8];
+        let mut buf = vec![FrameType::Single as u8 | data.len() as u8];
         buf.extend(data);
         self.pad(&mut buf);
 
@@ -65,7 +67,7 @@ impl<'a> IsoTP<'a> {
     }
 
     pub async fn send_first_frame(&self, data: &[u8]) {
-        let b0: u8 = 0x10 | ((data.len() >> 8) & 0xF) as u8;
+        let b0: u8 = FrameType::First as u8 | ((data.len() >> 8) & 0xF) as u8;
         let b1: u8 = (data.len() & 0xFF) as u8;
 
         let mut buf = vec![b0, b1];
@@ -80,7 +82,7 @@ impl<'a> IsoTP<'a> {
     pub async fn send_consecutive_frame(&self, data: &[u8], idx: usize) {
         let idx = ((idx + 1) & 0xF) as u8;
 
-        let mut buf = vec![0x20 | idx];
+        let mut buf = vec![FrameType::Consecutive as u8 | idx];
         buf.extend(data);
         self.pad(&mut buf);
 
@@ -100,7 +102,7 @@ impl<'a> IsoTP<'a> {
 
         self.send_first_frame(data).await;
         let frame = stream.next().await.unwrap()?;
-        if (frame.data[0] >> 4) != 0x3 {
+        if frame.data[0] & 0xF0 != FrameType::FlowControl as u8 {
             return Err(Error::IsoTPError(crate::isotp::error::Error::FlowControl));
         };
         info!("RX FC, data {}", hex::encode(&frame.data));
@@ -207,10 +209,10 @@ impl<'a> IsoTP<'a> {
 
         while let Some(frame) = stream.next().await {
             let frame = frame?;
-            match (frame.data[0] & 0xF0) >> 4 {
-                0x0 => self.recv_single_frame(frame, &mut buf, &mut len).await?,
-                0x1 => self.recv_first_frame(frame, &mut buf, &mut len).await?,
-                0x2 => {
+            match (frame.data[0] & 0xF0).into() {
+                FrameType::Single => self.recv_single_frame(frame, &mut buf, &mut len).await?,
+                FrameType::First => self.recv_first_frame(frame, &mut buf, &mut len).await?,
+                FrameType::Consecutive => {
                     self.recv_consecutive_frame(frame, &mut buf, &mut len, &mut idx)
                         .await?
                 }
