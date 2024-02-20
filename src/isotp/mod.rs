@@ -2,9 +2,10 @@ use crate::async_can::AsyncCanAdapter;
 use crate::can::Frame;
 use crate::can::Identifier;
 use crate::error::Error;
-use tracing::{info, warn};
-
 use tokio_stream::StreamExt;
+use tracing::info;
+
+pub mod error;
 
 const DEFAULT_TIMEOUT_MS: u64 = 100;
 
@@ -99,7 +100,9 @@ impl<'a> IsoTP<'a> {
 
         self.send_first_frame(data).await;
         let frame = stream.next().await.unwrap()?;
-        assert!((frame.data[0] >> 4) == 0x3);
+        if (frame.data[0] >> 4) != 0x3 {
+            return Err(Error::IsoTPError(crate::isotp::error::Error::FlowControl));
+        };
         info!("RX FC, data {}", hex::encode(&frame.data));
 
         let chunks = data[self.config.tx_dl - 2..].chunks(self.config.tx_dl - 1);
@@ -115,9 +118,10 @@ impl<'a> IsoTP<'a> {
 
         if data.len() <= self.config.tx_dl - 1 {
             self.send_single_frame(data).await;
-        } else {
-            assert!(data.len() <= 4095);
+        } else if data.len() <= 4095 {
             self.send_multiple(data).await?;
+        } else {
+            return Err(Error::IsoTPError(crate::isotp::error::Error::DataTooLarge));
         }
 
         Ok(())
@@ -182,7 +186,7 @@ impl<'a> IsoTP<'a> {
         buf.extend(&frame.data[1..end_idx]);
 
         if msg_idx != *idx {
-            warn!("ISO-TP multi-frame out of order");
+            return Err(Error::IsoTPError(crate::isotp::error::Error::OutOfOrder));
         }
 
         *idx = if *idx == 0xF { 0 } else { *idx + 1 };
@@ -211,7 +215,9 @@ impl<'a> IsoTP<'a> {
                         .await?
                 }
                 _ => {
-                    unimplemented!("Unhandeled ISO-TP frame type {:x}", frame.data[0] >> 4)
+                    return Err(Error::IsoTPError(
+                        crate::isotp::error::Error::UnknownFrameType,
+                    ));
                 }
             };
 
