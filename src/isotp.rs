@@ -14,7 +14,6 @@ pub struct IsoTPConfig {
     rx_id: Identifier,
 
     tx_dl: usize,
-    max_sf_dl: usize,
     padding: u8,
     timeout: std::time::Duration,
 }
@@ -31,13 +30,8 @@ impl IsoTPConfig {
             bus,
             tx_id,
             rx_id,
-
-            // Message size config
             tx_dl: 8,
-            max_sf_dl: 7, // 7 bytes with normal addressing, 6 bytes with extended addressing
-
             padding: 0xaa,
-
             timeout: std::time::Duration::from_millis(DEFAULT_TIMEOUT_MS),
         }
     }
@@ -53,19 +47,15 @@ impl<'a> IsoTP<'a> {
         Self { adapter, config }
     }
 
+    fn pad(&self, data: &mut Vec<u8>) {
+        let len = self.config.tx_dl - data.len();
+        data.extend(std::iter::repeat(self.config.padding).take(len));
+    }
+
     pub async fn send_single_frame(&self, data: &[u8]) {
-        if self.config.max_sf_dl > 7 {
-            unimplemented!("CAN FD escape sequence for single frame not supported");
-        }
-
-        // Single Frame + Length
         let mut buf = vec![data.len() as u8];
-
-        // Data
         buf.extend(data);
-
-        // Pad to tx_dl
-        buf.extend(std::iter::repeat(self.config.padding).take(self.config.tx_dl - buf.len()));
+        self.pad(&mut buf);
 
         info!("TX SF, length: {} data {}", data.len(), hex::encode(&buf));
 
@@ -73,19 +63,67 @@ impl<'a> IsoTP<'a> {
         self.adapter.send(&frame).await;
     }
 
-    pub async fn send(&self, data: &[u8]) -> Result<(), Error> {
-        info!("TX {}", hex::encode(&data));
+    pub async fn send_first_frame(&self, data: &[u8]) {
+        let b0: u8 = 0x10 | ((data.len() >> 8) & 0xF) as u8;
+        let b1: u8 = (data.len() & 0xFF) as u8;
 
-        if data.len() <= self.config.max_sf_dl {
-            self.send_single_frame(data).await;
-        } else {
-            unimplemented!("Multi-frame ISO-TP not implemented");
+        let mut buf = vec![b0, b1];
+        buf.extend(&data[..self.config.tx_dl - 2]);
+
+        info!("TX FF, length: {} data {}", data.len(), hex::encode(&buf));
+
+        let frame = Frame::new(self.config.bus, self.config.tx_id, &buf);
+        self.adapter.send(&frame).await;
+    }
+
+    pub async fn send_consecutive_frame(&self, data: &[u8], idx: usize) {
+        let idx = ((idx + 1) & 0xF) as u8;
+
+        let mut buf = vec![0x20 | idx];
+        buf.extend(data);
+        self.pad(&mut buf);
+
+        info!("TX CF, idx: {} data {}", idx, hex::encode(&buf));
+
+        let frame = Frame::new(self.config.bus, self.config.tx_id, &buf);
+        self.adapter.send(&frame).await;
+    }
+
+    pub async fn send_multiple(&self, data: &[u8]) -> Result<(), Error> {
+        // Stream for receiving flow control
+        let stream = self
+            .adapter
+            .recv_filter(|frame| frame.id == self.config.rx_id)
+            .timeout(self.config.timeout);
+        tokio::pin!(stream);
+
+        self.send_first_frame(data).await;
+        let frame = stream.next().await.unwrap()?;
+        assert!((frame.data[0] >> 4) == 0x3);
+        info!("RX FC, data {}", hex::encode(&frame.data));
+
+        let chunks = data[self.config.tx_dl - 2..].chunks(self.config.tx_dl - 1);
+        for (idx, chunk) in chunks.enumerate() {
+            self.send_consecutive_frame(chunk, idx).await;
         }
 
         Ok(())
     }
 
-    async fn handle_single_frame(
+    pub async fn send(&self, data: &[u8]) -> Result<(), Error> {
+        info!("TX {}", hex::encode(&data));
+
+        if data.len() <= self.config.tx_dl - 1 {
+            self.send_single_frame(data).await;
+        } else {
+            assert!(data.len() <= 4095);
+            self.send_multiple(data).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn recv_single_frame(
         &self,
         frame: Frame,
         buf: &mut Vec<u8>,
@@ -96,46 +134,40 @@ impl<'a> IsoTP<'a> {
             unimplemented!("CAN FD escape sequence for single frame not supported");
         }
 
-        info!(
-            "RX SF, length: {} data {}",
-            *len,
-            hex::encode(&frame.data[1..*len + 1])
-        );
+        info!("RX SF, length: {} data {}", *len, hex::encode(&frame.data));
 
         buf.extend(&frame.data[1..*len + 1]);
 
         return Ok(());
     }
 
-    async fn handle_first_frame(
+    async fn recv_first_frame(
         &self,
         frame: Frame,
         buf: &mut Vec<u8>,
         len: &mut usize,
     ) -> Result<(), Error> {
-        // Length from byte 0 and 1
         let b0 = frame.data[0] as u16;
         let b1 = frame.data[1] as u16;
         *len = ((b0 << 8 | b1) & 0xFFF) as usize;
 
-        info!(
-            "RX FF, length: {}, data {}",
-            *len,
-            hex::encode(&frame.data[2..])
-        );
+        info!("RX FF, length: {}, data {}", *len, hex::encode(&frame.data));
 
         buf.extend(&frame.data[2..]);
 
         // Send Flow Control
-        // TODO: pad to tx_dl?
-        let flow_control = [0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let mut flow_control = vec![0x30, 0x00, 0x00];
+        self.pad(&mut flow_control);
+
+        info!("TX FC, data {}", hex::encode(&flow_control));
+
         let frame = Frame::new(self.config.bus, self.config.tx_id, &flow_control);
         self.adapter.send(&frame).await;
 
         return Ok(());
     }
 
-    async fn handle_consecutive_frame(
+    async fn recv_consecutive_frame(
         &self,
         frame: Frame,
         buf: &mut Vec<u8>,
@@ -146,11 +178,7 @@ impl<'a> IsoTP<'a> {
         let remaining_len = *len - buf.len();
         let end_idx = std::cmp::min(remaining_len + 1, frame.data.len() - 1);
 
-        info!(
-            "RX CF, idx: {}, data {}",
-            idx,
-            hex::encode(&frame.data[1..end_idx])
-        );
+        info!("RX CF, idx: {}, data {}", idx, hex::encode(&frame.data));
         buf.extend(&frame.data[1..end_idx]);
 
         if msg_idx != *idx {
@@ -174,22 +202,16 @@ impl<'a> IsoTP<'a> {
         let mut idx: u8 = 1;
 
         while let Some(frame) = stream.next().await {
-            match frame {
-                Ok(frame) => {
-                    match (frame.data[0] & 0xF0) >> 4 {
-                        0x0 => self.handle_single_frame(frame, &mut buf, &mut len).await?,
-                        0x1 => self.handle_first_frame(frame, &mut buf, &mut len).await?,
-                        0x2 => {
-                            self.handle_consecutive_frame(frame, &mut buf, &mut len, &mut idx)
-                                .await?
-                        }
-                        _ => {
-                            unimplemented!("Unhandeled ISO-TP frame type {:x}", frame.data[0] >> 4)
-                        }
-                    };
+            let frame = frame?;
+            match (frame.data[0] & 0xF0) >> 4 {
+                0x0 => self.recv_single_frame(frame, &mut buf, &mut len).await?,
+                0x1 => self.recv_first_frame(frame, &mut buf, &mut len).await?,
+                0x2 => {
+                    self.recv_consecutive_frame(frame, &mut buf, &mut len, &mut idx)
+                        .await?
                 }
-                Err(_) => {
-                    return Err(Error::Timeout);
+                _ => {
+                    unimplemented!("Unhandeled ISO-TP frame type {:x}", frame.data[0] >> 4)
                 }
             };
 

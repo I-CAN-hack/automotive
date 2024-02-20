@@ -21,4 +21,10 @@ async fn main() {
     let response = isotp.recv();
     isotp.send(&[0x22, 0xf1, 0x81]).await.unwrap();
     response.await.unwrap();
+
+    let mut long_request: [u8; 32] = [0; 32];
+    long_request[0] = 0x10;
+    let response = isotp.recv();
+    isotp.send(&long_request).await.unwrap();
+    response.await.unwrap();
 }

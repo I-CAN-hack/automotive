@@ -72,9 +72,9 @@ impl Panda {
         let mut buf: [u8; N] = [0; N];
 
         loop {
-            let recv: usize = self
-                .handle
-                .read_bulk(Endpoint::CanRead as u8, &mut buf, self.timeout)?;
+            let recv: usize =
+                self.handle
+                    .read_bulk(Endpoint::CanRead as u8, &mut buf, self.timeout)?;
 
             if recv == 0 {
                 return Ok(());

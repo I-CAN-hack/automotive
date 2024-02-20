@@ -15,6 +15,12 @@ impl From<rusb::Error> for Error {
     }
 }
 
+impl From<tokio_stream::Elapsed> for Error {
+    fn from(_: tokio_stream::Elapsed) -> Error {
+        Error::Timeout
+    }
+}
+
 impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         match self {
