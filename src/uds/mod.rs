@@ -77,4 +77,26 @@ impl<'a> UDSClient<'a> {
             .await?;
         Ok(())
     }
+
+    pub async fn read_data_by_identifier(&self, data_identifier: u16) -> Result<Vec<u8>, Error> {
+        let did = data_identifier.to_be_bytes();
+        let resp = self
+            .request(ServiceIdentifier::ReadDataByIdentifier, None, Some(&did))
+            .await?;
+
+        if resp.len() < 2 {
+            return Err(Error::UDSError(
+                crate::uds::error::Error::InvalidResponseLength,
+            ));
+        }
+
+        let did = u16::from_be_bytes([resp[0], resp[1]]);
+        if did != data_identifier {
+            return Err(Error::UDSError(
+                crate::uds::error::Error::InvalidDataIdentifier(did),
+            ));
+        }
+
+        Ok(resp[2..].to_vec())
+    }
 }

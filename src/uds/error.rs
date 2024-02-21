@@ -63,6 +63,8 @@ impl From<u8> for NegativeResponseCode {
 pub enum Error {
     InvalidServiceId(u8),
     InvalidSubFunction(u8),
+    InvalidDataIdentifier(u16),
+    InvalidResponseLength,
     NegativeResponse(NegativeResponseCode),
 }
 
@@ -73,6 +75,10 @@ impl fmt::Display for Error {
             Error::InvalidSubFunction(id) => {
                 write!(fmt, "Invalid Response Sub Function ID: {}", id)
             }
+            Error::InvalidDataIdentifier(id) => {
+                write!(fmt, "Invalid Response Data Identifer: {}", id)
+            }
+            Error::InvalidResponseLength => write!(fmt, "Invalid Response Length"),
             Error::NegativeResponse(e) => write!(fmt, "Negative Response: {:?}", e),
         }
     }
