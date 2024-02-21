@@ -1,3 +1,5 @@
+use strum_macros::EnumIter;
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 #[repr(u8)]
 pub enum ServiceIdentifier {
@@ -42,7 +44,7 @@ pub enum ServiceIdentifier {
     NegativeResponse = 0x7f,
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone, EnumIter)]
 #[repr(u16)]
 pub enum DataIdentifier {
     BootSoftwareIdentification = 0xf180,

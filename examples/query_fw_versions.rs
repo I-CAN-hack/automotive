@@ -7,8 +7,9 @@ use automotive::uds::constants::DataIdentifier;
 use automotive::uds::UDSClient;
 
 use bstr::ByteSlice;
+use strum::IntoEnumIterator;
 
-static BUS: u8 = 1;
+static BUS: u8 = 0;
 static ADDRS_IN_PARALLEL: usize = 128;
 
 async fn get_version(adapter: &AsyncCanAdapter, identifier: u32) -> Result<(), Error> {
@@ -21,15 +22,20 @@ async fn get_version(adapter: &AsyncCanAdapter, identifier: u32) -> Result<(), E
     let isotp = IsoTPAdapter::new(adapter, config);
     let uds = UDSClient::new(&isotp);
 
-    let did = DataIdentifier::ApplicationSoftwareIdentification;
-    let resp = uds.read_data_by_identifier(did as u16).await?;
-    println!(
-        "{:x} 0x{:x} {:?}: {:?}",
-        identifier,
-        did as u16,
-        did,
-        resp.as_bstr()
-    );
+    uds.tester_present().await?;
+
+    for did in DataIdentifier::iter() {
+        if let Ok(resp) = uds.read_data_by_identifier(did as u16).await {
+            println!(
+                "{:x} 0x{:x} {:?}: {:?}",
+                identifier,
+                did as u16,
+                did,
+                resp.as_bstr()
+            );
+        }
+
+    }
 
     Ok(())
 }
