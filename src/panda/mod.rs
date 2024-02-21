@@ -44,7 +44,6 @@ impl Panda {
                 continue;
             }
 
-
             let mut panda = Panda {
                 dat: vec![],
                 handle: device.open()?,

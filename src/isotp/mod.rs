@@ -32,7 +32,10 @@ impl IsoTPConfig {
                 Identifier::Extended(id)
             }
         };
-        info!("ISO-TP Config: bus: {}, tx_id: {:?}, rx_id: {:?}", bus, tx_id, rx_id);
+        info!(
+            "ISO-TP Config: bus: {}, tx_id: {:?}, rx_id: {:?}",
+            bus, tx_id, rx_id
+        );
 
         Self {
             bus,
@@ -143,7 +146,9 @@ impl<'a> IsoTPAdapter<'a> {
         *len = (frame.data[0] & 0xF) as usize;
         if *len == 0 {
             // unimplemented!("CAN FD escape sequence for single frame not supported");
-            return Err(Error::IsoTPError(crate::isotp::error::Error::MalformedFrame));
+            return Err(Error::IsoTPError(
+                crate::isotp::error::Error::MalformedFrame,
+            ));
         }
 
         info!("RX SF, length: {} data {}", *len, hex::encode(&frame.data));
@@ -191,7 +196,12 @@ impl<'a> IsoTPAdapter<'a> {
         let end_idx = std::cmp::min(remaining_len + 1, frame.data.len());
 
         buf.extend(&frame.data[1..end_idx]);
-        info!("RX CF, idx: {}, data {} {}", idx, hex::encode(&frame.data), hex::encode(&buf));
+        info!(
+            "RX CF, idx: {}, data {} {}",
+            idx,
+            hex::encode(&frame.data),
+            hex::encode(&buf)
+        );
 
         if msg_idx != *idx {
             return Err(Error::IsoTPError(crate::isotp::error::Error::OutOfOrder));

@@ -34,7 +34,6 @@ async fn get_version(adapter: &AsyncCanAdapter, identifier: u32) -> Result<(), E
                 resp.as_bstr()
             );
         }
-
     }
 
     Ok(())
