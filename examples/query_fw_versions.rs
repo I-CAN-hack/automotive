@@ -41,7 +41,7 @@ async fn get_version(adapter: &AsyncCanAdapter, identifier: u32) -> Result<(), E
 
 #[tokio::main]
 async fn main() {
-    // tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt::init();
 
     let adapter = Panda::new().unwrap();
 

@@ -68,7 +68,8 @@ impl Panda {
             // can_reset_communications() doesn't work properly, flush manually
             panda.flush_rx()?;
 
-            info!("Connected to panda");
+            let hw_type = panda.get_hw_type()?;
+            info!("Connected to Panda ({:?})", hw_type);
 
             return Ok(panda);
         }
@@ -105,7 +106,8 @@ impl Panda {
 
     pub fn get_hw_type(&self) -> Result<HwType, Error> {
         let hw_type = self.usb_read_control(Endpoint::HwType, 1)?;
-        Ok(hw_type[0].into())
+        HwType::from_repr(hw_type[0])
+            .ok_or(Error::PandaError(crate::panda::error::Error::UnknownHwType))
     }
 
     fn get_packets_versions(&self) -> Result<Versions, Error> {
@@ -159,7 +161,7 @@ impl Panda {
 
 impl Drop for Panda {
     fn drop(&mut self) {
-        info!("Closing panda");
+        info!("Closing Panda");
     }
 }
 

@@ -6,7 +6,7 @@ use crate::isotp::IsoTPAdapter;
 use crate::uds::constants::ServiceIdentifier;
 use crate::uds::error::NegativeResponseCode;
 
-use tracing::info;
+use tracing::debug;
 
 pub struct UDSClient<'a> {
     adapter: &'a IsoTPAdapter<'a>,
@@ -34,11 +34,11 @@ impl<'a> UDSClient<'a> {
             request.extend(data);
         }
 
-        info!("TX {}", hex::encode(&request));
+        debug!("TX {}", hex::encode(&request));
         self.adapter.send(&request).await?;
 
         let response = response.await?;
-        info!("RX {}", hex::encode(&request));
+        debug!("RX {}", hex::encode(&request));
 
         // Check for errors
         let response_sid = response[0];

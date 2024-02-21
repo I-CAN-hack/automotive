@@ -7,7 +7,7 @@ use crate::can::Identifier;
 use crate::error::Error;
 use crate::isotp::constants::FrameType;
 use tokio_stream::StreamExt;
-use tracing::info;
+use tracing::debug;
 
 const DEFAULT_TIMEOUT_MS: u64 = 100;
 
@@ -32,7 +32,7 @@ impl IsoTPConfig {
                 Identifier::Extended(id)
             }
         };
-        info!(
+        debug!(
             "ISO-TP Config: bus: {}, tx_id: {:?}, rx_id: {:?}",
             bus, tx_id, rx_id
         );
@@ -68,7 +68,7 @@ impl<'a> IsoTPAdapter<'a> {
         buf.extend(data);
         self.pad(&mut buf);
 
-        info!("TX SF, length: {} data {}", data.len(), hex::encode(&buf));
+        debug!("TX SF, length: {} data {}", data.len(), hex::encode(&buf));
 
         let frame = Frame::new(self.config.bus, self.config.tx_id, &buf);
         self.adapter.send(&frame).await;
@@ -81,7 +81,7 @@ impl<'a> IsoTPAdapter<'a> {
         let mut buf = vec![b0, b1];
         buf.extend(&data[..self.config.tx_dl - 2]);
 
-        info!("TX FF, length: {} data {}", data.len(), hex::encode(&buf));
+        debug!("TX FF, length: {} data {}", data.len(), hex::encode(&buf));
 
         let frame = Frame::new(self.config.bus, self.config.tx_id, &buf);
         self.adapter.send(&frame).await;
@@ -94,7 +94,7 @@ impl<'a> IsoTPAdapter<'a> {
         buf.extend(data);
         self.pad(&mut buf);
 
-        info!("TX CF, idx: {} data {}", idx, hex::encode(&buf));
+        debug!("TX CF, idx: {} data {}", idx, hex::encode(&buf));
 
         let frame = Frame::new(self.config.bus, self.config.tx_id, &buf);
         self.adapter.send(&frame).await;
@@ -113,7 +113,7 @@ impl<'a> IsoTPAdapter<'a> {
         if frame.data[0] & 0xF0 != FrameType::FlowControl as u8 {
             return Err(Error::IsoTPError(crate::isotp::error::Error::FlowControl));
         };
-        info!("RX FC, data {}", hex::encode(&frame.data));
+        debug!("RX FC, data {}", hex::encode(&frame.data));
 
         let chunks = data[self.config.tx_dl - 2..].chunks(self.config.tx_dl - 1);
         for (idx, chunk) in chunks.enumerate() {
@@ -124,7 +124,7 @@ impl<'a> IsoTPAdapter<'a> {
     }
 
     pub async fn send(&self, data: &[u8]) -> Result<(), Error> {
-        info!("TX {}", hex::encode(&data));
+        debug!("TX {}", hex::encode(&data));
 
         if data.len() <= self.config.tx_dl - 1 {
             self.send_single_frame(data).await;
@@ -151,7 +151,7 @@ impl<'a> IsoTPAdapter<'a> {
             ));
         }
 
-        info!("RX SF, length: {} data {}", *len, hex::encode(&frame.data));
+        debug!("RX SF, length: {} data {}", *len, hex::encode(&frame.data));
 
         buf.extend(&frame.data[1..*len + 1]);
 
@@ -168,7 +168,7 @@ impl<'a> IsoTPAdapter<'a> {
         let b1 = frame.data[1] as u16;
         *len = ((b0 << 8 | b1) & 0xFFF) as usize;
 
-        info!("RX FF, length: {}, data {}", *len, hex::encode(&frame.data));
+        debug!("RX FF, length: {}, data {}", *len, hex::encode(&frame.data));
 
         buf.extend(&frame.data[2..]);
 
@@ -176,7 +176,7 @@ impl<'a> IsoTPAdapter<'a> {
         let mut flow_control = vec![0x30, 0x00, 0x00];
         self.pad(&mut flow_control);
 
-        info!("TX FC, data {}", hex::encode(&flow_control));
+        debug!("TX FC, data {}", hex::encode(&flow_control));
 
         let frame = Frame::new(self.config.bus, self.config.tx_id, &flow_control);
         self.adapter.send(&frame).await;
@@ -196,7 +196,7 @@ impl<'a> IsoTPAdapter<'a> {
         let end_idx = std::cmp::min(remaining_len + 1, frame.data.len());
 
         buf.extend(&frame.data[1..end_idx]);
-        info!(
+        debug!(
             "RX CF, idx: {}, data {} {}",
             idx,
             hex::encode(&frame.data),
@@ -239,13 +239,13 @@ impl<'a> IsoTPAdapter<'a> {
                 }
             };
 
-            info!("{} {}", len, buf.len());
+            debug!("{} {}", len, buf.len());
 
             if buf.len() >= len {
                 break;
             }
         }
-        info!("RX {}", hex::encode(&buf));
+        debug!("RX {}", hex::encode(&buf));
         Ok(buf)
     }
 }

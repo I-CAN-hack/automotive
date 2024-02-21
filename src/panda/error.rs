@@ -4,6 +4,7 @@ use std::fmt;
 pub enum Error {
     InvalidChecksum,
     WrongFirmwareVersion,
+    UnknownHwType,
 }
 
 impl fmt::Display for Error {
@@ -11,6 +12,7 @@ impl fmt::Display for Error {
         match self {
             Error::InvalidChecksum => write!(fmt, "Invalid Checksum"),
             Error::WrongFirmwareVersion => write!(fmt, "Wrong Firmware Version"),
+            Error::UnknownHwType => write!(fmt, "Wrong Firmware Version"),
         }
     }
 }
