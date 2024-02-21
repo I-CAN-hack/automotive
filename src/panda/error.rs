@@ -1,4 +1,4 @@
-use std::{fmt, result};
+use std::fmt;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Error {
@@ -7,11 +7,11 @@ pub enum Error {
 }
 
 impl fmt::Display for Error {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        fmt.write_str(match self {
-            Error::InvalidChecksum => "Invalid Checksum",
-            Error::WrongFirmwareVersion => "Wrong Firmware Version",
-        })
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::InvalidChecksum => write!(fmt, "Invalid Checksum"),
+            Error::WrongFirmwareVersion => write!(fmt, "Wrong Firmware Version"),
+        }
     }
 }
 

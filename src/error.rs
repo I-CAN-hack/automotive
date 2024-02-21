@@ -1,13 +1,14 @@
-use std::{fmt, result};
+use std::fmt;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Error {
     NotFound,
     MalformedFrame,
     Timeout,
-    PandaError(crate::panda::error::Error),
     IsoTPError(crate::isotp::error::Error),
     LibUsbError(rusb::Error),
+    PandaError(crate::panda::error::Error),
+    UDSError(crate::uds::error::Error),
 }
 
 impl From<rusb::Error> for Error {
@@ -23,19 +24,15 @@ impl From<tokio_stream::Elapsed> for Error {
 }
 
 impl fmt::Display for Error {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Error::NotFound => write!(fmt, "Not Found"),
+            Error::MalformedFrame => write!(fmt, "Malformed Frame"),
+            Error::Timeout => write!(fmt, "Timeout"),
+            Error::IsoTPError(err) => err.fmt(fmt),
             Error::LibUsbError(err) => err.fmt(fmt),
             Error::PandaError(err) => err.fmt(fmt),
-            Error::IsoTPError(err) => err.fmt(fmt),
-            _ => fmt.write_str(match self {
-                Error::NotFound => "Not found",
-                Error::Timeout => "Timeout",
-                Error::MalformedFrame => "Malformed Frame",
-                Error::PandaError(_) => unreachable!(),
-                Error::LibUsbError(_) => unreachable!(),
-                Error::IsoTPError(_) => unreachable!(),
-            }),
+            Error::UDSError(err) => err.fmt(fmt),
         }
     }
 }

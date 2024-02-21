@@ -40,12 +40,12 @@ impl IsoTPConfig {
     }
 }
 
-pub struct IsoTP<'a> {
+pub struct IsoTPAdapter<'a> {
     adapter: &'a AsyncCanAdapter,
     config: IsoTPConfig,
 }
 
-impl<'a> IsoTP<'a> {
+impl<'a> IsoTPAdapter<'a> {
     pub fn new(adapter: &'a AsyncCanAdapter, config: IsoTPConfig) -> Self {
         Self { adapter, config }
     }
