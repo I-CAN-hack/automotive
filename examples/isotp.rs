@@ -1,4 +1,3 @@
-use automotive::async_can::AsyncCanAdapter;
 use automotive::can::Identifier;
 use automotive::isotp::{IsoTP, IsoTPConfig};
 use automotive::panda::Panda;
@@ -8,11 +7,10 @@ use tracing_subscriber;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let panda = Panda::new().unwrap();
-    let async_can = AsyncCanAdapter::new(panda);
+    let adapter = Panda::new().unwrap();
 
     let config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
-    let isotp = IsoTP::new(&async_can, config);
+    let isotp = IsoTP::new(&adapter, config);
 
     let response = isotp.recv();
     isotp.send(&[0x3e, 0x00]).await.unwrap();

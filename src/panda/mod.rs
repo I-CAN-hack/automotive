@@ -2,6 +2,7 @@ mod constants;
 pub mod error;
 mod usb_protocol;
 
+use crate::async_can::AsyncCanAdapter;
 use crate::can::CanAdapter;
 use crate::error::Error;
 use crate::panda::constants::{Endpoint, HwType, SafetyModel};
@@ -27,7 +28,12 @@ struct Versions {
 unsafe impl Send for Panda {}
 
 impl Panda {
-    pub fn new() -> Result<Panda, Error> {
+    pub fn new() -> Result<AsyncCanAdapter, Error> {
+        let panda = Panda::new_blocking()?;
+        Ok(AsyncCanAdapter::new(panda))
+    }
+
+    pub fn new_blocking() -> Result<Panda, Error> {
         for device in rusb::devices().unwrap().iter() {
             let device_desc = device.device_descriptor().unwrap();
 

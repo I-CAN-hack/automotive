@@ -1,14 +1,16 @@
-use automotive::can::CanAdapter;
 use automotive::panda::Panda;
+use futures_util::stream::StreamExt;
+use tracing_subscriber;
 
-fn main() {
-    let mut panda = Panda::new().unwrap();
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt::init();
 
-    loop {
-        let frames = panda.recv().unwrap();
-        for frame in frames {
-            let id: u32 = frame.id.into();
-            println!("[{}]\t0x{:x}\t{}", frame.bus, id, hex::encode(frame.data));
-        }
+    let adapter = Panda::new().unwrap();
+    let mut stream = adapter.recv();
+
+    while let Some(frame) = stream.next().await {
+        let id: u32 = frame.id.into();
+        println!("[{}]\t0x{:x}\t{}", frame.bus, id, hex::encode(frame.data));
     }
 }
