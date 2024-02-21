@@ -26,8 +26,13 @@ impl IsoTPConfig {
         let tx_id = id;
         let rx_id = match id {
             Identifier::Standard(id) => Identifier::Standard(id + 8),
-            Identifier::Extended(_) => unimplemented!("Only standard IDs supported"),
+            Identifier::Extended(id) => {
+                let bytes = id.to_be_bytes();
+                let id = u32::from_be_bytes([bytes[0], bytes[1], bytes[3], bytes[2]]); // Swap last two bytes
+                Identifier::Extended(id)
+            }
         };
+        info!("ISO-TP Config: bus: {}, tx_id: {:?}, rx_id: {:?}", bus, tx_id, rx_id);
 
         Self {
             bus,
@@ -137,7 +142,8 @@ impl<'a> IsoTPAdapter<'a> {
     ) -> Result<(), Error> {
         *len = (frame.data[0] & 0xF) as usize;
         if *len == 0 {
-            unimplemented!("CAN FD escape sequence for single frame not supported");
+            // unimplemented!("CAN FD escape sequence for single frame not supported");
+            return Err(Error::IsoTPError(crate::isotp::error::Error::MalformedFrame));
         }
 
         info!("RX SF, length: {} data {}", *len, hex::encode(&frame.data));
@@ -182,10 +188,10 @@ impl<'a> IsoTPAdapter<'a> {
     ) -> Result<(), Error> {
         let msg_idx = (frame.data[0] & 0xF) as u8;
         let remaining_len = *len - buf.len();
-        let end_idx = std::cmp::min(remaining_len + 1, frame.data.len() - 1);
+        let end_idx = std::cmp::min(remaining_len + 1, frame.data.len());
 
-        info!("RX CF, idx: {}, data {}", idx, hex::encode(&frame.data));
         buf.extend(&frame.data[1..end_idx]);
+        info!("RX CF, idx: {}, data {} {}", idx, hex::encode(&frame.data), hex::encode(&buf));
 
         if msg_idx != *idx {
             return Err(Error::IsoTPError(crate::isotp::error::Error::OutOfOrder));
@@ -222,6 +228,8 @@ impl<'a> IsoTPAdapter<'a> {
                     ));
                 }
             };
+
+            info!("{} {}", len, buf.len());
 
             if buf.len() >= len {
                 break;

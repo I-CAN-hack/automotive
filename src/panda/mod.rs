@@ -44,11 +44,14 @@ impl Panda {
                 continue;
             }
 
-            let panda = Panda {
+
+            let mut panda = Panda {
                 dat: vec![],
                 handle: device.open()?,
                 timeout: std::time::Duration::from_millis(100),
             };
+
+            panda.handle.claim_interface(0)?;
 
             // Check panda firmware version
             let versions = panda.get_packets_versions()?;

@@ -8,8 +8,16 @@ use automotive::uds::UDSClient;
 
 use bstr::ByteSlice;
 
+static BUS: u8 = 1;
+static ADDRS_IN_PARALLEL: usize = 128;
+
 async fn get_version(adapter: &AsyncCanAdapter, identifier: u32) -> Result<(), Error> {
-    let config = IsoTPConfig::new(0, Identifier::Standard(identifier));
+    let config = if identifier < 0x800 {
+        IsoTPConfig::new(BUS, Identifier::Standard(identifier))
+    } else {
+        IsoTPConfig::new(BUS, Identifier::Extended(identifier))
+    };
+
     let isotp = IsoTPAdapter::new(adapter, config);
     let uds = UDSClient::new(&isotp);
 
@@ -31,8 +39,14 @@ async fn main() {
     // tracing_subscriber::fmt::init();
 
     let adapter = Panda::new().unwrap();
-    let ids = 0x700..=0x7ff;
 
-    let r = ids.map(|id| get_version(&adapter, id));
-    futures::future::join_all(r).await;
+    let standard_ids = 0x700..=0x7ff;
+    let extended_ids = (0x00..=0xff).map(|i| 0x18da0000 + (i << 8) + 0xf1);
+
+    let ids: Vec<u32> = standard_ids.chain(extended_ids).collect();
+
+    for ids in ids.chunks(ADDRS_IN_PARALLEL) {
+        let r = ids.iter().map(|id| get_version(&adapter, *id));
+        futures::future::join_all(r).await;
+    }
 }

@@ -6,6 +6,7 @@ pub enum Error {
     FlowControl,
     OutOfOrder,
     UnknownFrameType,
+    MalformedFrame,
 }
 
 impl fmt::Display for Error {
@@ -15,6 +16,7 @@ impl fmt::Display for Error {
             Error::FlowControl => write!(fmt, "Flow Control"),
             Error::OutOfOrder => write!(fmt, "Out Of Order"),
             Error::UnknownFrameType => write!(fmt, "Unknown Frame Type"),
+            Error::MalformedFrame => write!(fmt, "Malformed Frame"),
         }
     }
 }
