@@ -1,10 +1,11 @@
 [package]
 name = "automotive"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 license = "MIT"
 keywords = ["automotive", "CAN", "UDS"]
-description = "WIP. Rust crate providing a variety of automotive related libraries, such as communicating with CAN interfaces and diagnostic APIs."
+description = "Rust crate providing a variety of automotive related libraries, such as communicating with CAN interfaces and diagnostic APIs."
+repository = "https://github.com/I-CAN-hack/automotive"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
