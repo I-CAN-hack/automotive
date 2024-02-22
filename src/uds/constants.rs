@@ -1,5 +1,7 @@
+//! Constants for the UDS Client.
 use strum_macros::EnumIter;
 
+/// Service Identifiers (SIDs) as defined in ISO 14229
 #[derive(Debug, PartialEq, Copy, Clone)]
 #[repr(u8)]
 pub enum ServiceIdentifier {
@@ -44,6 +46,8 @@ pub enum ServiceIdentifier {
     NegativeResponse = 0x7f,
 }
 
+
+/// Standard Data Identifiers (DIDs) as defined in ISO 14229
 #[derive(Debug, PartialEq, Copy, Clone, EnumIter)]
 #[repr(u16)]
 pub enum DataIdentifier {

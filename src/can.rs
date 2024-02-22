@@ -1,16 +1,22 @@
+//! Generic CAN types and traits
+
+/// Identifier for a CAN frame
 #[derive(Debug, Copy, Clone, PartialOrd, PartialEq)]
 pub enum Identifier {
     Standard(u32),
     Extended(u32),
 }
 
-impl Unpin for Identifier {}
-
+/// A CAN frame
 #[derive(Debug, Clone, PartialEq)]
 pub struct Frame {
-    pub bus: u8, // TODO: Add enum to also support things like "vcan0"
+    /// The bus index for adapters supporting multiple CAN busses
+    pub bus: u8,
+    /// Arbitration ID
     pub id: Identifier,
+    /// Frame Data
     pub data: Vec<u8>,
+    /// Wheter the frame was sent out by the adapter
     pub returned: bool,
     // TODO: Add timestamp, can-fd, rtr, dlc
 }
@@ -46,6 +52,7 @@ impl Into<u32> for Identifier {
     }
 }
 
+/// Trait for a Blocking CAN Adapter
 pub trait CanAdapter {
     fn send(&mut self, frames: &[Frame]) -> Result<(), crate::error::Error>;
     fn recv(&mut self) -> Result<Vec<Frame>, crate::error::Error>;

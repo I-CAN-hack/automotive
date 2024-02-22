@@ -1,3 +1,5 @@
+//! Async wrapper for Adapters implementing the [`CanAdapter`] trait.
+
 use crate::can::CanAdapter;
 use crate::can::Frame;
 use async_stream::stream;
@@ -33,6 +35,7 @@ fn process<T: CanAdapter>(
     }
 }
 
+/// Async wrapper around a [`CanAdapter`]. Starts a background thread to handle sending and receiving frames. Uses tokio channels to communicate with the background thread.
 pub struct AsyncCanAdapter {
     processing_handle: Option<std::thread::JoinHandle<()>>,
     recv_receiver: broadcast::Receiver<Frame>,
@@ -60,14 +63,17 @@ impl AsyncCanAdapter {
         ret
     }
 
+    /// Send a single frame. The Future will resolve once the frame has been put in the queue for the background thread. This does not mean the frame is sent out by the adapter.
     pub async fn send(&self, frame: &Frame) {
         self.send_sender.send(frame.clone()).await.unwrap();
     }
 
+    /// Receive all frames.
     pub fn recv(&self) -> impl Stream<Item = Frame> {
         self.recv_filter(|_| true)
     }
 
+    /// Receive frames that match a filter. Useful in combination with stream adapters.
     pub fn recv_filter(&self, filter: impl Fn(&Frame) -> bool) -> impl Stream<Item = Frame> {
         let mut rx = self.recv_receiver.resubscribe();
 

@@ -31,5 +31,5 @@ println!("Application Software Identification: {}", hex::encode(response));
 ```
 
 ## Suported adapters
- - SocketCAN (Linux only)
+ - SocketCAN (Linux only, supported using [socketcan-rs](https://github.com/socketcan-rs/socketcan-rs))
  - comma.ai panda (all platforms)

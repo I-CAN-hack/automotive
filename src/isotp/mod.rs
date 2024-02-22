@@ -1,3 +1,15 @@
+//! ISO Transport Protocol (ISO-TP) implementation, implements ISO 15765-2
+//! ## Example:
+//! ```
+//!    let adapter = automotive::adapter::get_adapter().unwrap();
+//!    let config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
+//!    let isotp = IsoTPAdapter::new(&adapter, config);
+//!
+//!    let response = isotp.recv(); // Create receiver before sending request
+//!    isotp.send(&[0x3e, 0x00]).await.unwrap();
+//!    let response = response.await.unwrap();
+//! ```
+
 mod constants;
 pub mod error;
 
@@ -11,14 +23,19 @@ use tracing::debug;
 
 const DEFAULT_TIMEOUT_MS: u64 = 100;
 
+/// Configuring passed to the IsoTPAdapter.
 pub struct IsoTPConfig {
-    bus: u8,
-    tx_id: Identifier,
-    rx_id: Identifier,
-
-    tx_dl: usize,
-    padding: u8,
-    timeout: std::time::Duration,
+    pub bus: u8,
+    /// Transmit ID
+    pub tx_id: Identifier,
+    /// Receive ID
+    pub rx_id: Identifier,
+    /// Transmit Data Length
+    pub tx_dl: usize,
+    /// Padding byte (0x00, or more efficient 0xAA)
+    pub padding: u8,
+    /// Max timeout for receiving a frame
+    pub timeout: std::time::Duration,
 }
 
 impl IsoTPConfig {
@@ -44,17 +61,20 @@ impl IsoTPConfig {
     }
 }
 
+/// Wraps a CAN adapter to provide a simple interface for sending and receiving ISO-TP frames. CAN-FD ISO-TP is currently not supported.
 pub struct IsoTPAdapter<'a> {
     adapter: &'a AsyncCanAdapter,
     config: IsoTPConfig,
 }
 
 impl<'a> IsoTPAdapter<'a> {
+    /// Convenience method for creating a new IsoTPAdapter from a CAN adapter and an Arbitration ID.
     pub fn from_id(adapter: &'a AsyncCanAdapter, id: u32) -> Self {
         let config = IsoTPConfig::new(0, id.into());
         Self::new(adapter, config)
     }
 
+    /// Create a new IsoTPAdapter from a CAN adapter and a configuration.
     pub fn new(adapter: &'a AsyncCanAdapter, config: IsoTPConfig) -> Self {
         Self { adapter, config }
     }
@@ -64,7 +84,7 @@ impl<'a> IsoTPAdapter<'a> {
         data.extend(std::iter::repeat(self.config.padding).take(len));
     }
 
-    pub async fn send_single_frame(&self, data: &[u8]) {
+    async fn send_single_frame(&self, data: &[u8]) {
         let mut buf = vec![FrameType::Single as u8 | data.len() as u8];
         buf.extend(data);
         self.pad(&mut buf);
@@ -75,7 +95,7 @@ impl<'a> IsoTPAdapter<'a> {
         self.adapter.send(&frame).await;
     }
 
-    pub async fn send_first_frame(&self, data: &[u8]) {
+    async fn send_first_frame(&self, data: &[u8]) {
         let b0: u8 = FrameType::First as u8 | ((data.len() >> 8) & 0xF) as u8;
         let b1: u8 = (data.len() & 0xFF) as u8;
 
@@ -88,7 +108,7 @@ impl<'a> IsoTPAdapter<'a> {
         self.adapter.send(&frame).await;
     }
 
-    pub async fn send_consecutive_frame(&self, data: &[u8], idx: usize) {
+    async fn send_consecutive_frame(&self, data: &[u8], idx: usize) {
         let idx = ((idx + 1) & 0xF) as u8;
 
         let mut buf = vec![FrameType::Consecutive as u8 | idx];
@@ -101,7 +121,7 @@ impl<'a> IsoTPAdapter<'a> {
         self.adapter.send(&frame).await;
     }
 
-    pub async fn send_multiple(&self, data: &[u8]) -> Result<(), Error> {
+    async fn send_multiple(&self, data: &[u8]) -> Result<(), Error> {
         // Stream for receiving flow control
         let stream = self
             .adapter
@@ -124,6 +144,7 @@ impl<'a> IsoTPAdapter<'a> {
         Ok(())
     }
 
+    /// Asynchronously send an ISO-TP frame of up to 4095 bytes. Returns [`Error::Timeout`] if the ECU is not responding in time with flow control messages.
     pub async fn send(&self, data: &[u8]) -> Result<(), Error> {
         debug!("TX {}", hex::encode(&data));
 
@@ -137,7 +158,6 @@ impl<'a> IsoTPAdapter<'a> {
 
         Ok(())
     }
-
     async fn recv_single_frame(
         &self,
         frame: Frame,
@@ -213,6 +233,7 @@ impl<'a> IsoTPAdapter<'a> {
         return Ok(());
     }
 
+    /// Asynchronously receive an ISO-TP frame. Returns [`Error::Timeout`] if the timeout is exceeded between individual ISO-TP frames. Note the total time to receive all data may be longer than the timeout.
     pub async fn recv(&self) -> Result<Vec<u8>, Error> {
         let stream = self
             .adapter

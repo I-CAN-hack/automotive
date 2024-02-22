@@ -1,3 +1,5 @@
+//! Error types for the ISO-TP protocol.
+
 use std::fmt;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

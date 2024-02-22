@@ -1,5 +1,7 @@
+//! Error types for the UDS Client.
 use std::fmt;
 
+/// Negative Response Codes returned by ECU as defined in ISO 14229
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[repr(u8)]
 pub enum NegativeResponseCode {

@@ -1,9 +1,14 @@
+//! Error types for the Panda
+
 use std::fmt;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Error {
+    /// CAN Packet has invalid checksum in the header
     InvalidChecksum,
+    /// Panda firmware version doesn't match the expected version
     WrongFirmwareVersion,
+    /// Unexpected hardware type
     UnknownHwType,
 }
 

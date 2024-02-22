@@ -1,3 +1,4 @@
+//! This module provides a [`CanAdapter`] implementation for the [`socketcan`] crate.
 use crate::async_can::AsyncCanAdapter;
 use crate::can::CanAdapter;
 use crate::error::Error;
@@ -6,9 +7,11 @@ use socketcan::frame::AsPtr;
 use socketcan::socket::Socket;
 use tracing::info;
 
-pub mod frame;
+mod frame;
 
-pub struct SocketCan<T: Socket + Send + Sync + 'static> {
+
+/// Aadapter for a [`socketcan::socket::Socket`].
+pub struct SocketCan<T> {
     socket: T,
 }
 
@@ -19,7 +22,7 @@ where
     <T as Socket>::FrameType: From<crate::can::Frame>,
     <T as Socket>::FrameType: AsPtr,
 {
-    pub fn new(socket: T) -> Result<AsyncCanAdapter, Error> {
+    pub fn new_async(socket: T) -> Result<AsyncCanAdapter, Error> {
         socket.set_nonblocking(true).unwrap();
         let socket = SocketCan { socket };
 
