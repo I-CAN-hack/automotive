@@ -1,6 +1,6 @@
 # The Automotive Crate
-![crates.io](https://img.shields.io/crates/v/automotive.svg)
-![docs.rs](https://img.shields.io/docsrs/automotive)
+[![crates.io](https://img.shields.io/crates/v/automotive.svg)](https://crates.io/crates/automotive)
+[![docs.rs](https://img.shields.io/docsrs/automotive)](https://docs.rs/automotive/latest/automotive/)
 
 Welcome to the `automotive` crate documentation. The purpose of this crate is to help you with all things automotive related. Most importantly, it provides a fully async CAN interface supporting multiple adapters.
 
