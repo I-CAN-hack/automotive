@@ -3,5 +3,7 @@ pub mod can;
 pub mod error;
 pub mod isotp;
 pub mod panda;
-pub mod socketcan;
 pub mod uds;
+
+#[cfg(target_os = "linux")]
+pub mod socketcan;
