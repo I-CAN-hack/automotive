@@ -13,6 +13,10 @@ pub fn get_adapter() -> Result<crate::async_can::AsyncCanAdapter, crate::error::
         if let Ok(socket) = socketcan::CanFdSocket::open("can0") {
             return Ok(crate::socketcan::SocketCan::new(socket).unwrap())
         }
+
+        if let Ok(socket) = socketcan::CanSocket::open("can0") {
+            return Ok(crate::socketcan::SocketCan::new(socket).unwrap())
+        }
     }
 
     Err(crate::error::Error::NotFound)
