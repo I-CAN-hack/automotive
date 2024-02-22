@@ -1,3 +1,4 @@
+pub mod adapter;
 pub mod async_can;
 pub mod can;
 pub mod error;

@@ -159,12 +159,6 @@ impl Panda {
     }
 }
 
-impl Drop for Panda {
-    fn drop(&mut self) {
-        info!("Closing Panda");
-    }
-}
-
 impl CanAdapter for Panda {
     fn send(&mut self, frames: &[crate::can::Frame]) -> Result<(), Error> {
         if frames.is_empty() {

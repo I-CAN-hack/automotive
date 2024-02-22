@@ -2,14 +2,11 @@ use automotive::async_can::AsyncCanAdapter;
 use automotive::can::Identifier;
 use automotive::error::Error;
 use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
-use automotive::panda::Panda;
 
-use automotive::socketcan::SocketCan;
 use automotive::uds::constants::DataIdentifier;
 use automotive::uds::UDSClient;
 
 use bstr::ByteSlice;
-use socketcan::Socket;
 use strum::IntoEnumIterator;
 
 static BUS: u8 = 0;
@@ -46,10 +43,7 @@ async fn get_version(adapter: &AsyncCanAdapter, identifier: u32) -> Result<(), E
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    // let adapter = Panda::new().unwrap();
-
-    let socket = socketcan::CanFdSocket::open("can0").unwrap();
-    let adapter = SocketCan::new(socket).unwrap();
+    let adapter = automotive::adapter::get_adapter().unwrap();
 
     let standard_ids = 0x700..=0x7ff;
     let extended_ids = (0x00..=0xff).map(|i| 0x18da0000 + (i << 8) + 0xf1);

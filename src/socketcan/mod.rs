@@ -4,6 +4,7 @@ use crate::error::Error;
 
 use socketcan::frame::AsPtr;
 use socketcan::socket::Socket;
+use tracing::info;
 
 pub mod frame;
 
@@ -21,6 +22,8 @@ where
     pub fn new(socket: T) -> Result<AsyncCanAdapter, Error> {
         socket.set_nonblocking(true).unwrap();
         let socket = SocketCan { socket };
+
+        info!("Connected to SocketCan");
         Ok(AsyncCanAdapter::new(socket))
     }
 }
