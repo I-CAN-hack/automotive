@@ -32,10 +32,6 @@ impl IsoTPConfig {
                 Identifier::Extended(id)
             }
         };
-        debug!(
-            "ISO-TP Config: bus: {}, tx_id: {:?}, rx_id: {:?}",
-            bus, tx_id, rx_id
-        );
 
         Self {
             bus,
@@ -54,6 +50,11 @@ pub struct IsoTPAdapter<'a> {
 }
 
 impl<'a> IsoTPAdapter<'a> {
+    pub fn from_id(adapter: &'a AsyncCanAdapter, id: u32) -> Self {
+        let config = IsoTPConfig::new(0, id.into());
+        Self::new(adapter, config)
+    }
+
     pub fn new(adapter: &'a AsyncCanAdapter, config: IsoTPConfig) -> Self {
         Self { adapter, config }
     }
