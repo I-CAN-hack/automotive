@@ -1,4 +1,3 @@
-use automotive::panda::Panda;
 use futures_util::stream::StreamExt;
 use tracing_subscriber;
 
@@ -6,7 +5,7 @@ use tracing_subscriber;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let adapter = Panda::new().unwrap();
+    let adapter = automotive::adapter::get_adapter().unwrap();
     let mut stream = adapter.recv();
 
     while let Some(frame) = stream.next().await {
