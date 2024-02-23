@@ -90,7 +90,7 @@ impl<'a> UDSClient<'a> {
             }
 
             let start: usize = if sub_function.is_some() { 2 } else { 1 };
-            return Ok(response[start..].to_vec())
+            return Ok(response[start..].to_vec());
         }
     }
 
