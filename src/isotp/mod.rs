@@ -1,13 +1,15 @@
 //! ISO Transport Protocol (ISO-TP) implementation, implements ISO 15765-2
 //! ## Example:
-//! ```
+//! ```rust
+//! async fn isotp_example() {
 //!    let adapter = automotive::adapter::get_adapter().unwrap();
-//!    let config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
-//!    let isotp = IsoTPAdapter::new(&adapter, config);
+//!    let config = automotive::isotp::IsoTPConfig::new(0, automotive::can::Identifier::Standard(0x7a1));
+//!    let isotp = automotive::isotp::IsoTPAdapter::new(&adapter, config);
 //!
 //!    let response = isotp.recv(); // Create receiver before sending request
 //!    isotp.send(&[0x3e, 0x00]).await.unwrap();
 //!    let response = response.await.unwrap();
+//! }
 //! ```
 
 mod constants;

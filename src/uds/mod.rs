@@ -1,15 +1,16 @@
 //! Unified Diagnostic Services (UDS) Client, implements ISO 14229
 //! ## Example
-//! ```
-//! let adapter = automotive::adapter::get_adapter().unwrap();
-//! let isotp = automotive::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
-//! let uds = automotive::uds::UDSClient::new(&isotp);
+//! ```rust
+//! async fn uds_example() {
+//!     let adapter = automotive::adapter::get_adapter().unwrap();
+//!     let isotp = automotive::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
+//!     let uds = automotive::uds::UDSClient::new(&isotp);
 //!
-//! uds.tester_present().await.unwrap();
-//! let response = uds.read_data_by_identifier(DataIdentifier::ApplicationSoftwareIdentification as u16).await.unwrap();
+//!     uds.tester_present().await.unwrap();
+//!     let response = uds.read_data_by_identifier(automotive::uds::constants::DataIdentifier::ApplicationSoftwareIdentification as u16).await.unwrap();
 //!
-//! println!("Application Software Identification: {}", hex::encode(response));
-//! ```
+//!     println!("Application Software Identification: {}", hex::encode(response));
+//! }
 
 pub mod constants;
 pub mod error;
