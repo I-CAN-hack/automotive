@@ -14,7 +14,6 @@ const VENDOR_ID: u16 = 0xbbaa;
 const PRODUCT_ID: u16 = 0xddcc;
 const EXPECTED_CAN_PACKET_VERSION: u8 = 4;
 
-
 /// Blocking implementation of the panda CAN adapter
 pub struct Panda {
     handle: rusb::DeviceHandle<rusb::GlobalContext>,

@@ -13,6 +13,7 @@
 
 pub mod constants;
 pub mod error;
+pub mod types;
 
 use crate::error::Error;
 use crate::isotp::IsoTPAdapter;
@@ -87,9 +88,41 @@ impl<'a> UDSClient<'a> {
         Ok(response[start..].to_vec())
     }
 
+    /// 0x10 - Diagnostic Session Control. ECU may optionally return 4 bytes of sessionParameterRecord with some timing information.
+    pub async fn diagnostic_session_control(
+        &self,
+        session_type: u8,
+    ) -> Result<Option<types::SessionParameterRecord>, Error> {
+        let result = self
+            .request(
+                ServiceIdentifier::DiagnosticSessionControl,
+                Some(session_type),
+                None,
+            )
+            .await?;
+
+        let result = if result.len() == 4 {
+            let p2_server_max = u16::from_be_bytes([result[0], result[1]]);
+            let p2_server_max = std::time::Duration::from_millis(p2_server_max as u64);
+            let p2_star_server_max = u16::from_be_bytes([result[0], result[1]]);
+            let p2_star_server_max =
+                std::time::Duration::from_millis(p2_star_server_max as u64 * 10);
+
+            Some(types::SessionParameterRecord {
+                p2_server_max,
+                p2_star_server_max,
+            })
+        } else {
+            None
+        };
+
+        Ok(result)
+    }
+
     /// 0x3E - Tester Present
     pub async fn tester_present(&self) -> Result<(), Error> {
-        self.request(ServiceIdentifier::TesterPresent, Some(0), None).await?;
+        self.request(ServiceIdentifier::TesterPresent, Some(0), None)
+            .await?;
         Ok(())
     }
 

@@ -46,7 +46,6 @@ pub enum ServiceIdentifier {
     NegativeResponse = 0x7f,
 }
 
-
 /// Standard Data Identifiers (DIDs) as defined in ISO 14229
 #[derive(Debug, PartialEq, Copy, Clone, EnumIter)]
 #[repr(u16)]
@@ -82,4 +81,14 @@ pub enum DataIdentifier {
     EcuInstallationDate = 0xf19d,
     OdxFile = 0xf19e,
     Entity = 0xf19f,
+}
+
+/// Diagnostic Session Type Sub-Function ID as defined in ISO 14229
+#[derive(Debug, PartialEq, Copy, Clone)]
+#[repr(u8)]
+pub enum SessionType {
+    Default = 0x01,
+    Programming = 0x02,
+    ExtendedDiagnostic = 0x03,
+    SafetySystemDiagnostic = 0x04,
 }

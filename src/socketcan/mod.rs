@@ -9,7 +9,6 @@ use tracing::info;
 
 mod frame;
 
-
 /// Aadapter for a [`socketcan::socket::Socket`].
 pub struct SocketCan<T> {
     socket: T,

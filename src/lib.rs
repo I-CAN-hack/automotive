@@ -35,7 +35,6 @@
 //!  - comma.ai panda (all platforms)
 //!
 
-
 pub mod adapter;
 pub mod async_can;
 pub mod can;

@@ -1,7 +1,6 @@
 //! Contains the main error type for the library.
 use std::fmt;
 
-
 /// The main error type for the library. Each module has it's own error type that is contained by this error.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Error {
