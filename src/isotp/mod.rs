@@ -20,6 +20,9 @@ use crate::can::Frame;
 use crate::can::Identifier;
 use crate::error::Error;
 use crate::isotp::constants::FrameType;
+
+use async_stream::stream;
+use futures_core::stream::Stream;
 use tokio_stream::StreamExt;
 use tracing::debug;
 
@@ -271,5 +274,46 @@ impl<'a> IsoTPAdapter<'a> {
         }
         debug!("RX {}", hex::encode(&buf));
         Ok(buf)
+    }
+
+    /// Stream of ISO-TP frames. Can be used if multiple responses are expected from a single request. Returns [`Error::Timeout`] if the timeout is exceeded between individual ISO-TP frames. Note the total time to receive all data may be longer than the timeout.
+    pub fn stream(&self) -> impl Stream<Item = Result<Vec<u8>, Error>> + '_ {
+        Box::pin(stream! {
+            let stream = self
+                .adapter
+                .recv_filter(|frame| frame.id == self.config.rx_id && !frame.returned)
+                .timeout(self.config.timeout);
+            tokio::pin!(stream);
+
+            loop {
+                let mut buf = Vec::new();
+                let mut len: usize = 0;
+                let mut idx: u8 = 1;
+
+                while let Some(frame) = stream.next().await {
+                    let frame = frame?;
+                    match (frame.data[0] & 0xF0).into() {
+                        FrameType::Single => self.recv_single_frame(frame, &mut buf, &mut len).await?,
+                        FrameType::First => self.recv_first_frame(frame, &mut buf, &mut len).await?,
+                        FrameType::Consecutive => {
+                            self.recv_consecutive_frame(frame, &mut buf, &mut len, &mut idx)
+                                .await?
+                        }
+                        _ => {
+                            yield Err(Error::IsoTPError(
+                                crate::isotp::error::Error::UnknownFrameType,
+                            ));
+                        }
+                    };
+                    debug!("{} {}", len, buf.len());
+
+                    if buf.len() >= len {
+                        break;
+                    }
+                }
+                debug!("RX {}", hex::encode(&buf));
+                yield Ok(buf)
+            }
+        })
     }
 }
