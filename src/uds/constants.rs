@@ -92,3 +92,11 @@ pub enum SessionType {
     ExtendedDiagnostic = 0x03,
     SafetySystemDiagnostic = 0x04,
 }
+
+/// Security Access Type Sub-Function ID as defined in ISO 14229
+#[derive(Debug, PartialEq, Copy, Clone)]
+#[repr(u8)]
+pub enum SecurityAccessType {
+    RequestSeed = 0x01,
+    SendKey = 0x02,
+}

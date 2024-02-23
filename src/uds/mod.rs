@@ -154,4 +154,22 @@ impl<'a> UDSClient<'a> {
 
         Ok(resp[2..].to_vec())
     }
+
+    /// 0x27 - Security Access. Odd `access_type` values are used to request a seed, even values to send a key. The `data` parameter is optional when requesting a seed. You can use the [`constants::SecurityAccessType`] enum for the most common security level.
+    pub async fn security_access(
+        &self,
+        access_type: u8,
+        data: Option<&[u8]>,
+    ) -> Result<Vec<u8>, Error> {
+        let send_key = access_type % 2 == 0;
+        if send_key && data.is_none() {
+            panic!("Missing data parameter when sending key");
+        }
+
+        let resp = self
+            .request(ServiceIdentifier::SecurityAccess, Some(access_type), data)
+            .await?;
+
+        Ok(resp)
+    }
 }
