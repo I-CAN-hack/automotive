@@ -201,4 +201,90 @@ impl<'a> UDSClient<'a> {
 
         Ok(())
     }
+
+    async fn request_download_upload(
+        &self,
+        sid: ServiceIdentifier,
+        compression_method: u8,
+        encryption_method: u8,
+        memory_address: &[u8],
+        memory_size: &[u8],
+    ) -> Result<usize, Error> {
+        assert!(
+            sid == ServiceIdentifier::RequestDownload || sid == ServiceIdentifier::RequestUpload
+        );
+        assert!(compression_method <= 0xF);
+        assert!(encryption_method <= 0xF);
+        assert!(memory_address.len() > 0 && memory_address.len() <= 0xF);
+        assert!(memory_size.len() > 0 && memory_size.len() <= 0xF);
+
+        let data_format = (compression_method << 4) | encryption_method;
+        let address_and_length_format =
+            ((memory_size.len() as u8) << 4) | (memory_address.len() as u8);
+
+        let mut data: Vec<u8> = vec![data_format, address_and_length_format];
+        data.extend(memory_address);
+        data.extend(memory_size);
+
+        println!("TX: {}", hex::encode(&data));
+        let resp = self.request(sid, None, Some(&data)).await?;
+        println!("RX: {}", hex::encode(&resp));
+
+        // Ensure the response contains at least a length format
+        if resp.len() == 0 {
+            return Err(Error::UDSError(
+                crate::uds::error::Error::InvalidResponseLength,
+            ));
+        }
+
+        let num_length_bytes = (resp[0] >> 4) as usize;
+        if num_length_bytes == 0 || num_length_bytes > 8 || resp.len() != num_length_bytes + 1 {
+            return Err(Error::UDSError(
+                crate::uds::error::Error::InvalidResponseLength,
+            ));
+        }
+
+        // Convert the length bytes to a usize
+        let length = resp[1..num_length_bytes + 1]
+            .iter()
+            .fold(0, |acc, &x| (acc << 8) | x as usize);
+
+        Ok(length)
+    }
+
+    /// 0x34 - Request Download. Used to initiate a transfer from the client to the ECU. Returns the maximum number of bytes to include in each TransferData request.
+    pub async fn request_download(
+        &self,
+        compression_method: u8,
+        encryption_method: u8,
+        memory_address: &[u8],
+        memory_size: &[u8],
+    ) -> Result<usize, Error> {
+        self.request_download_upload(
+            ServiceIdentifier::RequestDownload,
+            compression_method,
+            encryption_method,
+            memory_address,
+            memory_size,
+        )
+        .await
+    }
+
+    /// 0x35 - Request Upload. Used to initiate a transfer from the client to the ECU. Returns the maximum number of bytes to include in each TransferData request.
+    pub async fn request_upload(
+        &self,
+        compression_method: u8,
+        encryption_method: u8,
+        memory_address: &[u8],
+        memory_size: &[u8],
+    ) -> Result<usize, Error> {
+        self.request_download_upload(
+            ServiceIdentifier::RequestUpload,
+            compression_method,
+            encryption_method,
+            memory_address,
+            memory_size,
+        )
+        .await
+    }
 }
