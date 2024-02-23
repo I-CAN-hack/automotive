@@ -87,11 +87,10 @@ impl<'a> UDSClient<'a> {
         Ok(response[start..].to_vec())
     }
 
-    /// 0x3E - Tester Present. The ISO Specification does not list any data returned by the ECU, but this is sometimes done in practice.
-    pub async fn tester_present(&self) -> Result<Vec<u8>, Error> {
-        let resp = self.request(ServiceIdentifier::TesterPresent, Some(0), None)
-            .await?;
-        Ok(resp)
+    /// 0x3E - Tester Present
+    pub async fn tester_present(&self) -> Result<(), Error> {
+        self.request(ServiceIdentifier::TesterPresent, Some(0), None).await?;
+        Ok(())
     }
 
     /// 0x22 - Read Data By Identifier. Specify a 16 bit data identifier, or use a constant from [`constants::DataIdentifier`] for standardized identifiers. Reading multiple identifiers is not supported.
