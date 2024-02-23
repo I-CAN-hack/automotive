@@ -125,6 +125,24 @@ impl<'a> UDSClient<'a> {
         Ok(result)
     }
 
+    /// 0x27 - Security Access. Odd `access_type` values are used to request a seed, even values to send a key. The `data` parameter is optional when requesting a seed. You can use the [`constants::SecurityAccessType`] enum for the most common security level.
+    pub async fn security_access(
+        &self,
+        access_type: u8,
+        data: Option<&[u8]>,
+    ) -> Result<Vec<u8>, Error> {
+        let send_key = access_type % 2 == 0;
+        if send_key && data.is_none() {
+            panic!("Missing data parameter when sending key");
+        }
+
+        let resp = self
+            .request(ServiceIdentifier::SecurityAccess, Some(access_type), data)
+            .await?;
+
+        Ok(resp)
+    }
+
     /// 0x3E - Tester Present
     pub async fn tester_present(&self) -> Result<(), Error> {
         self.request(ServiceIdentifier::TesterPresent, Some(0), None)
@@ -132,7 +150,7 @@ impl<'a> UDSClient<'a> {
         Ok(())
     }
 
-    /// 0x22 - Read Data By Identifier. Specify a 16 bit data identifier, or use a constant from [`constants::DataIdentifier`] for standardized identifiers. Reading multiple identifiers is not supported.
+    /// 0x22 - Read Data By Identifier. Specify a 16 bit data identifier, or use a constant from [`constants::DataIdentifier`] for standardized identifiers. Reading multiple identifiers simultaneously is possible on some ECUs, but not supported by this function.
     pub async fn read_data_by_identifier(&self, data_identifier: u16) -> Result<Vec<u8>, Error> {
         let did = data_identifier.to_be_bytes();
         let resp = self
@@ -155,21 +173,32 @@ impl<'a> UDSClient<'a> {
         Ok(resp[2..].to_vec())
     }
 
-    /// 0x27 - Security Access. Odd `access_type` values are used to request a seed, even values to send a key. The `data` parameter is optional when requesting a seed. You can use the [`constants::SecurityAccessType`] enum for the most common security level.
-    pub async fn security_access(
+    /// 0x2E - Write Data By Identifier. Specify a 16 bit data identifier, or use a constant from [`constants::DataIdentifier`] for standardized identifiers.
+    pub async fn write_data_by_identifier(
         &self,
-        access_type: u8,
-        data: Option<&[u8]>,
-    ) -> Result<Vec<u8>, Error> {
-        let send_key = access_type % 2 == 0;
-        if send_key && data.is_none() {
-            panic!("Missing data parameter when sending key");
-        }
+        data_identifier: u16,
+        data_record: &[u8],
+    ) -> Result<(), Error> {
+        let mut data: Vec<u8> = data_identifier.to_be_bytes().to_vec();
+        data.extend(data_record);
 
         let resp = self
-            .request(ServiceIdentifier::SecurityAccess, Some(access_type), data)
+            .request(ServiceIdentifier::WriteDataByIdentifier, None, Some(&data))
             .await?;
 
-        Ok(resp)
+        if resp.len() < 2 {
+            return Err(Error::UDSError(
+                crate::uds::error::Error::InvalidResponseLength,
+            ));
+        }
+
+        let did = u16::from_be_bytes([resp[0], resp[1]]);
+        if did != data_identifier {
+            return Err(Error::UDSError(
+                crate::uds::error::Error::InvalidDataIdentifier(did),
+            ));
+        }
+
+        Ok(())
     }
 }
