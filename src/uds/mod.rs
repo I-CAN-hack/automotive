@@ -21,7 +21,8 @@ use crate::isotp::IsoTPAdapter;
 use crate::uds::constants::ServiceIdentifier;
 use crate::uds::error::NegativeResponseCode;
 
-use tracing::debug;
+use tokio_stream::StreamExt;
+use tracing::info;
 
 /// UDS Client. Wraps an IsoTPAdapter to provide a simple interface for making UDS calls.
 pub struct UDSClient<'a> {
@@ -40,7 +41,6 @@ impl<'a> UDSClient<'a> {
         sub_function: Option<u8>,
         data: Option<&[u8]>,
     ) -> Result<Vec<u8>, Error> {
-        let response = self.adapter.recv();
         let mut request: Vec<u8> = vec![sid as u8];
 
         if let Some(sub_function) = sub_function {
@@ -51,42 +51,47 @@ impl<'a> UDSClient<'a> {
             request.extend(data);
         }
 
-        debug!("TX {}", hex::encode(&request));
+        let mut stream = self.adapter.stream();
+
         self.adapter.send(&request).await?;
 
-        let response = response.await?;
-        debug!("RX {}", hex::encode(&request));
+        loop {
+            let response = stream.next().await.unwrap()?;
 
-        // Check for errors
-        let response_sid = response[0];
-        if response_sid == ServiceIdentifier::NegativeResponse as u8 {
-            let code: NegativeResponseCode = response[2].into();
+            // Check for errors
+            let response_sid = response[0];
+            if response_sid == ServiceIdentifier::NegativeResponse as u8 {
+                let code: NegativeResponseCode = response[2].into();
 
-            // TODO: handle response pending
+                if code == NegativeResponseCode::RequestCorrectlyReceivedResponsePending {
+                    info!("Received Response Pending");
+                    continue;
+                }
 
-            return Err(Error::UDSError(crate::uds::error::Error::NegativeResponse(
-                code,
-            )));
-        }
-
-        // Check service id
-        if response_sid != (sid as u8) | 0x40 {
-            return Err(Error::UDSError(crate::uds::error::Error::InvalidServiceId(
-                response_sid,
-            )));
-        }
-
-        // Check sub function
-        if let Some(sub_function) = sub_function {
-            if response[1] != sub_function {
-                return Err(Error::UDSError(
-                    crate::uds::error::Error::InvalidSubFunction(response[1]),
-                ));
+                return Err(Error::UDSError(crate::uds::error::Error::NegativeResponse(
+                    code,
+                )));
             }
-        }
 
-        let start: usize = if sub_function.is_some() { 2 } else { 1 };
-        Ok(response[start..].to_vec())
+            // Check service id
+            if response_sid != (sid as u8) | 0x40 {
+                return Err(Error::UDSError(crate::uds::error::Error::InvalidServiceId(
+                    response_sid,
+                )));
+            }
+
+            // Check sub function
+            if let Some(sub_function) = sub_function {
+                if response[1] != sub_function {
+                    return Err(Error::UDSError(
+                        crate::uds::error::Error::InvalidSubFunction(response[1]),
+                    ));
+                }
+            }
+
+            let start: usize = if sub_function.is_some() { 2 } else { 1 };
+            return Ok(response[start..].to_vec());
+        }
     }
 
     /// 0x10 - Diagnostic Session Control. ECU may optionally return 4 bytes of sessionParameterRecord with some timing information.
