@@ -226,9 +226,7 @@ impl<'a> UDSClient<'a> {
         data.extend(memory_address);
         data.extend(memory_size);
 
-        println!("TX: {}", hex::encode(&data));
         let resp = self.request(sid, None, Some(&data)).await?;
-        println!("RX: {}", hex::encode(&resp));
 
         // Ensure the response contains at least a length format
         if resp.len() == 0 {
