@@ -125,6 +125,21 @@ impl<'a> UDSClient<'a> {
         Ok(result)
     }
 
+    /// 0x11 - ECU Reset. The `reset_type` parameter can be used to specify the type of reset to perform. Use the [`constants::ResetType`] enum for  the reset types defined in the standard. This function returns the power down time when the reset type is [`constants::ResetType::EnableRapidPowerShutDown`].
+    pub async fn ecu_reset(&self, reset_type: u8) -> Result<Option<u8>, Error> {
+        let result = self
+            .request(ServiceIdentifier::EcuReset, Some(reset_type), None)
+            .await?;
+
+        let result = if result.len() == 1 {
+            Some(result[0])
+        } else {
+            None
+        };
+
+        Ok(result)
+    }
+
     /// 0x27 - Security Access. Odd `access_type` values are used to request a seed, even values to send a key. The `data` parameter is optional when requesting a seed. You can use the [`constants::SecurityAccessType`] enum for the most common security level.
     pub async fn security_access(
         &self,

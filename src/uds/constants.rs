@@ -93,6 +93,20 @@ pub enum SessionType {
     SafetySystemDiagnostic = 0x04,
 }
 
+/// ECU Reset Sub-Function ID as defined in ISO 14229
+#[derive(Debug, PartialEq, Copy, Clone)]
+#[repr(u8)]
+pub enum ResetType {
+    /// Simulates power-on/start-up sequence after a power loss
+    HardReset = 0x01,
+    /// Simulates the driver turning the key off and then on again
+    KeyOffOnReset = 0x02,
+    /// Restart the application software
+    SoftRest = 0x03,
+    /// Applies to ECUs that are permanently powered. Forces the ECU to enter sleep mode.
+    EnableRapidPowerShutDown = 0x04,
+}
+
 /// Security Access Type Sub-Function ID as defined in ISO 14229
 #[derive(Debug, PartialEq, Copy, Clone)]
 #[repr(u8)]
