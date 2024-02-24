@@ -114,3 +114,12 @@ pub enum SecurityAccessType {
     RequestSeed = 0x01,
     SendKey = 0x02,
 }
+
+/// ROutine Control Sub-Function ID as defined in ISO 14229
+#[derive(Debug, PartialEq, Copy, Clone)]
+#[repr(u8)]
+pub enum RoutineControlType {
+    Start = 0x01,
+    Stop = 0x02,
+    RequestResults = 0x03,
+}

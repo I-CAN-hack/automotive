@@ -66,6 +66,7 @@ pub enum Error {
     InvalidServiceId(u8),
     InvalidSubFunction(u8),
     InvalidDataIdentifier(u16),
+    InvalidRoutineIdentifier(u16),
     InvalidBlockSequenceCounter(u8),
     InvalidResponseLength,
     NegativeResponse(NegativeResponseCode),
@@ -80,6 +81,9 @@ impl fmt::Display for Error {
             }
             Error::InvalidDataIdentifier(id) => {
                 write!(fmt, "Invalid Response Data Identifer: {}", id)
+            }
+            Error::InvalidRoutineIdentifier(id) => {
+                write!(fmt, "Invalid Response Routine Identifer: {}", id)
             }
             Error::InvalidBlockSequenceCounter(id) => {
                 write!(fmt, "Invalid Block Sequence Counter: {}", id)

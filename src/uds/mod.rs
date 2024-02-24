@@ -140,7 +140,7 @@ impl<'a> UDSClient<'a> {
         Ok(result)
     }
 
-    /// 0x27 - Security Access. Odd `access_type` values are used to request a seed, even values to send a key. The `data` parameter is optional when requesting a seed. You can use the [`constants::SecurityAccessType`] enum for the most common security level.
+    /// 0x27 - Security Access. Odd `access_type` values are used to request a seed, even values to send a key. The `data` parameter is optional when requesting a seed. You can use the [`constants::SecurityAccessType`] enum for the default security level.
     pub async fn security_access(
         &self,
         access_type: u8,
@@ -274,6 +274,47 @@ impl<'a> UDSClient<'a> {
         )
         .await?;
         Ok(())
+    }
+
+    /// 0x31 - Routine Control. The `routine_control_type` selects the operation such as Start and Stop, see [`constants::RoutineControlType`]. The `routine_identifier` is a 16-bit identifier for the routine. The `data` parameter is optional and can be used when starting or stopping a routine. The ECU can optionally return data for all routine operations.
+    pub async fn routine_control(
+        &self,
+        routine_control_type: constants::RoutineControlType,
+        routine_identifier: u16,
+        data: Option<&[u8]>,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        let mut buf: Vec<u8> = vec![];
+        buf.extend(routine_identifier.to_be_bytes());
+        if let Some(data) = data {
+            buf.extend(data);
+        }
+
+        let resp = self
+            .request(
+                ServiceIdentifier::RoutineControl,
+                Some(routine_control_type as u8),
+                Some(&buf),
+            )
+            .await?;
+
+        if resp.len() < 2 {
+            return Err(Error::UDSError(
+                crate::uds::error::Error::InvalidResponseLength,
+            ));
+        }
+
+        let id = u16::from_be_bytes([resp[0], resp[1]]);
+        if id != routine_identifier {
+            return Err(Error::UDSError(
+                crate::uds::error::Error::InvalidDataIdentifier(id),
+            ));
+        }
+
+        Ok(if resp.len() > 2 {
+            Some(resp[2..].to_vec())
+        } else {
+            None
+        })
     }
 
     async fn request_download_upload(
