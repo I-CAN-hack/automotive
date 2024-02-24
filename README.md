@@ -34,6 +34,7 @@ println!("Application Software Identification: {}", hex::encode(response));
 ```
 
 ## Suported adapters
+The following adapters are supported. Hardware implementations can be blocking, as the [AsyncCanAdapter](https://docs.rs/automotive/latest/automotive/async_can/struct.AsyncCanAdapter.html) takes care of presenting an async interface to the user.
  - SocketCAN (Linux only, supported using [socketcan-rs](https://github.com/socketcan-rs/socketcan-rs))
  - comma.ai panda (all platforms)
 
