@@ -259,7 +259,7 @@ impl<'a> UDSClient<'a> {
         Ok(())
     }
 
-    // 0x3D - Write Memory By Address. The `memory_address` parameter should be the address to write to, and the `memory_size` parameter should be the number of bytes to write. The `data` parameter should be the data to write.
+    /// 0x3D - Write Memory By Address. The `memory_address` parameter should be the address to write to, and the `memory_size` parameter should be the number of bytes to write. The `data` parameter should be the data to write.
     pub async fn write_memory_by_address(
         &self,
         memory_address: &[u8],
