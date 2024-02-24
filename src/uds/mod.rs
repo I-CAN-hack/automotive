@@ -300,4 +300,40 @@ impl<'a> UDSClient<'a> {
         )
         .await
     }
+
+    /// 0x36 - Transfer Data. Used to transfer data to or from the ECU. The `data` parameter should be a slice of the data to transfer. The `transfer_request` parameter should be the sequence number of the transfer request, starting at 1. The `data` parameter should be `None` when an upload is requested, and the function will return the data received from the ECU. The `data` parameter should be `Some` when a download is requested, and the function will return `None`.
+    pub async fn transfer_data(
+        &self,
+        block_sequence_counter: u8,
+        data: Option<&[u8]>,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        let mut buf: Vec<u8> = vec![block_sequence_counter];
+        if let Some(data) = data {
+            buf.extend(data);
+        }
+
+        let resp = self
+            .request(ServiceIdentifier::TransferData, None, Some(&buf))
+            .await?;
+
+        // Ensure the response contains at least the block sequence counter
+        if resp.len() == 0 {
+            return Err(Error::UDSError(
+                crate::uds::error::Error::InvalidResponseLength,
+            ));
+        }
+
+        // Check block sequence counter
+        if resp[0] != block_sequence_counter {
+            return Err(Error::UDSError(
+                crate::uds::error::Error::InvalidBlockSequenceCounter(resp[0]),
+            ));
+        }
+
+        Ok(if resp.len() > 1 {
+            Some(resp[1..].to_vec())
+        } else {
+            None
+        })
+    }
 }
