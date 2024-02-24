@@ -20,7 +20,7 @@ while let Some(frame) = stream.next().await {
 
 ## UDS Example
 
-The automotive crate also supplies interfaces for various diagnostic protocols such as UDS. The adapter is first wrapped to support the ISO Transport Layer, then a UDS Client is created. All methods are fully async, making it easy to communicate with multiple ECUs in parallel.
+The automotive crate also supplies interfaces for various diagnostic protocols such as UDS. The adapter is first wrapped to support the ISO Transport Layer, then a UDS Client is created. All methods are fully async, making it easy to communicate with multiple ECUs in parallel. See [https://github.com/I-CAN-hack/automotive/issues/21](https://github.com/I-CAN-hack/automotive/issues/21) for progress on the supported SIDs.
 
 ```rust
 let adapter = automotive::adapter::get_adapter().unwrap();
