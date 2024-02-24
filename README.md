@@ -36,3 +36,13 @@ println!("Application Software Identification: {}", hex::encode(response));
 ## Suported adapters
  - SocketCAN (Linux only, supported using [socketcan-rs](https://github.com/socketcan-rs/socketcan-rs))
  - comma.ai panda (all platforms)
+
+
+ ## Roadmap
+ Features I'd like to add in the future. Also check the [issues page](https://github.com/I-CAN-hack/automotive/issues?q=is%3Aopen+is%3Aissue+label%3Aenhancement).
+ - CCP/XCP Client
+ - Update file extraction (e.g. .frf and .odx)
+ - VIN Decoding
+ - J2534 Support on Windows
+ - More raw device support, such as ValueCAN and P-CAN by reverse engineering the USB protocol
+ - WebUSB support
