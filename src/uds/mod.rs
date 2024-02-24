@@ -336,4 +336,13 @@ impl<'a> UDSClient<'a> {
             None
         })
     }
+
+    /// 0x37 - Request Transfer Exit. Used to terminate an upload or download. Has optional `data` parameter for additional information, and can optionally return additional information from the ECU. For example, this can be used to contain a checksum.
+    pub async fn request_transfer_exit(&self, data: Option<&[u8]>) -> Result<Option<Vec<u8>>, Error> {
+        let resp = self
+            .request(ServiceIdentifier::RequestTransferExit, None, data)
+            .await?;
+
+        Ok(if resp.len() > 0 { Some(resp) } else { None })
+    }
 }
