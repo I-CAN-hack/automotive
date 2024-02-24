@@ -165,6 +165,33 @@ impl<'a> UDSClient<'a> {
         Ok(())
     }
 
+    async fn read_write_memory_by_adddress(
+        &self,
+        sid: ServiceIdentifier,
+        memory_address: &[u8],
+        memory_size: &[u8],
+        data: Option<&[u8]>,
+    ) -> Result<Vec<u8>, Error> {
+        assert!(
+            sid == ServiceIdentifier::ReadMemoryByAddress
+                || sid == ServiceIdentifier::WriteMemoryByAddress
+        );
+        assert!(memory_address.len() > 0 && memory_address.len() <= 0xF);
+        assert!(memory_size.len() > 0 && memory_size.len() <= 0xF);
+
+        let address_and_length_format =
+            ((memory_size.len() as u8) << 4) | (memory_address.len() as u8);
+
+        let mut buf: Vec<u8> = vec![address_and_length_format];
+        buf.extend(memory_address);
+        buf.extend(memory_size);
+        if let Some(data) = data {
+            buf.extend(data);
+        }
+
+        self.request(sid, None, Some(&buf)).await
+    }
+
     /// 0x22 - Read Data By Identifier. Specify a 16 bit data identifier, or use a constant from [`constants::DataIdentifier`] for standardized identifiers. Reading multiple identifiers simultaneously is possible on some ECUs, but not supported by this function.
     pub async fn read_data_by_identifier(&self, data_identifier: u16) -> Result<Vec<u8>, Error> {
         let did = data_identifier.to_be_bytes();
@@ -186,6 +213,21 @@ impl<'a> UDSClient<'a> {
         }
 
         Ok(resp[2..].to_vec())
+    }
+
+    /// 0x23 - Read Memory By Address. The `memory_address` parameter should be the address to read from, and the `memory_size` parameter should be the number of bytes to read.
+    pub async fn read_memory_by_address(
+        &self,
+        memory_address: &[u8],
+        memory_size: &[u8],
+    ) -> Result<Vec<u8>, Error> {
+        self.read_write_memory_by_adddress(
+            ServiceIdentifier::ReadMemoryByAddress,
+            memory_address,
+            memory_size,
+            None,
+        )
+        .await
     }
 
     /// 0x2E - Write Data By Identifier. Specify a 16 bit data identifier, or use a constant from [`constants::DataIdentifier`] for standardized identifiers.
@@ -214,6 +256,23 @@ impl<'a> UDSClient<'a> {
             ));
         }
 
+        Ok(())
+    }
+
+    // 0x3D - Write Memory By Address. The `memory_address` parameter should be the address to write to, and the `memory_size` parameter should be the number of bytes to write. The `data` parameter should be the data to write.
+    pub async fn write_memory_by_address(
+        &self,
+        memory_address: &[u8],
+        memory_size: &[u8],
+        data: &[u8],
+    ) -> Result<(), Error> {
+        self.read_write_memory_by_adddress(
+            ServiceIdentifier::WriteMemoryByAddress,
+            memory_address,
+            memory_size,
+            Some(data),
+        )
+        .await?;
         Ok(())
     }
 
@@ -338,7 +397,10 @@ impl<'a> UDSClient<'a> {
     }
 
     /// 0x37 - Request Transfer Exit. Used to terminate an upload or download. Has optional `data` parameter for additional information, and can optionally return additional information from the ECU. For example, this can be used to contain a checksum.
-    pub async fn request_transfer_exit(&self, data: Option<&[u8]>) -> Result<Option<Vec<u8>>, Error> {
+    pub async fn request_transfer_exit(
+        &self,
+        data: Option<&[u8]>,
+    ) -> Result<Option<Vec<u8>>, Error> {
         let resp = self
             .request(ServiceIdentifier::RequestTransferExit, None, data)
             .await?;
