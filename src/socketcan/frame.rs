@@ -1,14 +1,5 @@
 use socketcan::EmbeddedFrame;
 
-impl From<socketcan::frame::CanFrame> for crate::can::Frame {
-    fn from(frame: socketcan::frame::CanFrame) -> Self {
-        match frame {
-            socketcan::frame::CanFrame::Data(data) => data.into(),
-            _ => unimplemented!(),
-        }
-    }
-}
-
 impl From<socketcan::frame::CanAnyFrame> for crate::can::Frame {
     fn from(frame: socketcan::frame::CanAnyFrame) -> Self {
         match frame {
@@ -45,14 +36,6 @@ impl From<crate::can::Frame> for socketcan::frame::CanAnyFrame {
     fn from(frame: crate::can::Frame) -> Self {
         // TODO: Check if source is FD frame
         socketcan::frame::CanAnyFrame::Normal(
-            socketcan::frame::CanDataFrame::new(frame.id, &frame.data).unwrap(),
-        )
-    }
-}
-
-impl From<crate::can::Frame> for socketcan::frame::CanFrame {
-    fn from(frame: crate::can::Frame) -> Self {
-        socketcan::frame::CanFrame::Data(
             socketcan::frame::CanDataFrame::new(frame.id, &frame.data).unwrap(),
         )
     }
