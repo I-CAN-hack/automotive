@@ -10,7 +10,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let uds = automotive::uds::UDSClient::new(&isotp);
 
     uds.tester_present().await?;
-    uds.diagnostic_session_control(SessionType::ExtendedDiagnostic as u8).await?;
+    uds.diagnostic_session_control(SessionType::ExtendedDiagnostic as u8)
+        .await?;
 
     let did = DataIdentifier::ApplicationSoftwareIdentification;
     let resp = uds.read_data_by_identifier(did as u16).await?;
