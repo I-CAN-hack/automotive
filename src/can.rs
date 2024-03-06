@@ -7,6 +7,18 @@ pub enum Identifier {
     Extended(u32),
 }
 
+impl Identifier {
+    pub fn is_standard(&self) -> bool {
+        match self {
+            Identifier::Standard(_) => true,
+            Identifier::Extended(_) => false,
+        }
+    }
+    pub fn is_extended(&self) -> bool {
+        !self.is_standard()
+    }
+}
+
 /// A CAN frame
 #[derive(Debug, Clone, PartialEq)]
 pub struct Frame {
