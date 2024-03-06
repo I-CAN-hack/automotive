@@ -19,7 +19,7 @@ use crate::async_can::AsyncCanAdapter;
 use crate::can::Frame;
 use crate::can::Identifier;
 use crate::error::Error;
-use crate::isotp::constants::FrameType;
+use crate::isotp::constants::{FrameType, FRAME_TYPE_MASK};
 
 use async_stream::stream;
 use futures_core::stream::Stream;
@@ -151,7 +151,7 @@ impl<'a> IsoTPAdapter<'a> {
 
         self.send_first_frame(data).await;
         let frame = stream.next().await.unwrap()?;
-        if frame.data[0] & 0xF0 != FrameType::FlowControl as u8 {
+        if frame.data[0] & FRAME_TYPE_MASK != FrameType::FlowControl as u8 {
             return Err(Error::IsoTPError(crate::isotp::error::Error::FlowControl));
         };
         debug!("RX FC, data {}", hex::encode(&frame.data));
@@ -264,7 +264,7 @@ impl<'a> IsoTPAdapter<'a> {
 
         while let Some(frame) = stream.next().await {
             let frame = frame?;
-            match (frame.data[0] & 0xF0).into() {
+            match (frame.data[0] & FRAME_TYPE_MASK).into() {
                 FrameType::Single => self.recv_single_frame(frame, &mut buf, &mut len).await?,
                 FrameType::First => self.recv_first_frame(frame, &mut buf, &mut len).await?,
                 FrameType::Consecutive => {

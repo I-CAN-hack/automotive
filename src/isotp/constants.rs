@@ -8,6 +8,8 @@ pub enum FrameType {
     Unknown = 0xff,
 }
 
+pub static FRAME_TYPE_MASK: u8 = 0xf0;
+
 impl From<u8> for FrameType {
     fn from(val: u8) -> FrameType {
         match val {
