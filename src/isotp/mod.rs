@@ -12,7 +12,7 @@
 //! }
 //! ```
 
-mod constants;
+pub mod constants;
 pub mod error;
 
 use crate::async_can::AsyncCanAdapter;
