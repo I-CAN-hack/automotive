@@ -29,6 +29,7 @@ use tracing::debug;
 const DEFAULT_TIMEOUT_MS: u64 = 100;
 
 /// Configuring passed to the IsoTPAdapter.
+#[derive(Debug, Clone)]
 pub struct IsoTPConfig {
     pub bus: u8,
     /// Transmit ID
@@ -55,6 +56,20 @@ impl IsoTPConfig {
             }
         };
 
+        Self::new_from_tx_rx(bus, tx_id, rx_id)
+    }
+
+    pub fn new_from_offset(bus: u8, id: Identifier, offset: u32) -> Self {
+        let tx_id = id;
+        let rx_id = match id {
+            Identifier::Standard(id) => Identifier::Standard(id + offset),
+            Identifier::Extended(_) => panic!("Extended IDs do not support offset"),
+        };
+
+        Self::new_from_tx_rx(bus, tx_id, rx_id)
+    }
+
+    pub fn new_from_tx_rx(bus: u8, tx_id: Identifier, rx_id: Identifier) -> Self {
         Self {
             bus,
             tx_id,
@@ -89,7 +104,7 @@ impl<'a> IsoTPAdapter<'a> {
         data.extend(std::iter::repeat(self.config.padding).take(len));
     }
 
-    async fn send_single_frame(&self, data: &[u8]) {
+    pub async fn send_single_frame(&self, data: &[u8]) {
         let mut buf = vec![FrameType::Single as u8 | data.len() as u8];
         buf.extend(data);
         self.pad(&mut buf);
@@ -100,7 +115,7 @@ impl<'a> IsoTPAdapter<'a> {
         self.adapter.send(&frame).await;
     }
 
-    async fn send_first_frame(&self, data: &[u8]) {
+    pub async fn send_first_frame(&self, data: &[u8]) {
         let b0: u8 = FrameType::First as u8 | ((data.len() >> 8) & 0xF) as u8;
         let b1: u8 = (data.len() & 0xFF) as u8;
 
@@ -113,7 +128,7 @@ impl<'a> IsoTPAdapter<'a> {
         self.adapter.send(&frame).await;
     }
 
-    async fn send_consecutive_frame(&self, data: &[u8], idx: usize) {
+    pub async fn send_consecutive_frame(&self, data: &[u8], idx: usize) {
         let idx = ((idx + 1) & 0xF) as u8;
 
         let mut buf = vec![FrameType::Consecutive as u8 | idx];
