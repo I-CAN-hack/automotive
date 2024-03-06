@@ -1,7 +1,7 @@
 //! Generic CAN types and traits
 
 /// Identifier for a CAN frame
-#[derive(Debug, Copy, Clone, PartialOrd, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, PartialOrd, Eq, PartialEq, Hash)]
 pub enum Identifier {
     Standard(u32),
     Extended(u32),
