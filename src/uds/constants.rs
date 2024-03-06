@@ -1,6 +1,8 @@
 //! Constants for the UDS Client.
 use strum_macros::EnumIter;
 
+pub static POSITIVE_RESPONSE: u8 = 0x40;
+
 /// Service Identifiers (SIDs) as defined in ISO 14229
 #[derive(Debug, PartialEq, Copy, Clone)]
 #[repr(u8)]

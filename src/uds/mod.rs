@@ -18,11 +18,12 @@ pub mod types;
 
 use crate::error::Error;
 use crate::isotp::IsoTPAdapter;
-use crate::uds::constants::ServiceIdentifier;
+use crate::uds::constants::{POSITIVE_RESPONSE, ServiceIdentifier};
 use crate::uds::error::NegativeResponseCode;
 
 use tokio_stream::StreamExt;
 use tracing::info;
+
 
 /// UDS Client. Wraps an IsoTPAdapter to provide a simple interface for making UDS calls.
 pub struct UDSClient<'a> {
@@ -74,7 +75,7 @@ impl<'a> UDSClient<'a> {
             }
 
             // Check service id
-            if response_sid != (sid as u8) | 0x40 {
+            if response_sid != (sid as u8) | POSITIVE_RESPONSE {
                 return Err(Error::UDSError(crate::uds::error::Error::InvalidServiceId(
                     response_sid,
                 )));
