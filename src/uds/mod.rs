@@ -61,7 +61,7 @@ impl<'a> UDSClient<'a> {
 
             // Check for errors
             let response_sid = response[0];
-            if response_sid == NEGATIVE_RESPONSE as u8 {
+            if response_sid == NEGATIVE_RESPONSE {
                 let code: NegativeResponseCode = response[2].into();
 
                 if code == NegativeResponseCode::RequestCorrectlyReceivedResponsePending {
