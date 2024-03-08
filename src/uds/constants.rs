@@ -2,10 +2,11 @@
 use strum_macros::EnumIter;
 
 pub static POSITIVE_RESPONSE: u8 = 0x40;
+pub static NEGATIVE_RESPONSE: u8 = 0x7f;
 pub static ZERO_SUB_FUNCTION: u8 = 0x00;
 
 /// Service Identifiers (SIDs) as defined in ISO 14229
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone, EnumIter)]
 #[repr(u8)]
 pub enum ServiceIdentifier {
     // Diagnostic and Communication Management
@@ -45,9 +46,9 @@ pub enum ServiceIdentifier {
     TransferData = 0x36,
     RequestTransferExit = 0x37,
     RequestFileTransfer = 0x38,
-
-    NegativeResponse = 0x7f,
 }
+
+
 
 /// Standard Data Identifiers (DIDs) as defined in ISO 14229
 #[derive(Debug, PartialEq, Copy, Clone, EnumIter)]

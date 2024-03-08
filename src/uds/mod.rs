@@ -18,7 +18,7 @@ pub mod types;
 
 use crate::error::Error;
 use crate::isotp::IsoTPAdapter;
-use crate::uds::constants::{POSITIVE_RESPONSE, ServiceIdentifier};
+use crate::uds::constants::{NEGATIVE_RESPONSE, POSITIVE_RESPONSE, ServiceIdentifier};
 use crate::uds::error::NegativeResponseCode;
 
 use tokio_stream::StreamExt;
@@ -61,7 +61,7 @@ impl<'a> UDSClient<'a> {
 
             // Check for errors
             let response_sid = response[0];
-            if response_sid == ServiceIdentifier::NegativeResponse as u8 {
+            if response_sid == NEGATIVE_RESPONSE as u8 {
                 let code: NegativeResponseCode = response[2].into();
 
                 if code == NegativeResponseCode::RequestCorrectlyReceivedResponsePending {
