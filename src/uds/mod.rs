@@ -38,11 +38,11 @@ impl<'a> UDSClient<'a> {
     /// Helper function to make custom UDS requests. This function will verify the ECU responds with the correct service identifier and sub function, handle negative responses, and will return the response data.
     pub async fn request(
         &self,
-        sid: ServiceIdentifier,
+        sid: u8,
         sub_function: Option<u8>,
         data: Option<&[u8]>,
     ) -> Result<Vec<u8>, Error> {
-        let mut request: Vec<u8> = vec![sid as u8];
+        let mut request: Vec<u8> = vec![sid];
 
         if let Some(sub_function) = sub_function {
             request.push(sub_function);
@@ -75,7 +75,7 @@ impl<'a> UDSClient<'a> {
             }
 
             // Check service id
-            if response_sid != (sid as u8) | POSITIVE_RESPONSE {
+            if response_sid != sid | POSITIVE_RESPONSE {
                 return Err(Error::UDSError(crate::uds::error::Error::InvalidServiceId(
                     response_sid,
                 )));
@@ -102,7 +102,7 @@ impl<'a> UDSClient<'a> {
     ) -> Result<Option<types::SessionParameterRecord>, Error> {
         let result = self
             .request(
-                ServiceIdentifier::DiagnosticSessionControl,
+                ServiceIdentifier::DiagnosticSessionControl as u8,
                 Some(session_type),
                 None,
             )
@@ -129,7 +129,7 @@ impl<'a> UDSClient<'a> {
     /// 0x11 - ECU Reset. The `reset_type` parameter can be used to specify the type of reset to perform. Use the [`constants::ResetType`] enum for  the reset types defined in the standard. This function returns the power down time when the reset type is [`constants::ResetType::EnableRapidPowerShutDown`].
     pub async fn ecu_reset(&self, reset_type: u8) -> Result<Option<u8>, Error> {
         let result = self
-            .request(ServiceIdentifier::EcuReset, Some(reset_type), None)
+            .request(ServiceIdentifier::EcuReset as u8, Some(reset_type), None)
             .await?;
 
         let result = if result.len() == 1 {
@@ -153,7 +153,7 @@ impl<'a> UDSClient<'a> {
         }
 
         let resp = self
-            .request(ServiceIdentifier::SecurityAccess, Some(access_type), data)
+            .request(ServiceIdentifier::SecurityAccess as u8, Some(access_type), data)
             .await?;
 
         Ok(resp)
@@ -161,7 +161,7 @@ impl<'a> UDSClient<'a> {
 
     /// 0x3E - Tester Present
     pub async fn tester_present(&self) -> Result<(), Error> {
-        self.request(ServiceIdentifier::TesterPresent, Some(0), None)
+        self.request(ServiceIdentifier::TesterPresent as u8, Some(0), None)
             .await?;
         Ok(())
     }
@@ -190,14 +190,14 @@ impl<'a> UDSClient<'a> {
             buf.extend(data);
         }
 
-        self.request(sid, None, Some(&buf)).await
+        self.request(sid as u8, None, Some(&buf)).await
     }
 
     /// 0x22 - Read Data By Identifier. Specify a 16 bit data identifier, or use a constant from [`constants::DataIdentifier`] for standardized identifiers. Reading multiple identifiers simultaneously is possible on some ECUs, but not supported by this function.
     pub async fn read_data_by_identifier(&self, data_identifier: u16) -> Result<Vec<u8>, Error> {
         let did = data_identifier.to_be_bytes();
         let resp = self
-            .request(ServiceIdentifier::ReadDataByIdentifier, None, Some(&did))
+            .request(ServiceIdentifier::ReadDataByIdentifier as u8, None, Some(&did))
             .await?;
 
         if resp.len() < 2 {
@@ -241,7 +241,7 @@ impl<'a> UDSClient<'a> {
         data.extend(data_record);
 
         let resp = self
-            .request(ServiceIdentifier::WriteDataByIdentifier, None, Some(&data))
+            .request(ServiceIdentifier::WriteDataByIdentifier as u8, None, Some(&data))
             .await?;
 
         if resp.len() < 2 {
@@ -292,7 +292,7 @@ impl<'a> UDSClient<'a> {
 
         let resp = self
             .request(
-                ServiceIdentifier::RoutineControl,
+                ServiceIdentifier::RoutineControl as u8,
                 Some(routine_control_type as u8),
                 Some(&buf),
             )
@@ -342,7 +342,7 @@ impl<'a> UDSClient<'a> {
         data.extend(memory_address);
         data.extend(memory_size);
 
-        let resp = self.request(sid, None, Some(&data)).await?;
+        let resp = self.request(sid as u8, None, Some(&data)).await?;
 
         // Ensure the response contains at least a length format
         if resp.len() == 0 {
@@ -414,7 +414,7 @@ impl<'a> UDSClient<'a> {
         }
 
         let resp = self
-            .request(ServiceIdentifier::TransferData, None, Some(&buf))
+            .request(ServiceIdentifier::TransferData as u8, None, Some(&buf))
             .await?;
 
         // Ensure the response contains at least the block sequence counter
@@ -444,7 +444,7 @@ impl<'a> UDSClient<'a> {
         data: Option<&[u8]>,
     ) -> Result<Option<Vec<u8>>, Error> {
         let resp = self
-            .request(ServiceIdentifier::RequestTransferExit, None, data)
+            .request(ServiceIdentifier::RequestTransferExit as u8, None, data)
             .await?;
 
         Ok(if resp.len() > 0 { Some(resp) } else { None })
