@@ -1,13 +1,19 @@
 //! Async wrapper for Adapters implementing the [`CanAdapter`] trait.
 
+use std::collections::{HashMap, VecDeque};
+
 use crate::can::CanAdapter;
 use crate::can::Frame;
+use crate::can::Identifier;
 use async_stream::stream;
 use futures_core::stream::Stream;
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 const CAN_TX_BUFFER_SIZE: usize = 128;
 const CAN_RX_BUFFER_SIZE: usize = 1024;
+
+type BusIdentifier = (u8, Identifier);
+type FrameCallback = (Frame, oneshot::Sender<()>);
 
 fn process<T: CanAdapter>(
     mut adapter: T,
@@ -16,20 +22,45 @@ fn process<T: CanAdapter>(
     mut tx_receiver: mpsc::Receiver<(Frame, oneshot::Sender<()>)>,
 ) {
     let mut buffer: Vec<Frame> = Vec::new();
+    let mut callbacks: HashMap<BusIdentifier, VecDeque<FrameCallback>> = HashMap::new();
 
     while shutdown_receiver.try_recv().is_err() {
         let frames: Vec<Frame> = adapter.recv().unwrap();
         for frame in frames {
+            // Wake up sender
+            if frame.returned {
+                let callback = callbacks
+                    .entry((frame.bus, frame.id))
+                    .or_insert_with(VecDeque::new)
+                    .pop_front();
+
+                match callback {
+                    Some((tx_frame, callback)) => {
+                        // Ensure the frame we received matches the frame belonging to the callback.
+                        // If not, we have a bug in the adapter implementation and frames are sent/received out of order.
+                        assert_eq!(tx_frame, frame);
+                        callback.send(()).unwrap();
+                    }
+                    None => panic!("Received returned frame with no pending callback"),
+                };
+            }
+
             rx_sender.send(frame).unwrap();
         }
 
         // TODO: use poll_recv_many?
         buffer.clear();
         while let Ok((frame, callback)) = tx_receiver.try_recv() {
-            buffer.push(frame);
+            let mut returned_frame = frame.clone();
+            returned_frame.returned = true;
 
-            // TODO: Delay notification until frame is actually ACKed on the CAN bus
-            callback.send(()).unwrap();
+            // Insert callback into hashmap
+            callbacks
+                .entry((frame.bus, frame.id))
+                .or_insert_with(VecDeque::new)
+                .push_back((returned_frame, callback));
+
+            buffer.push(frame);
         }
         if !buffer.is_empty() {
             adapter.send(&buffer).unwrap();
