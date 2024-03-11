@@ -48,8 +48,6 @@ pub enum ServiceIdentifier {
     RequestFileTransfer = 0x38,
 }
 
-
-
 /// Standard Data Identifiers (DIDs) as defined in ISO 14229
 #[derive(Debug, PartialEq, Copy, Clone, EnumIter)]
 #[repr(u16)]

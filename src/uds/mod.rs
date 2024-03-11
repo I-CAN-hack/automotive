@@ -18,12 +18,11 @@ pub mod types;
 
 use crate::error::Error;
 use crate::isotp::IsoTPAdapter;
-use crate::uds::constants::{NEGATIVE_RESPONSE, POSITIVE_RESPONSE, ServiceIdentifier};
+use crate::uds::constants::{ServiceIdentifier, NEGATIVE_RESPONSE, POSITIVE_RESPONSE};
 use crate::uds::error::NegativeResponseCode;
 
 use tokio_stream::StreamExt;
 use tracing::info;
-
 
 /// UDS Client. Wraps an IsoTPAdapter to provide a simple interface for making UDS calls.
 pub struct UDSClient<'a> {
@@ -153,7 +152,11 @@ impl<'a> UDSClient<'a> {
         }
 
         let resp = self
-            .request(ServiceIdentifier::SecurityAccess as u8, Some(access_type), data)
+            .request(
+                ServiceIdentifier::SecurityAccess as u8,
+                Some(access_type),
+                data,
+            )
             .await?;
 
         Ok(resp)
@@ -197,7 +200,11 @@ impl<'a> UDSClient<'a> {
     pub async fn read_data_by_identifier(&self, data_identifier: u16) -> Result<Vec<u8>, Error> {
         let did = data_identifier.to_be_bytes();
         let resp = self
-            .request(ServiceIdentifier::ReadDataByIdentifier as u8, None, Some(&did))
+            .request(
+                ServiceIdentifier::ReadDataByIdentifier as u8,
+                None,
+                Some(&did),
+            )
             .await?;
 
         if resp.len() < 2 {
@@ -241,7 +248,11 @@ impl<'a> UDSClient<'a> {
         data.extend(data_record);
 
         let resp = self
-            .request(ServiceIdentifier::WriteDataByIdentifier as u8, None, Some(&data))
+            .request(
+                ServiceIdentifier::WriteDataByIdentifier as u8,
+                None,
+                Some(&data),
+            )
             .await?;
 
         if resp.len() < 2 {

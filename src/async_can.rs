@@ -13,7 +13,7 @@ fn process<T: CanAdapter>(
     mut adapter: T,
     mut shutdown_receiver: oneshot::Receiver<()>,
     rx_sender: broadcast::Sender<Frame>,
-    mut tx_receiver: mpsc::Receiver<Frame>,
+    mut tx_receiver: mpsc::Receiver<(Frame, oneshot::Sender<()>)>,
 ) {
     let mut buffer: Vec<Frame> = Vec::new();
 
@@ -25,8 +25,11 @@ fn process<T: CanAdapter>(
 
         // TODO: use poll_recv_many?
         buffer.clear();
-        while let Ok(frame) = tx_receiver.try_recv() {
+        while let Ok((frame, callback)) = tx_receiver.try_recv() {
             buffer.push(frame);
+
+            // TODO: Delay notification until frame is actually ACKed on the CAN bus
+            callback.send(()).unwrap();
         }
         if !buffer.is_empty() {
             adapter.send(&buffer).unwrap();
@@ -39,7 +42,7 @@ fn process<T: CanAdapter>(
 pub struct AsyncCanAdapter {
     processing_handle: Option<std::thread::JoinHandle<()>>,
     recv_receiver: broadcast::Receiver<Frame>,
-    send_sender: mpsc::Sender<Frame>,
+    send_sender: mpsc::Sender<(Frame, oneshot::Sender<()>)>,
     shutdown: Option<oneshot::Sender<()>>,
 }
 
@@ -63,9 +66,16 @@ impl AsyncCanAdapter {
         ret
     }
 
-    /// Send a single frame. The Future will resolve once the frame has been put in the queue for the background thread. This does not mean the frame is sent out by the adapter.
+    /// Send a single frame. The Future will resolve once the frame has been handed over to the adapter for sending. This does not mean the message is sent out on the CAN bus yet, as this could be pending arbitration.
     pub async fn send(&self, frame: &Frame) {
-        self.send_sender.send(frame.clone()).await.unwrap();
+        // Create oneshot channel to signal the completion of the send operation
+        let (callback_sender, callback_receiver) = oneshot::channel();
+        self.send_sender
+            .send((frame.clone(), callback_sender))
+            .await
+            .unwrap();
+
+        callback_receiver.await.unwrap();
     }
 
     /// Receive all frames.
