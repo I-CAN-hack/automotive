@@ -3,7 +3,7 @@ use crate::can::Identifier;
 use crate::error::Error;
 
 const CANPACKET_HEAD_SIZE: usize = 0x6;
-static DLC_TO_LEN: &'static [usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64];
+static DLC_TO_LEN: &[usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64];
 
 // Header layout
 
@@ -52,7 +52,7 @@ pub fn pack_can_buffer(frames: &[Frame]) -> Result<Vec<u8>, Error> {
 
         let header: [u8; CANPACKET_HEAD_SIZE - 1] = [
             (dlc << 4) | (frame.bus << 1),
-            ((word_4b >> 0) & 0xff) as u8,
+            (word_4b & 0xff) as u8,
             ((word_4b >> 8) & 0xff) as u8,
             ((word_4b >> 16) & 0xff) as u8,
             ((word_4b >> 24) & 0xff) as u8,
@@ -114,7 +114,7 @@ pub fn unpack_can_buffer(dat: &mut Vec<u8>) -> Result<Vec<Frame>, Error> {
         dat.drain(0..(CANPACKET_HEAD_SIZE + data_len));
     }
 
-    return Ok(ret);
+    Ok(ret)
 }
 
 #[cfg(test)]

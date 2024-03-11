@@ -17,7 +17,7 @@ fn process<T: CanAdapter>(
 ) {
     let mut buffer: Vec<Frame> = Vec::new();
 
-    while !shutdown_receiver.try_recv().is_ok() {
+    while shutdown_receiver.try_recv().is_err() {
         let frames: Vec<Frame> = adapter.recv().unwrap();
         for frame in frames {
             rx_sender.send(frame).unwrap();
@@ -105,13 +105,10 @@ impl AsyncCanAdapter {
 
 impl Drop for AsyncCanAdapter {
     fn drop(&mut self) {
-        match self.processing_handle.take() {
-            Some(handle) => {
-                // Send shutdown signal to background tread
-                self.shutdown.take().unwrap().send(()).unwrap();
-                handle.join().unwrap();
-            }
-            None => {}
+        if let Some(handle) = self.processing_handle.take() {
+            // Send shutdown signal to background tread
+            self.shutdown.take().unwrap().send(()).unwrap();
+            handle.join().unwrap();
         }
     }
 }

@@ -4,6 +4,8 @@ mod constants;
 pub mod error;
 mod usb_protocol;
 
+use std::vec;
+
 use crate::async_can::AsyncCanAdapter;
 use crate::can::CanAdapter;
 use crate::error::Error;
@@ -133,8 +135,7 @@ impl Panda {
     }
 
     fn usb_read_control(&self, endpoint: Endpoint, n: usize) -> Result<Vec<u8>, Error> {
-        let mut buf: Vec<u8> = Vec::with_capacity(n);
-        buf.resize(n, 0);
+        let mut buf: Vec<u8> = vec![0; n];
 
         let request_type = rusb::request_type(
             rusb::Direction::In,
@@ -159,7 +160,7 @@ impl Panda {
             endpoint as u8,
             value,
             index,
-            &mut [],
+            &[],
             self.timeout,
         )?;
         Ok(())

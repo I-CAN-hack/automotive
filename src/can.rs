@@ -37,8 +37,8 @@ impl Unpin for Frame {}
 impl Frame {
     pub fn new(bus: u8, id: Identifier, data: &[u8]) -> Frame {
         Frame {
-            bus: bus,
-            id: id,
+            bus,
+            id,
             data: data.to_vec(),
             returned: false,
         }
@@ -55,9 +55,9 @@ impl From<u32> for Identifier {
     }
 }
 
-impl Into<u32> for Identifier {
-    fn into(self) -> u32 {
-        match self {
+impl From<Identifier> for u32 {
+    fn from(val: Identifier) -> u32 {
+        match val {
             Identifier::Standard(id) => id,
             Identifier::Extended(id) => id,
         }

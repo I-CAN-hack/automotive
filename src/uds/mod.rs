@@ -180,8 +180,8 @@ impl<'a> UDSClient<'a> {
             sid == ServiceIdentifier::ReadMemoryByAddress
                 || sid == ServiceIdentifier::WriteMemoryByAddress
         );
-        assert!(memory_address.len() > 0 && memory_address.len() <= 0xF);
-        assert!(memory_size.len() > 0 && memory_size.len() <= 0xF);
+        assert!(!memory_address.is_empty() && memory_address.len() <= 0xF);
+        assert!(!memory_size.is_empty() && memory_size.len() <= 0xF);
 
         let address_and_length_format =
             ((memory_size.len() as u8) << 4) | (memory_address.len() as u8);
@@ -342,8 +342,8 @@ impl<'a> UDSClient<'a> {
         );
         assert!(compression_method <= 0xF);
         assert!(encryption_method <= 0xF);
-        assert!(memory_address.len() > 0 && memory_address.len() <= 0xF);
-        assert!(memory_size.len() > 0 && memory_size.len() <= 0xF);
+        assert!(!memory_address.is_empty() && memory_address.len() <= 0xF);
+        assert!(!memory_size.is_empty() && memory_size.len() <= 0xF);
 
         let data_format = (compression_method << 4) | encryption_method;
         let address_and_length_format =
@@ -356,7 +356,7 @@ impl<'a> UDSClient<'a> {
         let resp = self.request(sid as u8, None, Some(&data)).await?;
 
         // Ensure the response contains at least a length format
-        if resp.len() == 0 {
+        if resp.is_empty() {
             return Err(Error::UDSError(
                 crate::uds::error::Error::InvalidResponseLength,
             ));
@@ -429,7 +429,7 @@ impl<'a> UDSClient<'a> {
             .await?;
 
         // Ensure the response contains at least the block sequence counter
-        if resp.len() == 0 {
+        if resp.is_empty() {
             return Err(Error::UDSError(
                 crate::uds::error::Error::InvalidResponseLength,
             ));
@@ -458,6 +458,6 @@ impl<'a> UDSClient<'a> {
             .request(ServiceIdentifier::RequestTransferExit as u8, None, data)
             .await?;
 
-        Ok(if resp.len() > 0 { Some(resp) } else { None })
+        Ok(if !resp.is_empty() { Some(resp) } else { None })
     }
 }

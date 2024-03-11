@@ -166,9 +166,9 @@ impl<'a> IsoTPAdapter<'a> {
 
     /// Asynchronously send an ISO-TP frame of up to 4095 bytes. Returns [`Error::Timeout`] if the ECU is not responding in time with flow control messages.
     pub async fn send(&self, data: &[u8]) -> Result<(), Error> {
-        debug!("TX {}", hex::encode(&data));
+        debug!("TX {}", hex::encode(data));
 
-        if data.len() <= self.config.tx_dl - 1 {
+        if data.len() < self.config.tx_dl {
             self.send_single_frame(data).await;
         } else if data.len() <= 4095 {
             self.send_multiple(data).await?;
@@ -196,7 +196,7 @@ impl<'a> IsoTPAdapter<'a> {
 
         buf.extend(&frame.data[1..*len + 1]);
 
-        return Ok(());
+        Ok(())
     }
 
     async fn recv_first_frame(
@@ -222,7 +222,7 @@ impl<'a> IsoTPAdapter<'a> {
         let frame = Frame::new(self.config.bus, self.config.tx_id, &flow_control);
         self.adapter.send(&frame).await;
 
-        return Ok(());
+        Ok(())
     }
 
     async fn recv_consecutive_frame(
@@ -232,7 +232,7 @@ impl<'a> IsoTPAdapter<'a> {
         len: &mut usize,
         idx: &mut u8,
     ) -> Result<(), Error> {
-        let msg_idx = (frame.data[0] & 0xF) as u8;
+        let msg_idx = frame.data[0] & 0xF;
         let remaining_len = *len - buf.len();
         let end_idx = std::cmp::min(remaining_len + 1, frame.data.len());
 
@@ -250,7 +250,7 @@ impl<'a> IsoTPAdapter<'a> {
 
         *idx = if *idx == 0xF { 0 } else { *idx + 1 };
 
-        return Ok(());
+        Ok(())
     }
 
     /// Helper function to receive a single ISO-TP packet from the provided CAN stream.
