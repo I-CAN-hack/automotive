@@ -177,7 +177,6 @@ impl CanAdapter for Panda {
 
         let buf = usb_protocol::pack_can_buffer(frames)?;
 
-
         for chunk in buf {
             self.handle
                 .write_bulk(Endpoint::CanWrite as u8, &chunk, self.timeout)?;
