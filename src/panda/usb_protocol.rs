@@ -3,6 +3,7 @@ use crate::can::Identifier;
 use crate::error::Error;
 
 const CANPACKET_HEAD_SIZE: usize = 0x6;
+const CANPACKET_MAX_CHUNK_SIZE: usize = 256;
 static DLC_TO_LEN: &[usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64];
 
 // Header layout
@@ -29,8 +30,9 @@ fn calculate_checksum(dat: &[u8]) -> u8 {
     dat.iter().fold(0, |acc, &x| acc ^ x)
 }
 
-pub fn pack_can_buffer(frames: &[Frame]) -> Result<Vec<u8>, Error> {
+pub fn pack_can_buffer(frames: &[Frame]) -> Result<Vec<Vec<u8>>, Error> {
     let mut ret = vec![];
+    ret.push(vec![]);
 
     for frame in frames {
         let extended: u32 = match frame.id {
@@ -60,9 +62,14 @@ pub fn pack_can_buffer(frames: &[Frame]) -> Result<Vec<u8>, Error> {
 
         let checksum = calculate_checksum(&header) ^ calculate_checksum(&frame.data);
 
-        ret.extend_from_slice(&header);
-        ret.push(checksum);
-        ret.extend_from_slice(&frame.data);
+        let last = ret.last_mut().unwrap();
+        last.extend_from_slice(&header);
+        last.push(checksum);
+        last.extend_from_slice(&frame.data);
+
+        if last.len() > CANPACKET_MAX_CHUNK_SIZE {
+            ret.push(vec![]);
+        }
     }
 
     Ok(ret)
@@ -173,7 +180,8 @@ mod tests {
             },
         ];
 
-        let mut buffer = pack_can_buffer(&frames).unwrap();
+        let buffer = pack_can_buffer(&frames).unwrap();
+        let mut buffer = buffer.concat();
         let unpacked = unpack_can_buffer(&mut buffer).unwrap();
 
         assert_eq!(frames, unpacked);

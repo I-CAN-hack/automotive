@@ -15,6 +15,7 @@ use tracing::{info, warn};
 const VENDOR_ID: u16 = 0xbbaa;
 const PRODUCT_ID: u16 = 0xddcc;
 const EXPECTED_CAN_PACKET_VERSION: u8 = 4;
+const MAX_BULK_SIZE: usize = 16384;
 
 /// Blocking implementation of the panda CAN adapter
 pub struct Panda {
@@ -176,17 +177,17 @@ impl CanAdapter for Panda {
 
         let buf = usb_protocol::pack_can_buffer(frames)?;
 
-        // TODO: Handle buffer being too large
 
-        self.handle
-            .write_bulk(Endpoint::CanWrite as u8, &buf, self.timeout)?;
+        for chunk in buf {
+            self.handle
+                .write_bulk(Endpoint::CanWrite as u8, &chunk, self.timeout)?;
+        }
         Ok(())
     }
 
     /// Reads the current buffer of available CAN messages from the panda. This function will return an empty vector if no messages are available. In case of a recoverable error (e.g. unpacking error), the buffer will be cleared and an empty vector will be returned.
     fn recv(&mut self) -> Result<Vec<crate::can::Frame>, Error> {
-        const N: usize = 16384;
-        let mut buf: [u8; N] = [0; N];
+        let mut buf: [u8; MAX_BULK_SIZE] = [0; MAX_BULK_SIZE];
 
         let recv: usize = self
             .handle
