@@ -16,7 +16,7 @@ impl From<socketcan::frame::CanDataFrame> for crate::can::Frame {
             bus: 0,
             id: frame.id().into(),
             data: frame.data().to_vec(),
-            returned: false,
+            loopback: false,
         }
     }
 }
@@ -27,7 +27,7 @@ impl From<socketcan::frame::CanFdFrame> for crate::can::Frame {
             bus: 0,
             id: frame.id().into(),
             data: frame.data().to_vec(),
-            returned: false,
+            loopback: false,
         }
     }
 }

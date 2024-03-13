@@ -28,7 +28,7 @@ fn process<T: CanAdapter>(
         let frames: Vec<Frame> = adapter.recv().unwrap();
         for frame in frames {
             // Wake up sender
-            if frame.returned {
+            if frame.loopback {
                 let callback = callbacks
                     .entry((frame.bus, frame.id))
                     .or_insert_with(VecDeque::new)
@@ -41,7 +41,7 @@ fn process<T: CanAdapter>(
                         assert_eq!(tx_frame, frame);
                         callback.send(()).unwrap();
                     }
-                    None => panic!("Received returned frame with no pending callback"),
+                    None => panic!("Received loopback frame with no pending callback"),
                 };
             }
 
@@ -51,14 +51,14 @@ fn process<T: CanAdapter>(
         // TODO: use poll_recv_many?
         buffer.clear();
         while let Ok((frame, callback)) = tx_receiver.try_recv() {
-            let mut returned_frame = frame.clone();
-            returned_frame.returned = true;
+            let mut loopback_frame = frame.clone();
+            loopback_frame.loopback = true;
 
             // Insert callback into hashmap
             callbacks
                 .entry((frame.bus, frame.id))
                 .or_insert_with(VecDeque::new)
-                .push_back((returned_frame, callback));
+                .push_back((loopback_frame, callback));
 
             buffer.push(frame);
         }

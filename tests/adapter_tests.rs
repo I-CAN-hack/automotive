@@ -26,11 +26,11 @@ fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
     while received.len() < frames.len() && start.elapsed() < Duration::from_millis(BULK_TIMEOUT_MS)
     {
         let rx = adapter.recv().unwrap();
-        let rx: Vec<Frame> = rx.into_iter().filter(|frame| frame.returned).collect();
+        let rx: Vec<Frame> = rx.into_iter().filter(|frame| frame.loopback).collect();
 
         for frame in rx {
             let mut copy = frame.clone();
-            copy.returned = false;
+            copy.loopback = false;
             received.push(copy);
         }
         std::thread::sleep(Duration::from_millis(1));

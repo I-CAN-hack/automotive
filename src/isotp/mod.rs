@@ -145,7 +145,7 @@ impl<'a> IsoTPAdapter<'a> {
         // Stream for receiving flow control
         let stream = self
             .adapter
-            .recv_filter(|frame| frame.id == self.config.rx_id && !frame.returned)
+            .recv_filter(|frame| frame.id == self.config.rx_id && !frame.loopback)
             .timeout(self.config.timeout);
         tokio::pin!(stream);
 
@@ -291,7 +291,7 @@ impl<'a> IsoTPAdapter<'a> {
     pub async fn recv(&self) -> Result<Vec<u8>, Error> {
         let stream = self
             .adapter
-            .recv_filter(|frame| frame.id == self.config.rx_id && !frame.returned)
+            .recv_filter(|frame| frame.id == self.config.rx_id && !frame.loopback)
             .timeout(self.config.timeout);
         tokio::pin!(stream);
 
@@ -303,7 +303,7 @@ impl<'a> IsoTPAdapter<'a> {
         Box::pin(stream! {
             let stream = self
                 .adapter
-                .recv_filter(|frame| frame.id == self.config.rx_id && !frame.returned)
+                .recv_filter(|frame| frame.id == self.config.rx_id && !frame.loopback)
                 .timeout(self.config.timeout);
             tokio::pin!(stream);
 

@@ -19,9 +19,7 @@ impl SocketCan {
         socket.set_nonblocking(true).unwrap();
         socket.set_loopback(true).unwrap();
         socket.set_recv_own_msgs(true).unwrap();
-        Self {
-            socket,
-        }
+        Self { socket }
     }
 
     pub fn new_async(socket: socketcan::CanFdSocket) -> Result<AsyncCanAdapter, Error> {
@@ -45,8 +43,8 @@ impl CanAdapter for SocketCan {
     fn recv(&mut self) -> Result<Vec<crate::can::Frame>, Error> {
         let mut frames = vec![];
         while let Ok((frame, meta)) = self.socket.read_frame_with_meta() {
-            let mut frame : crate::can::Frame = frame.into();
-            frame.returned = meta.loopback;
+            let mut frame: crate::can::Frame = frame.into();
+            frame.loopback = meta.loopback;
             frames.push(frame.into());
         }
 

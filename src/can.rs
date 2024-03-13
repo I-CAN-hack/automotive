@@ -29,7 +29,7 @@ pub struct Frame {
     /// Frame Data
     pub data: Vec<u8>,
     /// Wheter the frame was sent out by the adapter
-    pub returned: bool,
+    pub loopback: bool,
     // TODO: Add timestamp, can-fd, rtr, dlc
 }
 impl Unpin for Frame {}
@@ -40,7 +40,7 @@ impl Frame {
             bus,
             id,
             data: data.to_vec(),
-            returned: false,
+            loopback: false,
         }
     }
 }

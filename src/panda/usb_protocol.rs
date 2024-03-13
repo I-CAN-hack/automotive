@@ -115,7 +115,7 @@ pub fn unpack_can_buffer(dat: &mut Vec<u8>) -> Result<Vec<Frame>, Error> {
             id,
             bus,
             data: dat[CANPACKET_HEAD_SIZE..(CANPACKET_HEAD_SIZE + data_len)].to_vec(),
-            returned,
+            loopback: returned,
         });
 
         dat.drain(0..(CANPACKET_HEAD_SIZE + data_len));
@@ -170,13 +170,13 @@ mod tests {
                 bus: 0,
                 id: Identifier::Standard(0x123),
                 data: vec![1, 2, 3, 4, 5, 6, 7, 8],
-                returned: false,
+                loopback: false,
             },
             Frame {
                 bus: 1,
                 id: Identifier::Extended(0x123),
                 data: vec![1, 2, 3, 4],
-                returned: false,
+                loopback: false,
             },
         ];
 
@@ -193,7 +193,7 @@ mod tests {
             bus: 0,
             id: Identifier::Standard(0x123),
             data: vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
-            returned: false,
+            loopback: false,
         }];
         let r = pack_can_buffer(&frames);
         assert_eq!(r, Err(Error::MalformedFrame));
@@ -205,7 +205,7 @@ mod tests {
             bus: 0,
             id: Identifier::Standard(0xfff),
             data: vec![1, 2, 3, 4, 5, 6, 7, 8],
-            returned: false,
+            loopback: false,
         }];
         let r = pack_can_buffer(&frames);
         assert_eq!(r, Err(Error::MalformedFrame));
