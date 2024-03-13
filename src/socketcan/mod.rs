@@ -22,6 +22,14 @@ impl SocketCan {
         Self { socket }
     }
 
+    pub fn new_async_from_name(name: &str) -> Result<AsyncCanAdapter, Error> {
+        if let Ok(socket) = socketcan::CanFdSocket::open(name) {
+            SocketCan::new_async(socket)
+        } else {
+            Err(crate::error::Error::NotFound)
+        }
+    }
+
     pub fn new_async(socket: socketcan::CanFdSocket) -> Result<AsyncCanAdapter, Error> {
         let socket = SocketCan::new(socket);
 

@@ -87,8 +87,6 @@ fn socketcan_bulk_send_sync() {
 #[tokio::test]
 #[serial_test::serial]
 async fn socketcan_bulk_send_async() {
-    use socketcan::Socket;
-    let socket = socketcan::CanFdSocket::open("can0").unwrap();
-    let adapter = automotive::socketcan::SocketCan::new_async(socket).unwrap();
+    let adapter = automotive::socketcan::SocketCan::new_async_from_name("can0").unwrap();
     bulk_send(&adapter).await;
 }
