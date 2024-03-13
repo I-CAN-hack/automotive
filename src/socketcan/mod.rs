@@ -53,7 +53,7 @@ impl CanAdapter for SocketCan {
         while let Ok((frame, meta)) = self.socket.read_frame_with_meta() {
             let mut frame: crate::can::Frame = frame.into();
             frame.loopback = meta.loopback;
-            frames.push(frame.into());
+            frames.push(frame);
         }
 
         Ok(frames)
