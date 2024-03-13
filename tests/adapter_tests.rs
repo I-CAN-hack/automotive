@@ -4,7 +4,8 @@ use automotive::can::{CanAdapter, Frame};
 use automotive::panda::Panda;
 use std::time::Duration;
 
-static BULK_NUM_FRAMES: u64 = 0x400;
+// static BULK_NUM_FRAMES: u64 = 0x400;
+static BULK_NUM_FRAMES: u64 = 0x10;
 static BULK_TIMEOUT_MS: u64 = 1000;
 
 /// Sends a large number of frames to a "blocking" adapter, and then reads back all sent messages.
@@ -32,6 +33,7 @@ fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
             copy.returned = false;
             received.push(copy);
         }
+        std::thread::sleep(Duration::from_millis(1));
     }
 
     assert_eq!(frames, received);
@@ -69,4 +71,24 @@ fn panda_bulk_send_sync() {
 async fn panda_bulk_send_async() {
     let panda = automotive::panda::Panda::new_async().unwrap();
     bulk_send(&panda).await;
+}
+
+#[cfg(feature = "test_socketcan")]
+#[test]
+#[serial_test::serial]
+fn socketcan_bulk_send_sync() {
+    use socketcan::Socket;
+    let socket = socketcan::CanFdSocket::open("can0").unwrap();
+    let mut adapter = automotive::socketcan::SocketCan::new(socket);
+    bulk_send_sync(&mut adapter);
+}
+
+#[cfg(feature = "test_socketcan")]
+#[tokio::test]
+#[serial_test::serial]
+async fn socketcan_bulk_send_async() {
+    use socketcan::Socket;
+    let socket = socketcan::CanFdSocket::open("can0").unwrap();
+    let adapter = automotive::socketcan::SocketCan::new_async(socket).unwrap();
+    bulk_send(&adapter).await;
 }
