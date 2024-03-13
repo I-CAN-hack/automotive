@@ -300,11 +300,12 @@ impl<'a> IsoTPAdapter<'a> {
 
     /// Stream of ISO-TP packets. Can be used if multiple responses are expected from a single request. Returns [`Error::Timeout`] if the timeout is exceeded between individual ISO-TP frames. Note the total time to receive a packet may be longer than the timeout.
     pub fn stream(&self) -> impl Stream<Item = Result<Vec<u8>, Error>> + '_ {
+        let stream = self
+            .adapter
+            .recv_filter(|frame| frame.id == self.config.rx_id && !frame.loopback)
+            .timeout(self.config.timeout);
+
         Box::pin(stream! {
-            let stream = self
-                .adapter
-                .recv_filter(|frame| frame.id == self.config.rx_id && !frame.loopback)
-                .timeout(self.config.timeout);
             tokio::pin!(stream);
 
             loop {
