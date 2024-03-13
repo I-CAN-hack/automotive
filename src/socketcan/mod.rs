@@ -4,6 +4,7 @@ use crate::can::CanAdapter;
 use crate::error::Error;
 
 use socketcan::socket::Socket;
+use socketcan::SocketOptions;
 use tracing::info;
 
 mod frame;
@@ -14,9 +15,17 @@ pub struct SocketCan {
 }
 
 impl SocketCan {
-    pub fn new_async(socket: socketcan::CanFdSocket) -> Result<AsyncCanAdapter, Error> {
+    pub fn new(socket: socketcan::CanFdSocket) -> Self {
         socket.set_nonblocking(true).unwrap();
-        let socket = SocketCan { socket };
+        socket.set_loopback(true).unwrap();
+        socket.set_recv_own_msgs(true).unwrap();
+        Self {
+            socket,
+        }
+    }
+
+    pub fn new_async(socket: socketcan::CanFdSocket) -> Result<AsyncCanAdapter, Error> {
+        let socket = SocketCan::new(socket);
 
         info!("Connected to SocketCan");
         Ok(AsyncCanAdapter::new(socket))
@@ -35,7 +44,9 @@ impl CanAdapter for SocketCan {
 
     fn recv(&mut self) -> Result<Vec<crate::can::Frame>, Error> {
         let mut frames = vec![];
-        while let Ok(frame) = self.socket.read_frame() {
+        while let Ok((frame, meta)) = self.socket.read_frame_with_meta() {
+            let mut frame : crate::can::Frame = frame.into();
+            frame.returned = meta.loopback;
             frames.push(frame.into());
         }
 
