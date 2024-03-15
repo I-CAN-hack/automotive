@@ -48,6 +48,8 @@ pub struct IsoTPConfig {
     pub padding: Option<u8>,
     /// Max timeout for receiving a frame
     pub timeout: std::time::Duration,
+    /// Override for Seperation Time (STmin) for transmitted frames
+    pub separation_time_min: Option<std::time::Duration>,
 }
 
 impl IsoTPConfig {
@@ -83,6 +85,7 @@ impl IsoTPConfig {
             tx_dl: 8,
             padding: Some(0xaa),
             timeout: std::time::Duration::from_millis(DEFAULT_TIMEOUT_MS),
+            separation_time_min: None,
         }
     }
 }
@@ -180,15 +183,26 @@ impl<'a> IsoTPAdapter<'a> {
 
         self.send_first_frame(data).await;
         let frame = stream.next().await.unwrap()?;
-        let config = self.receive_flow_control(&frame)?;
+        let fc_config = self.receive_flow_control(&frame)?;
 
         debug!("RX FC, data {}", hex::encode(&frame.data));
-        println!("RX FC, data {}", hex::encode(&frame.data));
+
+        // Check for separation time override
+        let st_min = match self.config.separation_time_min {
+            Some(st_min) => st_min,
+            None => fc_config.separation_time_min,
+        };
 
         let chunks = data[self.config.tx_dl - 2..].chunks(self.config.tx_dl - 1);
-        for (idx, chunk) in chunks.enumerate() {
+        let mut it = chunks.enumerate().peekable();
+        while let Some((idx, chunk)) = it.next() {
             self.send_consecutive_frame(chunk, idx).await;
-            tokio::time::sleep(config.separation_time_min).await;
+
+            // Sleep for separation time between frames
+            let last = it.peek().is_none();
+            if !last {
+                tokio::time::sleep(st_min).await;
+            }
         }
 
         Ok(())
@@ -284,7 +298,7 @@ impl<'a> IsoTPAdapter<'a> {
             let frame = frame?;
             match FrameType::from_repr(frame.data[0] & FRAME_TYPE_MASK) {
                 Some(FrameType::Single) => {
-                    return Ok(self.recv_single_frame(&frame).await?);
+                    return self.recv_single_frame(&frame).await;
                 }
                 Some(FrameType::First) => {
                     // If we already received a first frame, something went wrong
