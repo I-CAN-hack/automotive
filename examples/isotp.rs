@@ -26,4 +26,9 @@ async fn main() {
     isotp.send(&long_request).await.unwrap();
     let response = stream.next().await.unwrap().unwrap();
     println!("RX: {}", hex::encode(response));
+
+    let long_response = [0x22, 0xf1, 0x81];
+    isotp.send(&long_response).await.unwrap();
+    let response = stream.next().await.unwrap().unwrap();
+    println!("RX: {}", hex::encode(response));
 }

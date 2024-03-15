@@ -8,6 +8,8 @@ pub enum Error {
     DataTooLarge,
     #[error("Flow Control")]
     FlowControl,
+    #[error("Overflow")]
+    Overflow,
     #[error("Out Of Order")]
     OutOfOrder,
     #[error("Unknown Frame Type")]

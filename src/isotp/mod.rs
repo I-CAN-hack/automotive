@@ -15,17 +15,22 @@
 
 pub mod constants;
 pub mod error;
+pub mod types;
 
 use crate::async_can::AsyncCanAdapter;
 use crate::can::Frame;
 use crate::can::Identifier;
 use crate::error::Error;
+use crate::isotp::constants::FlowStatus;
+use crate::isotp::constants::FLOW_SATUS_MASK;
 use crate::isotp::constants::{FrameType, FRAME_TYPE_MASK};
 
 use async_stream::stream;
 use futures_core::stream::Stream;
 use tokio_stream::{StreamExt, Timeout};
 use tracing::debug;
+
+use self::types::FlowControlConfig;
 
 const DEFAULT_TIMEOUT_MS: u64 = 100;
 
@@ -43,6 +48,8 @@ pub struct IsoTPConfig {
     pub padding: Option<u8>,
     /// Max timeout for receiving a frame
     pub timeout: std::time::Duration,
+    /// Override for Seperation Time (STmin) for transmitted frames
+    pub separation_time_min: Option<std::time::Duration>,
 }
 
 impl IsoTPConfig {
@@ -78,6 +85,7 @@ impl IsoTPConfig {
             tx_dl: 8,
             padding: Some(0xaa),
             timeout: std::time::Duration::from_millis(DEFAULT_TIMEOUT_MS),
+            separation_time_min: None,
         }
     }
 }
@@ -144,6 +152,27 @@ impl<'a> IsoTPAdapter<'a> {
         self.adapter.send(&frame).await;
     }
 
+    fn receive_flow_control(&self, frame: &Frame) -> Result<FlowControlConfig, Error> {
+        // Check if Flow Control
+        if FrameType::from_repr(frame.data[0] & FRAME_TYPE_MASK) != Some(FrameType::FlowControl) {
+            return Err(crate::isotp::error::Error::FlowControl.into());
+        };
+
+        // Check Flow Status
+        match FlowStatus::from_repr(frame.data[0] & FLOW_SATUS_MASK) {
+            Some(FlowStatus::ContinueToSend) => {} // Ok
+            Some(FlowStatus::Wait) => unimplemented!("Wait flow control not implemented"),
+            Some(FlowStatus::Overflow) => return Err(crate::isotp::error::Error::Overflow.into()),
+            None => return Err(crate::isotp::error::Error::MalformedFrame.into()),
+        };
+
+        // Parse block size and separation time
+        let config = types::FlowControlConfig::try_from(frame)?;
+
+        debug!("RX FC, {:?} data {}", config, hex::encode(&frame.data));
+        Ok(config)
+    }
+
     async fn send_multiple(&self, data: &[u8]) -> Result<(), Error> {
         // Stream for receiving flow control
         let stream = self
@@ -154,14 +183,26 @@ impl<'a> IsoTPAdapter<'a> {
 
         self.send_first_frame(data).await;
         let frame = stream.next().await.unwrap()?;
-        if frame.data[0] & FRAME_TYPE_MASK != FrameType::FlowControl as u8 {
-            return Err(Error::IsoTPError(crate::isotp::error::Error::FlowControl));
-        };
+        let fc_config = self.receive_flow_control(&frame)?;
+
         debug!("RX FC, data {}", hex::encode(&frame.data));
 
+        // Check for separation time override
+        let st_min = match self.config.separation_time_min {
+            Some(st_min) => st_min,
+            None => fc_config.separation_time_min,
+        };
+
         let chunks = data[self.config.tx_dl - 2..].chunks(self.config.tx_dl - 1);
-        for (idx, chunk) in chunks.enumerate() {
+        let mut it = chunks.enumerate().peekable();
+        while let Some((idx, chunk)) = it.next() {
             self.send_consecutive_frame(chunk, idx).await;
+
+            // Sleep for separation time between frames
+            let last = it.peek().is_none();
+            if !last {
+                tokio::time::sleep(st_min).await;
+            }
         }
 
         Ok(())
@@ -176,18 +217,15 @@ impl<'a> IsoTPAdapter<'a> {
         } else if data.len() <= 4095 {
             self.send_multiple(data).await?;
         } else {
-            return Err(Error::IsoTPError(crate::isotp::error::Error::DataTooLarge));
+            return Err(crate::isotp::error::Error::DataTooLarge.into());
         }
 
         Ok(())
     }
-    async fn recv_single_frame(&self, frame: Frame) -> Result<Vec<u8>, Error> {
+    async fn recv_single_frame(&self, frame: &Frame) -> Result<Vec<u8>, Error> {
         let len = (frame.data[0] & 0xF) as usize;
         if len == 0 {
-            // unimplemented!("CAN FD escape sequence for single frame not supported");
-            return Err(Error::IsoTPError(
-                crate::isotp::error::Error::MalformedFrame,
-            ));
+            unimplemented!("CAN FD escape sequence for single frame not supported");
         }
 
         debug!("RX SF, length: {} data {}", len, hex::encode(&frame.data));
@@ -195,12 +233,16 @@ impl<'a> IsoTPAdapter<'a> {
         Ok(frame.data[1..len + 1].to_vec())
     }
 
-    async fn recv_first_frame(&self, frame: Frame, buf: &mut Vec<u8>) -> Result<usize, Error> {
+    async fn recv_first_frame(&self, frame: &Frame, buf: &mut Vec<u8>) -> Result<usize, Error> {
         let b0 = frame.data[0] as u16;
         let b1 = frame.data[1] as u16;
         let len = ((b0 << 8 | b1) & 0xFFF) as usize;
 
         debug!("RX FF, length: {}, data {}", len, hex::encode(&frame.data));
+        if len == 0 {
+            unimplemented!("CAN FD escape sequence for first frame not supported");
+        }
+
 
         buf.extend(&frame.data[2..]);
 
@@ -218,7 +260,7 @@ impl<'a> IsoTPAdapter<'a> {
 
     async fn recv_consecutive_frame(
         &self,
-        frame: Frame,
+        frame: &Frame,
         buf: &mut Vec<u8>,
         len: usize,
         idx: u8,
@@ -236,7 +278,7 @@ impl<'a> IsoTPAdapter<'a> {
         );
 
         if msg_idx != idx {
-            return Err(Error::IsoTPError(crate::isotp::error::Error::OutOfOrder));
+            return Err(crate::isotp::error::Error::OutOfOrder.into());
         }
 
         let new_idx = if idx == 0xF { 0 } else { idx + 1 };
@@ -254,21 +296,21 @@ impl<'a> IsoTPAdapter<'a> {
 
         while let Some(frame) = stream.next().await {
             let frame = frame?;
-            match (frame.data[0] & FRAME_TYPE_MASK).into() {
-                FrameType::Single => {
-                    return Ok(self.recv_single_frame(frame).await?);
+            match FrameType::from_repr(frame.data[0] & FRAME_TYPE_MASK) {
+                Some(FrameType::Single) => {
+                    return self.recv_single_frame(&frame).await;
                 }
-                FrameType::First => {
+                Some(FrameType::First) => {
                     // If we already received a first frame, something went wrong
                     if len.is_some() {
                         return Err(Error::IsoTPError(crate::isotp::error::Error::OutOfOrder));
                     }
-                    len = Some(self.recv_first_frame(frame, &mut buf).await?);
+                    len = Some(self.recv_first_frame(&frame, &mut buf).await?);
                 }
-                FrameType::Consecutive => {
+                Some(FrameType::Consecutive) => {
                     if let Some(len) = len {
                         idx = self
-                            .recv_consecutive_frame(frame, &mut buf, len, idx)
+                            .recv_consecutive_frame(&frame, &mut buf, len, idx)
                             .await?;
                         if buf.len() >= len {
                             return Ok(buf);
@@ -277,11 +319,9 @@ impl<'a> IsoTPAdapter<'a> {
                         return Err(Error::IsoTPError(crate::isotp::error::Error::OutOfOrder));
                     }
                 }
-                FrameType::FlowControl => {} // Ignore flow control frames, these are from a simultaneous transmission
+                Some(FrameType::FlowControl) => {} // Ignore flow control frames, these are from a simultaneous transmission
                 _ => {
-                    return Err(Error::IsoTPError(
-                        crate::isotp::error::Error::UnknownFrameType,
-                    ));
+                    return Err(crate::isotp::error::Error::UnknownFrameType.into());
                 }
             };
         }

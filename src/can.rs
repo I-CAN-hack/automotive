@@ -1,7 +1,9 @@
 //! Generic CAN types and traits
 
+use std::fmt;
+
 /// Identifier for a CAN frame
-#[derive(Debug, Copy, Clone, PartialOrd, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, PartialOrd, Eq, PartialEq, Hash)]
 pub enum Identifier {
     Standard(u32),
     Extended(u32),
@@ -19,8 +21,36 @@ impl Identifier {
     }
 }
 
+impl fmt::Debug for Identifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Identifier::Extended(id) => write!(f, "0x{:08x}", id),
+            Identifier::Standard(id) => write!(f, "0x{:03x}", id),
+        }
+    }
+}
+
+impl From<u32> for Identifier {
+    fn from(id: u32) -> Identifier {
+        if id <= 0x7ff {
+            Identifier::Standard(id)
+        } else {
+            Identifier::Extended(id)
+        }
+    }
+}
+
+impl From<Identifier> for u32 {
+    fn from(val: Identifier) -> u32 {
+        match val {
+            Identifier::Standard(id) => id,
+            Identifier::Extended(id) => id,
+        }
+    }
+}
+
 /// A CAN frame
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Frame {
     /// The bus index for adapters supporting multiple CAN busses
     pub bus: u8,
@@ -45,22 +75,14 @@ impl Frame {
     }
 }
 
-impl From<u32> for Identifier {
-    fn from(id: u32) -> Identifier {
-        if id <= 0x7ff {
-            Identifier::Standard(id)
-        } else {
-            Identifier::Extended(id)
-        }
-    }
-}
-
-impl From<Identifier> for u32 {
-    fn from(val: Identifier) -> u32 {
-        match val {
-            Identifier::Standard(id) => id,
-            Identifier::Extended(id) => id,
-        }
+impl fmt::Debug for Frame {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Frame")
+            .field("bus", &self.bus)
+            .field("id", &self.id)
+            .field("data", &hex::encode(&self.data))
+            .field("loopback", &self.loopback)
+            .finish()
     }
 }
 
