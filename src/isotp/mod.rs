@@ -30,6 +30,8 @@ use futures_core::stream::Stream;
 use tokio_stream::{StreamExt, Timeout};
 use tracing::debug;
 
+use self::types::FlowControlConfig;
+
 const DEFAULT_TIMEOUT_MS: u64 = 100;
 
 /// Configuring passed to the IsoTPAdapter.
@@ -147,7 +149,7 @@ impl<'a> IsoTPAdapter<'a> {
         self.adapter.send(&frame).await;
     }
 
-    fn receive_flow_control(&self, frame: &Frame) -> Result<(), Error> {
+    fn receive_flow_control(&self, frame: &Frame) -> Result<FlowControlConfig, Error> {
         // Check if Flow Control
         if FrameType::from_repr(frame.data[0] & FRAME_TYPE_MASK) != Some(FrameType::FlowControl) {
             return Err(crate::isotp::error::Error::FlowControl.into());
@@ -163,10 +165,9 @@ impl<'a> IsoTPAdapter<'a> {
 
         // Parse block size and separation time
         let config = types::FlowControlConfig::try_from(frame)?;
-        println!("{:?}", config);
 
-        debug!("RX FC, data {}", hex::encode(&frame.data));
-        Ok(())
+        debug!("RX FC, {:?} data {}", config, hex::encode(&frame.data));
+        Ok(config)
     }
 
     async fn send_multiple(&self, data: &[u8]) -> Result<(), Error> {
@@ -179,7 +180,7 @@ impl<'a> IsoTPAdapter<'a> {
 
         self.send_first_frame(data).await;
         let frame = stream.next().await.unwrap()?;
-        self.receive_flow_control(&frame)?;
+        let config = self.receive_flow_control(&frame)?;
 
         debug!("RX FC, data {}", hex::encode(&frame.data));
         println!("RX FC, data {}", hex::encode(&frame.data));
@@ -187,6 +188,7 @@ impl<'a> IsoTPAdapter<'a> {
         let chunks = data[self.config.tx_dl - 2..].chunks(self.config.tx_dl - 1);
         for (idx, chunk) in chunks.enumerate() {
             self.send_consecutive_frame(chunk, idx).await;
+            tokio::time::sleep(config.separation_time_min).await;
         }
 
         Ok(())
