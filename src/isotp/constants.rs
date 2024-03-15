@@ -1,23 +1,21 @@
-#[derive(Debug, PartialEq, Copy, Clone)]
+use strum_macros::FromRepr;
+
+pub static FRAME_TYPE_MASK: u8 = 0xf0;
+pub static FLOW_SATUS_MASK: u8 = 0x0f;
+
+#[derive(Debug, PartialEq, Copy, Clone, FromRepr)]
 #[repr(u8)]
 pub enum FrameType {
     Single = 0x00,
     First = 0x10,
     Consecutive = 0x20,
     FlowControl = 0x30,
-    Unknown = 0xff,
 }
 
-pub static FRAME_TYPE_MASK: u8 = 0xf0;
-
-impl From<u8> for FrameType {
-    fn from(val: u8) -> FrameType {
-        match val {
-            0x00 => FrameType::Single,
-            0x10 => FrameType::First,
-            0x20 => FrameType::Consecutive,
-            0x30 => FrameType::FlowControl,
-            _ => FrameType::Unknown,
-        }
-    }
+#[derive(Debug, PartialEq, Copy, Clone, FromRepr)]
+#[repr(u8)]
+pub enum FlowStatus {
+    ContinueToSend = 0x0,
+    Wait = 0x1,
+    Overflow = 0x2,
 }

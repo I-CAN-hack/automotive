@@ -11,13 +11,13 @@ pub enum Error {
     #[error("Timeout")]
     Timeout,
     #[error(transparent)]
-    IsoTPError(crate::isotp::error::Error),
+    IsoTPError(#[from] crate::isotp::error::Error),
     #[error(transparent)]
     LibUsbError(#[from] rusb::Error),
     #[error(transparent)]
-    PandaError(crate::panda::error::Error),
+    PandaError(#[from] crate::panda::error::Error),
     #[error(transparent)]
-    UDSError(crate::uds::error::Error),
+    UDSError(#[from] crate::uds::error::Error),
 }
 
 impl From<tokio_stream::Elapsed> for Error {
