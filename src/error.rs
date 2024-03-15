@@ -20,7 +20,6 @@ pub enum Error {
     UDSError(crate::uds::error::Error),
 }
 
-
 impl From<tokio_stream::Elapsed> for Error {
     fn from(_: tokio_stream::Elapsed) -> Error {
         Error::Timeout
