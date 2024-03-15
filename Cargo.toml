@@ -14,17 +14,17 @@ test_panda = []
 test_socketcan = []
 
 [dependencies]
-async-stream = "0.3.5"
+async-stream = "^0.3.5"
 bstr = "^1.9.0"
 futures = "^0.3.30"
-futures-core = "0.3.30"
-futures-util = "0.3.30"
+futures-core = "^0.3.30"
+futures-util = "^0.3.30"
 hex = "^0.4"
 rusb = "^0.9"
-serial_test = "3.0.0"
+serial_test = "^3.0.0"
 strum = "^0.26"
 strum_macros = "^0.26"
-thiserror = "1.0.58"
+thiserror = "^1.0.58"
 tokio = {version = "^1.36.0", features=["full"]}
 tokio-stream = "^0.1.14"
 tracing = "^0.1"
