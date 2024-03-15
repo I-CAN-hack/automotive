@@ -1,26 +1,17 @@
 //! Error types for the ISO-TP protocol.
 
-use std::fmt;
+use thiserror::Error;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Error, Debug, PartialEq, Copy, Clone)]
 pub enum Error {
+    #[error("Data Too Large")]
     DataTooLarge,
+    #[error("Flow Control")]
     FlowControl,
+    #[error("Out Of Order")]
     OutOfOrder,
+    #[error("Unknown Frame Type")]
     UnknownFrameType,
+    #[error("Malformed Frame")]
     MalformedFrame,
 }
-
-impl fmt::Display for Error {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Error::DataTooLarge => write!(fmt, "Data Too Large"),
-            Error::FlowControl => write!(fmt, "Flow Control"),
-            Error::OutOfOrder => write!(fmt, "Out Of Order"),
-            Error::UnknownFrameType => write!(fmt, "Unknown Frame Type"),
-            Error::MalformedFrame => write!(fmt, "Malformed Frame"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
