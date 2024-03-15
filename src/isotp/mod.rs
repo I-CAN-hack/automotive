@@ -38,8 +38,8 @@ pub struct IsoTPConfig {
     pub rx_id: Identifier,
     /// Transmit Data Length
     pub tx_dl: usize,
-    /// Padding byte (0x00, or more efficient 0xAA)
-    pub padding: u8,
+    /// Padding byte (0x00, or more efficient 0xAA). Set to None to disable padding.
+    pub padding: Option<u8>,
     /// Max timeout for receiving a frame
     pub timeout: std::time::Duration,
 }
@@ -75,7 +75,7 @@ impl IsoTPConfig {
             tx_id,
             rx_id,
             tx_dl: 8,
-            padding: 0xaa,
+            padding: Some(0xaa),
             timeout: std::time::Duration::from_millis(DEFAULT_TIMEOUT_MS),
         }
     }
@@ -100,8 +100,10 @@ impl<'a> IsoTPAdapter<'a> {
     }
 
     fn pad(&self, data: &mut Vec<u8>) {
-        let len = self.config.tx_dl - data.len();
-        data.extend(std::iter::repeat(self.config.padding).take(len));
+        if let Some(padding) = self.config.padding {
+            let len = self.config.tx_dl - data.len();
+            data.extend(std::iter::repeat(padding).take(len));
+        }
     }
 
     pub async fn send_single_frame(&self, data: &[u8]) {
