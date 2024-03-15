@@ -60,6 +60,7 @@ dependencies = [
  "socketcan",
  "strum",
  "strum_macros",
+ "thiserror",
  "tokio",
  "tokio-stream",
  "tracing",
