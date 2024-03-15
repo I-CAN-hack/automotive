@@ -51,7 +51,7 @@ impl<'a> UDSClient<'a> {
             request.extend(data);
         }
 
-        let mut stream = self.adapter.stream();
+        let mut stream = self.adapter.recv();
 
         self.adapter.send(&request).await?;
 
