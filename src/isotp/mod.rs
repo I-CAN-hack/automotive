@@ -299,7 +299,7 @@ impl<'a> IsoTPAdapter<'a> {
             tokio::pin!(stream);
 
             loop {
-                yield  self.recv_from_stream(&mut stream).await;
+                yield self.recv_from_stream(&mut stream).await;
             }
         })
     }
