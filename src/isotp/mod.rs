@@ -1,14 +1,15 @@
 //! ISO Transport Protocol (ISO-TP) implementation, implements ISO 15765-2
 //! ## Example:
 //! ```rust
+//! use futures_util::stream::StreamExt;
 //! async fn isotp_example() {
 //!    let adapter = automotive::adapter::get_adapter().unwrap();
 //!    let config = automotive::isotp::IsoTPConfig::new(0, automotive::can::Identifier::Standard(0x7a1));
 //!    let isotp = automotive::isotp::IsoTPAdapter::new(&adapter, config);
 //!
-//!    let response = isotp.recv(); // Create receiver before sending request
+//!    let mut stream = isotp.recv(); // Create receiver before sending request
 //!    isotp.send(&[0x3e, 0x00]).await.unwrap();
-//!    let response = response.await.unwrap();
+//!    let response = stream.next().await.unwrap().unwrap();
 //! }
 //! ```
 
@@ -180,38 +181,26 @@ impl<'a> IsoTPAdapter<'a> {
 
         Ok(())
     }
-    async fn recv_single_frame(
-        &self,
-        frame: Frame,
-        buf: &mut Vec<u8>,
-        len: &mut usize,
-    ) -> Result<(), Error> {
-        *len = (frame.data[0] & 0xF) as usize;
-        if *len == 0 {
+    async fn recv_single_frame(&self, frame: Frame) -> Result<Vec<u8>, Error> {
+        let len = (frame.data[0] & 0xF) as usize;
+        if len == 0 {
             // unimplemented!("CAN FD escape sequence for single frame not supported");
             return Err(Error::IsoTPError(
                 crate::isotp::error::Error::MalformedFrame,
             ));
         }
 
-        debug!("RX SF, length: {} data {}", *len, hex::encode(&frame.data));
+        debug!("RX SF, length: {} data {}", len, hex::encode(&frame.data));
 
-        buf.extend(&frame.data[1..*len + 1]);
-
-        Ok(())
+        Ok(frame.data[1..len + 1].to_vec())
     }
 
-    async fn recv_first_frame(
-        &self,
-        frame: Frame,
-        buf: &mut Vec<u8>,
-        len: &mut usize,
-    ) -> Result<(), Error> {
+    async fn recv_first_frame(&self, frame: Frame, buf: &mut Vec<u8>) -> Result<usize, Error> {
         let b0 = frame.data[0] as u16;
         let b1 = frame.data[1] as u16;
-        *len = ((b0 << 8 | b1) & 0xFFF) as usize;
+        let len = ((b0 << 8 | b1) & 0xFFF) as usize;
 
-        debug!("RX FF, length: {}, data {}", *len, hex::encode(&frame.data));
+        debug!("RX FF, length: {}, data {}", len, hex::encode(&frame.data));
 
         buf.extend(&frame.data[2..]);
 
@@ -224,18 +213,18 @@ impl<'a> IsoTPAdapter<'a> {
         let frame = Frame::new(self.config.bus, self.config.tx_id, &flow_control);
         self.adapter.send(&frame).await;
 
-        Ok(())
+        Ok(len)
     }
 
     async fn recv_consecutive_frame(
         &self,
         frame: Frame,
         buf: &mut Vec<u8>,
-        len: &mut usize,
-        idx: &mut u8,
-    ) -> Result<(), Error> {
+        len: usize,
+        idx: u8,
+    ) -> Result<u8, Error> {
         let msg_idx = frame.data[0] & 0xF;
-        let remaining_len = *len - buf.len();
+        let remaining_len = len - buf.len();
         let end_idx = std::cmp::min(remaining_len + 1, frame.data.len());
 
         buf.extend(&frame.data[1..end_idx]);
@@ -246,13 +235,12 @@ impl<'a> IsoTPAdapter<'a> {
             hex::encode(&buf)
         );
 
-        if msg_idx != *idx {
+        if msg_idx != idx {
             return Err(Error::IsoTPError(crate::isotp::error::Error::OutOfOrder));
         }
 
-        *idx = if *idx == 0xF { 0 } else { *idx + 1 };
-
-        Ok(())
+        let new_idx = if idx == 0xF { 0 } else { idx + 1 };
+        Ok(new_idx)
     }
 
     /// Helper function to receive a single ISO-TP packet from the provided CAN stream.
@@ -261,47 +249,47 @@ impl<'a> IsoTPAdapter<'a> {
         stream: &mut std::pin::Pin<&mut Timeout<impl Stream<Item = Frame>>>,
     ) -> Result<Vec<u8>, Error> {
         let mut buf = Vec::new();
-        let mut len: usize = 0;
+        let mut len: Option<usize> = None;
         let mut idx: u8 = 1;
 
         while let Some(frame) = stream.next().await {
             let frame = frame?;
             match (frame.data[0] & FRAME_TYPE_MASK).into() {
-                FrameType::Single => self.recv_single_frame(frame, &mut buf, &mut len).await?,
-                FrameType::First => self.recv_first_frame(frame, &mut buf, &mut len).await?,
-                FrameType::Consecutive => {
-                    self.recv_consecutive_frame(frame, &mut buf, &mut len, &mut idx)
-                        .await?
+                FrameType::Single => {
+                    return Ok(self.recv_single_frame(frame).await?);
                 }
+                FrameType::First => {
+                    // If we already received a first frame, something went wrong
+                    if len.is_some() {
+                        return Err(Error::IsoTPError(crate::isotp::error::Error::OutOfOrder));
+                    }
+                    len = Some(self.recv_first_frame(frame, &mut buf).await?);
+                }
+                FrameType::Consecutive => {
+                    if let Some(len) = len {
+                        idx = self
+                            .recv_consecutive_frame(frame, &mut buf, len, idx)
+                            .await?;
+                        if buf.len() >= len {
+                            return Ok(buf);
+                        }
+                    } else {
+                        return Err(Error::IsoTPError(crate::isotp::error::Error::OutOfOrder));
+                    }
+                }
+                FrameType::FlowControl => {} // Ignore flow control frames, these are from a simultaneous transmission
                 _ => {
                     return Err(Error::IsoTPError(
                         crate::isotp::error::Error::UnknownFrameType,
                     ));
                 }
             };
-
-            debug!("{} {}", len, buf.len());
-
-            if buf.len() >= len {
-                break;
-            }
         }
-        Ok(buf)
-    }
-
-    /// Asynchronously receive an ISO-TP packet. Returns [`Error::Timeout`] if the timeout is exceeded between individual ISO-TP frames. Note the total time to receive a packet may be longer than the timeout.
-    pub async fn recv(&self) -> Result<Vec<u8>, Error> {
-        let stream = self
-            .adapter
-            .recv_filter(|frame| frame.id == self.config.rx_id && !frame.loopback)
-            .timeout(self.config.timeout);
-        tokio::pin!(stream);
-
-        self.recv_from_stream(&mut stream).await
+        unreachable!();
     }
 
     /// Stream of ISO-TP packets. Can be used if multiple responses are expected from a single request. Returns [`Error::Timeout`] if the timeout is exceeded between individual ISO-TP frames. Note the total time to receive a packet may be longer than the timeout.
-    pub fn stream(&self) -> impl Stream<Item = Result<Vec<u8>, Error>> + '_ {
+    pub fn recv(&self) -> impl Stream<Item = Result<Vec<u8>, Error>> + '_ {
         let stream = self
             .adapter
             .recv_filter(|frame| frame.id == self.config.rx_id && !frame.loopback)
@@ -311,7 +299,7 @@ impl<'a> IsoTPAdapter<'a> {
             tokio::pin!(stream);
 
             loop {
-                yield  self.recv_from_stream(&mut stream).await;
+                yield self.recv_from_stream(&mut stream).await;
             }
         })
     }
