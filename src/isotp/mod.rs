@@ -279,6 +279,7 @@ impl<'a> IsoTPAdapter<'a> {
         let mut buf = Vec::new();
         let mut len: Option<usize> = None;
         let mut idx: u8 = 1;
+        println!("RX");
 
         while let Some(frame) = stream.next().await {
             let frame = frame?;

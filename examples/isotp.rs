@@ -8,9 +8,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let adapter = automotive::adapter::get_adapter().unwrap();
-    let mut config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
-    config.timeout = std::time::Duration::from_secs(1);
-
+    let config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
     let isotp = IsoTPAdapter::new(&adapter, config);
 
     let mut stream = isotp.recv();

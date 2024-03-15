@@ -8,9 +8,11 @@ use crate::can::Identifier;
 use async_stream::stream;
 use futures_core::stream::Stream;
 use tokio::sync::{broadcast, mpsc, oneshot};
+use tracing::debug;
 
 const CAN_TX_BUFFER_SIZE: usize = 128;
 const CAN_RX_BUFFER_SIZE: usize = 1024;
+const DEBUG: bool = false;
 
 type BusIdentifier = (u8, Identifier);
 type FrameCallback = (Frame, oneshot::Sender<()>);
@@ -27,6 +29,10 @@ fn process<T: CanAdapter>(
     while shutdown_receiver.try_recv().is_err() {
         let frames: Vec<Frame> = adapter.recv().unwrap();
         for frame in frames {
+            if DEBUG {
+                debug! {"RX {:?}", frame};
+            }
+
             // Wake up sender
             if frame.loopback {
                 let callback = callbacks
@@ -59,6 +65,10 @@ fn process<T: CanAdapter>(
                 .entry((frame.bus, frame.id))
                 .or_insert_with(VecDeque::new)
                 .push_back((loopback_frame, callback));
+
+            if DEBUG {
+                debug! {"TX {:?}", frame};
+            }
 
             buffer.push(frame);
         }
