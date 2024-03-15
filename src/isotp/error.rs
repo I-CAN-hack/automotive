@@ -2,7 +2,7 @@
 
 use thiserror::Error;
 
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug, PartialEq, Copy, Clone)]
 pub enum Error {
     #[error("Data Too Large")]
     DataTooLarge,

@@ -61,7 +61,7 @@ impl From<u8> for NegativeResponseCode {
     }
 }
 
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug, PartialEq, Copy, Clone)]
 pub enum Error {
     #[error("Invalid Reponse Service ID: {0}")]
     InvalidServiceId(u8),

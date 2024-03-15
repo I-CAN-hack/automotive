@@ -1,7 +1,7 @@
 //! Error types for the Panda
 use thiserror::Error;
 
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug, PartialEq, Copy, Clone)]
 pub enum Error {
     /// CAN Packet has invalid checksum in the header
     #[error("Invalid Checksum")]
