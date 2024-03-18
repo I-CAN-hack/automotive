@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 import argparse
-import threading
-import time
 
 from scapy.all import *
-from scapy.ansmachine import AnsweringMachine
 
 
 def forwarding1(pkt):
@@ -37,8 +34,6 @@ if __name__ == "__main__":
         'padding': args.padding,
         'bs': args.bs,
     }
-
-    print(config)
 
     with ISOTPSocket(args.iface, tx_id=args.tx, rx_id=args.rx, **config) as sock1:
         with ISOTPSocket(args.iface, tx_id=args.tx, rx_id=args.rx, listen_only=True, **config) as sock2:
