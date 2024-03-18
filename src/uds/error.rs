@@ -3,6 +3,7 @@ use thiserror::Error;
 
 /// Negative Response Codes returned by ECU as defined in ISO 14229
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 pub enum NegativeResponseCode {
     GeneralReject = 0x10,

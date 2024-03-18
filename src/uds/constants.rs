@@ -7,6 +7,7 @@ pub static ZERO_SUB_FUNCTION: u8 = 0x00;
 
 /// Service Identifiers (SIDs) as defined in ISO 14229
 #[derive(Debug, PartialEq, Copy, Clone, EnumIter)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 pub enum ServiceIdentifier {
     // Diagnostic and Communication Management
@@ -50,6 +51,7 @@ pub enum ServiceIdentifier {
 
 /// Standard Data Identifiers (DIDs) as defined in ISO 14229
 #[derive(Debug, PartialEq, Copy, Clone, EnumIter)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u16)]
 pub enum DataIdentifier {
     BootSoftwareIdentification = 0xf180,
@@ -87,6 +89,7 @@ pub enum DataIdentifier {
 
 /// Diagnostic Session Type Sub-Function ID as defined in ISO 14229
 #[derive(Debug, PartialEq, Copy, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 pub enum SessionType {
     Default = 0x01,
@@ -97,6 +100,7 @@ pub enum SessionType {
 
 /// ECU Reset Sub-Function ID as defined in ISO 14229
 #[derive(Debug, PartialEq, Copy, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 pub enum ResetType {
     /// Simulates power-on/start-up sequence after a power loss
@@ -111,6 +115,7 @@ pub enum ResetType {
 
 /// Security Access Type Sub-Function ID as defined in ISO 14229
 #[derive(Debug, PartialEq, Copy, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 pub enum SecurityAccessType {
     RequestSeed = 0x01,
@@ -119,6 +124,7 @@ pub enum SecurityAccessType {
 
 /// ROutine Control Sub-Function ID as defined in ISO 14229
 #[derive(Debug, PartialEq, Copy, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 pub enum RoutineControlType {
     Start = 0x01,

@@ -36,6 +36,7 @@ const DEFAULT_TIMEOUT_MS: u64 = 100;
 
 /// Configuring passed to the IsoTPAdapter.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IsoTPConfig {
     pub bus: u8,
     /// Transmit ID
