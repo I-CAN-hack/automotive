@@ -123,5 +123,8 @@ async fn isotp_test_bs() {
         bs: 4,
         ..default::Default::default()
     };
+
+    // TODO: can we ensure that we actually wait for the
+    // flow control between blocks?
     isotp_test_echo(64, config).await;
 }
