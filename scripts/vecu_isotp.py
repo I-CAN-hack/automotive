@@ -21,6 +21,8 @@ if __name__ == "__main__":
     parser.add_argument("--tx", type=int, default=0x7a9)
     parser.add_argument("--timeout", type=int, default=10)
     parser.add_argument("--kernel-isotp", type=bool, default=True)
+    parser.add_argument("--stmin", type=int, default=0)
+    parser.add_argument("--padding", type=int, nargs="?", default=None, const=0xaa)
 
     args = parser.parse_args()
 
@@ -29,8 +31,12 @@ if __name__ == "__main__":
     load_contrib('automotive.uds')
     load_contrib('automotive.ecu')
 
+    config = {
+        'stmin': args.stmin,
+        'padding': args.padding,
+    }
 
-    with ISOTPSocket(args.iface, tx_id=args.tx, rx_id=args.rx) as sock1:
-        with ISOTPSocket(args.iface, tx_id=args.tx, rx_id=args.rx) as sock2:
+    with ISOTPSocket(args.iface, tx_id=args.tx, rx_id=args.rx, **config) as sock1:
+        with ISOTPSocket(args.iface, tx_id=args.tx, rx_id=args.rx, **config) as sock2:
             sock1.send(b'\xAA') # Signal to test that ECU is ready
             bridge_and_sniff(if1=sock1, if2=sock2, xfrm12=forwarding1, xfrm21=forwarding2, timeout=args.timeout)
