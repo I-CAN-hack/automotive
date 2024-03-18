@@ -26,7 +26,7 @@ async fn vecu_spawn(adapter: &AsyncCanAdapter) -> ChildGuard {
 }
 
 
-async fn isotp_echo(msg_len: usize) {
+async fn isotp_test_echo(msg_len: usize) {
     let adapter = automotive::socketcan::SocketCan::new_async_from_name("vcan0").unwrap();
     let _vecu = vecu_spawn(&adapter).await;
 
