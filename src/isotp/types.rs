@@ -1,6 +1,7 @@
 use crate::can::Frame;
 
 #[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FlowControlConfig {
     pub block_size: u8,
     pub separation_time_min: std::time::Duration,

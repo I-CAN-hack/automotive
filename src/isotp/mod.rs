@@ -36,6 +36,7 @@ const DEFAULT_TIMEOUT_MS: u64 = 100;
 
 /// Configuring passed to the IsoTPAdapter.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IsoTPConfig {
     pub bus: u8,
     /// Transmit ID
@@ -242,7 +243,6 @@ impl<'a> IsoTPAdapter<'a> {
         if len == 0 {
             unimplemented!("CAN FD escape sequence for first frame not supported");
         }
-
 
         buf.extend(&frame.data[2..]);
 

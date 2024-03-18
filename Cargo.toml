@@ -10,8 +10,10 @@ repository = "https://github.com/I-CAN-hack/automotive"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
+all = []
 test_panda = []
 test_socketcan = []
+serde = ["dep:serde"]
 
 [dependencies]
 async-stream = "^0.3.5"
@@ -21,6 +23,7 @@ futures-core = "^0.3.30"
 futures-util = "^0.3.30"
 hex = "^0.4"
 rusb = "^0.9"
+serde = {version = "^1.0.197", features = ["derive"], optional = true}
 serial_test = "^3.0.0"
 strum = "^0.26"
 strum_macros = "^0.26"

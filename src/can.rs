@@ -4,6 +4,7 @@ use std::fmt;
 
 /// Identifier for a CAN frame
 #[derive(Copy, Clone, PartialOrd, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Identifier {
     Standard(u32),
     Extended(u32),
@@ -51,6 +52,7 @@ impl From<Identifier> for u32 {
 
 /// A CAN frame
 #[derive(Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Frame {
     /// The bus index for adapters supporting multiple CAN busses
     pub bus: u8,

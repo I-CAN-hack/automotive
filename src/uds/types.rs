@@ -4,6 +4,7 @@ use std::time::Duration;
 
 /// Struct returned by DiagnosticSessionControl (0x10)
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SessionParameterRecord {
     /// Performance requirement for the server (i.e. the ECU) to start with th response message after the reception of a request message.
     pub p2_server_max: Duration,
