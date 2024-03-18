@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_imports)]
 use automotive::async_can::AsyncCanAdapter;
 use automotive::can::Identifier;
 use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
@@ -36,13 +37,14 @@ async fn isotp_echo(msg_len: usize) {
 
 }
 
-// #[cfg(feature = "test_vcan")]
+#[cfg(feature = "test_vcan")]
 #[tokio::test]
 #[serial_test::serial]
 async fn isotp_test_single_frame() {
     isotp_echo(7).await;
 }
 
+#[cfg(feature = "test_vcan")]
 #[tokio::test]
 #[serial_test::serial]
 async fn isotp_test_flow_control() {
