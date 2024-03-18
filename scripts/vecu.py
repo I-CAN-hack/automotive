@@ -21,10 +21,11 @@ if __name__ == "__main__":
     parser.add_argument("--tx", type=int, default=0x7a9)
     parser.add_argument("--protocol", type=str, default="iso-tp")
     parser.add_argument("--timeout", type=int, default=10)
+    parser.add_argument("--kernel-isotp", type=bool, default=True)
 
     args = parser.parse_args()
 
-    conf.contribs['ISOTP'] = {'use-can-isotp-kernel-module': False}
+    conf.contribs['ISOTP'] = {'use-can-isotp-kernel-module': args.kernel_isotp}
     load_contrib('isotp')
     load_contrib('automotive.uds')
     load_contrib('automotive.ecu')
