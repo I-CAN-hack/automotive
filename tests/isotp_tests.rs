@@ -18,6 +18,7 @@ impl Drop for ChildGuard {
 #[derive(Default, Copy, Clone)]
 struct VECUConfig {
     pub stmin: u32,
+    pub bs: u32,
     pub padding: Option<u8>,
 }
 
@@ -27,6 +28,9 @@ impl VECUConfig {
 
         result.push("--stmin".to_owned());
         result.push(format!("{}", self.stmin));
+
+        result.push("--bs".to_owned());
+        result.push(format!("{}", self.bs));
 
         if let Some(padding) = self.padding {
             result.push("--padding".to_owned());
@@ -58,7 +62,9 @@ async fn isotp_test_echo(msg_len: usize, config: VECUConfig) {
     let adapter = automotive::socketcan::SocketCan::new_async_from_name("vcan0").unwrap();
     let _vecu = vecu_spawn(&adapter, config).await;
 
-    let config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
+    let mut config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
+    config.padding = config.padding;
+
     let isotp = IsoTPAdapter::new(&adapter, config);
 
     let mut stream = isotp.recv();
@@ -107,4 +113,15 @@ async fn isotp_test_stmin() {
     let start = std::time::Instant::now();
     isotp_test_echo(64, config).await;
     assert!(start.elapsed() > stmin * 8);
+}
+
+#[cfg(feature = "test_vcan")]
+#[tokio::test]
+#[serial_test::serial]
+async fn isotp_test_bs() {
+    let config = VECUConfig {
+        bs: 4,
+        ..default::Default::default()
+    };
+    isotp_test_echo(64, config).await;
 }
