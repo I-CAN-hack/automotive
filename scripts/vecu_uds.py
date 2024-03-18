@@ -23,8 +23,9 @@ if __name__ == "__main__":
         sock.send(b'\xAA') # Signal to test that ECU is ready
 
         resp = [
-            EcuResponse([EcuState(session=1)], responses=UDS() / UDS_TPPR()),
-            EcuResponse([EcuState(session=1)], responses=UDS() / UDS_RDBIPR(dataIdentifier=0x1234) / Raw(b"deadbeef")),
+            EcuResponse([EcuState(session=range(0,255))], responses=UDS() / UDS_TPPR()),
+            EcuResponse([EcuState(session=range(0,255))], responses=UDS() / UDS_RDBIPR(dataIdentifier=0x1234) / Raw(b"deadbeef")),
+            EcuResponse([EcuState(session=range(0,255))], responses=UDS() /  UDS_NR(negativeResponseCode=0x33, requestServiceId=0x10)),
         ]
         ecu = EcuAnsweringMachine(supported_responses=resp, main_socket=sock, basecls=UDS, verbose=False)
         sim = threading.Thread(target=ecu, kwargs={'count': 4, 'timeout': args.timeout})

@@ -1,6 +1,8 @@
 #![allow(dead_code, unused_imports)]
 use automotive::async_can::AsyncCanAdapter;
 use automotive::isotp::IsoTPAdapter;
+use automotive::uds::error::Error as UDSError;
+use automotive::uds::error::NegativeResponseCode;
 use automotive::uds::UDSClient;
 use std::process::{Child, Command};
 use tokio_stream::StreamExt;
@@ -20,16 +22,11 @@ async fn vecu_spawn(adapter: &AsyncCanAdapter) -> ChildGuard {
         .timeout(std::time::Duration::from_millis(VECU_STARTUP_TIMEOUT_MS));
     tokio::pin!(stream);
 
-    let vecu = ChildGuard(
-        Command::new("scripts/vecu_uds.py")
-            .spawn()
-            .unwrap(),
-    );
+    let vecu = ChildGuard(Command::new("scripts/vecu_uds.py").spawn().unwrap());
     stream.next().await.unwrap().expect("vecu did not start");
 
     vecu
 }
-
 
 #[cfg(feature = "test_vcan")]
 #[tokio::test]
@@ -45,4 +42,9 @@ async fn uds_test_sids() {
 
     let data = uds.read_data_by_identifier(0x1234).await.unwrap();
     assert_eq!(data, b"deadbeef".to_vec());
+
+    let resp = uds.diagnostic_session_control(0x2).await;
+    let security_access_denied =
+        UDSError::NegativeResponse(NegativeResponseCode::SecurityAccessDenied);
+    assert_eq!(resp, Err(security_access_denied.into()));
 }
