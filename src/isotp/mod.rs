@@ -244,7 +244,6 @@ impl<'a> IsoTPAdapter<'a> {
             unimplemented!("CAN FD escape sequence for first frame not supported");
         }
 
-
         buf.extend(&frame.data[2..]);
 
         // Send Flow Control
