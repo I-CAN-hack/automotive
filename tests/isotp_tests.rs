@@ -3,7 +3,6 @@ use automotive::async_can::AsyncCanAdapter;
 use automotive::can::Identifier;
 use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
 use std::process::{Child, Command};
-use std::{default, vec};
 use tokio_stream::StreamExt;
 
 static VECU_STARTUP_TIMEOUT_MS: u64 = 1000;
@@ -94,7 +93,7 @@ async fn isotp_test_flow_control() {
 async fn isotp_test_padding() {
     let config = VECUConfig {
         padding: Some(0xCC),
-        ..default::Default::default()
+        ..Default::default()
     };
     isotp_test_echo(5, config).await;
     isotp_test_echo(64, config).await;
@@ -107,7 +106,7 @@ async fn isotp_test_stmin() {
     let stmin = std::time::Duration::from_millis(50);
     let config = VECUConfig {
         stmin: stmin.as_millis() as u32,
-        ..default::Default::default()
+        ..Default::default()
     };
 
     let start = std::time::Instant::now();
@@ -121,7 +120,7 @@ async fn isotp_test_stmin() {
 async fn isotp_test_bs() {
     let config = VECUConfig {
         bs: 4,
-        ..default::Default::default()
+        ..Default::default()
     };
 
     // TODO: can we ensure that we actually wait for the
