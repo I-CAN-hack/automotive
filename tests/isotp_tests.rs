@@ -19,7 +19,7 @@ async fn vecu_spawn(adapter: &AsyncCanAdapter) -> ChildGuard {
     let stream = adapter.recv().timeout(std::time::Duration::from_millis(VECU_STARTUP_TIMEOUT_MS));
     tokio::pin!(stream);
 
-    let vecu = ChildGuard(Command::new("scripts/vecu.py").spawn().unwrap());
+    let vecu = ChildGuard(Command::new("scripts/vecu_isotp.py").spawn().unwrap());
     stream.next().await.unwrap().expect("vecu did not start");
 
     vecu
@@ -45,19 +45,19 @@ async fn isotp_test_echo(msg_len: usize) {
 #[tokio::test]
 #[serial_test::serial]
 async fn isotp_test_single_frame() {
-    isotp_echo(7).await;
+    isotp_test_echo(7).await;
 }
 
 #[cfg(feature = "test_vcan")]
 #[tokio::test]
 #[serial_test::serial]
 async fn isotp_test_flow_control() {
-    isotp_echo(64).await;
+    isotp_test_echo(64).await;
 }
 
 #[cfg(feature = "test_vcan")]
 #[tokio::test]
 #[serial_test::serial]
 async fn isotp_test_cf_idx_overflow() {
-    isotp_echo(256).await;
+    isotp_test_echo(256).await;
 }
