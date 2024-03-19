@@ -16,6 +16,7 @@ jobs:
       run: |
         sudo apt-get -y install linux-modules-extra-$(uname -r) can-utils
         pip install --user scapy
+        scripts/build_can_isotp.sh
         scripts/set_up_vcan.sh
     - name: Build
       run: cargo build --verbose
