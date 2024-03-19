@@ -45,5 +45,5 @@ The following adapters are supported. Hardware implementations can be blocking, 
  - Update file extraction (e.g. .frf and .odx)
  - VIN Decoding
  - J2534 Support on Windows
- - More raw device support, such as ValueCAN and P-CAN by reverse engineering the USB protocol
+ - More device support
  - WebUSB support
