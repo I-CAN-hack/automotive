@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-static DLC_TO_LEN: &[usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64];
+pub static DLC_TO_LEN: &[usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64];
 
 /// Identifier for a CAN frame
 #[derive(Copy, Clone, PartialOrd, Eq, PartialEq, Hash)]

@@ -1,10 +1,8 @@
-use crate::can::Frame;
-use crate::can::Identifier;
+use crate::can::{Frame, Identifier, DLC_TO_LEN};
 use crate::error::Error;
 
 const CANPACKET_HEAD_SIZE: usize = 0x6;
 const CANPACKET_MAX_CHUNK_SIZE: usize = 256;
-static DLC_TO_LEN: &[usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64];
 
 // Header layout
 
