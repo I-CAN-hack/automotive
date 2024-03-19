@@ -14,11 +14,12 @@ impl Drop for ChildGuard {
     }
 }
 
-#[derive(Default, Copy, Clone)]
+#[derive(Default, Copy, Clone, Debug)]
 struct VECUConfig {
     pub stmin: u32,
     pub bs: u32,
     pub padding: Option<u8>,
+    pub fd: bool,
 }
 
 impl VECUConfig {
@@ -34,6 +35,10 @@ impl VECUConfig {
         if let Some(padding) = self.padding {
             result.push("--padding".to_owned());
             result.push(format!("{}", padding));
+        }
+
+        if self.fd {
+            result.push("--fd".to_owned());
         }
 
         result
@@ -63,6 +68,7 @@ async fn isotp_test_echo(msg_len: usize, config: VECUConfig) {
 
     let mut isotp_config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
     isotp_config.padding = config.padding;
+    isotp_config.fd = config.fd;
 
     let isotp = IsoTPAdapter::new(&adapter, isotp_config);
 
@@ -71,6 +77,7 @@ async fn isotp_test_echo(msg_len: usize, config: VECUConfig) {
     isotp.send(&request).await.unwrap();
     let response = stream.next().await.unwrap().unwrap();
 
+    assert_eq!(response.len(), request.len());
     assert_eq!(response, request);
 }
 
@@ -134,4 +141,26 @@ async fn isotp_test_bs() {
         // flow control between blocks?
         isotp_test_echo(64, config).await;
     }
+}
+
+#[cfg(feature = "test_vcan")]
+#[tokio::test]
+#[serial_test::serial]
+async fn isotp_test_fd() {
+    let config = VECUConfig {
+        fd: true,
+        ..Default::default()
+    };
+
+    // Single frame escape
+    isotp_test_echo(62, config).await;
+
+    // Single frame with some padding to reach next DLC
+    isotp_test_echo(50, config).await;
+
+    // Multiple frames
+    isotp_test_echo(256, config).await;
+
+    // First frame escape
+    isotp_test_echo(5000, config).await;
 }

@@ -21,6 +21,7 @@ if __name__ == "__main__":
     parser.add_argument("--stmin", type=int, default=0)
     parser.add_argument("--bs", type=int, default=0)
     parser.add_argument("--padding", type=int, nargs="?", default=None, const=0xaa)
+    parser.add_argument("--fd", action=argparse.BooleanOptionalAction)
 
     args = parser.parse_args()
 
@@ -33,6 +34,7 @@ if __name__ == "__main__":
         'stmin': args.stmin,
         'padding': args.padding,
         'bs': args.bs,
+        'fd': args.fd,
     }
 
     with ISOTPSocket(args.iface, tx_id=args.tx, rx_id=args.rx, **config) as sock1:

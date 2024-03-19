@@ -18,8 +18,7 @@ pub mod error;
 pub mod types;
 
 use crate::async_can::AsyncCanAdapter;
-use crate::can::Frame;
-use crate::can::Identifier;
+use crate::can::{Frame, Identifier, DLC_TO_LEN};
 use crate::error::Error;
 use crate::isotp::constants::FlowStatus;
 use crate::isotp::constants::FLOW_SATUS_MASK;
@@ -33,6 +32,13 @@ use tracing::debug;
 use self::types::FlowControlConfig;
 
 const DEFAULT_TIMEOUT_MS: u64 = 100;
+const DEFAULT_PADDING_BYTE: u8 = 0xAA;
+
+const CAN_MAX_DLEN: usize = 8;
+const CAN_FD_MAX_DLEN: usize = 64;
+
+const ISO_TP_MAX_DLEN: usize = (1 << 12) - 1;
+const ISO_TP_FD_MAX_DLEN: usize = (1 << 32) - 1;
 
 /// Configuring passed to the IsoTPAdapter.
 #[derive(Debug, Clone, Copy)]
@@ -43,14 +49,14 @@ pub struct IsoTPConfig {
     pub tx_id: Identifier,
     /// Receive ID
     pub rx_id: Identifier,
-    /// Transmit Data Length
-    pub tx_dl: usize,
     /// Padding byte (0x00, or more efficient 0xAA). Set to None to disable padding.
     pub padding: Option<u8>,
     /// Max timeout for receiving a frame
     pub timeout: std::time::Duration,
     /// Override for Seperation Time (STmin) for transmitted frames
     pub separation_time_min: Option<std::time::Duration>,
+    /// Enable CAN-FD Mode
+    pub fd: bool,
 }
 
 impl IsoTPConfig {
@@ -83,10 +89,10 @@ impl IsoTPConfig {
             bus,
             tx_id,
             rx_id,
-            tx_dl: 8,
-            padding: Some(0xaa),
+            padding: Some(DEFAULT_PADDING_BYTE),
             timeout: std::time::Duration::from_millis(DEFAULT_TIMEOUT_MS),
             separation_time_min: None,
+            fd: false,
         }
     }
 }
@@ -110,35 +116,94 @@ impl<'a> IsoTPAdapter<'a> {
     }
 
     fn pad(&self, data: &mut Vec<u8>) {
+        // Pad to next valid DLC
+        if !DLC_TO_LEN.contains(&data.len()) {
+            let idx = DLC_TO_LEN.iter().position(|&x| x > data.len()).unwrap();
+            let padding = self.config.padding.unwrap_or(DEFAULT_PADDING_BYTE);
+            let len = DLC_TO_LEN[idx] - data.len();
+            data.extend(std::iter::repeat(padding).take(len));
+        }
+
+        // Pad to full length if padding is enabled
         if let Some(padding) = self.config.padding {
-            let len = self.config.tx_dl - data.len();
+            let len = self.max_can_data_length() - data.len();
             data.extend(std::iter::repeat(padding).take(len));
         }
     }
+
+    fn max_can_data_length(&self) -> usize {
+        if self.config.fd {
+            CAN_FD_MAX_DLEN
+        } else {
+            CAN_MAX_DLEN
+        }
+    }
+
+    fn max_isotp_data_length(&self) -> usize {
+        if self.config.fd {
+            ISO_TP_FD_MAX_DLEN
+        } else {
+            ISO_TP_MAX_DLEN
+        }
+    }
+
+    fn frame(&self, data: &[u8]) -> Result<Frame, Error> {
+        // Check if the data length is valid
+        if !DLC_TO_LEN.contains(&data.len()) {
+            println!("len {}", data.len());
+            return Err(crate::error::Error::MalformedFrame);
+        }
+
+        let frame = Frame {
+            bus: self.config.bus,
+            id: self.config.tx_id,
+            data: data.to_vec(),
+            loopback: false,
+            fd: self.config.fd,
+        };
+
+        Ok(frame)
+    }
     pub async fn send_single_frame(&self, data: &[u8]) -> Result<(), Error> {
-        let mut buf = vec![FrameType::Single as u8 | data.len() as u8];
+        let mut buf;
+
+        if data.len() < CAN_MAX_DLEN {
+            buf = vec![FrameType::Single as u8 | data.len() as u8];
+        } else {
+            // Use escape sequence for length, length is in the next byte
+            buf = vec![FrameType::Single as u8, data.len() as u8];
+        }
+
         buf.extend(data);
         self.pad(&mut buf);
 
         debug!("TX SF, length: {} data {}", data.len(), hex::encode(&buf));
 
-        let frame = Frame::new(self.config.bus, self.config.tx_id, &buf)?;
+        let frame = self.frame(&buf)?;
         self.adapter.send(&frame).await;
         Ok(())
     }
 
-    pub async fn send_first_frame(&self, data: &[u8]) -> Result<(), Error> {
-        let b0: u8 = FrameType::First as u8 | ((data.len() >> 8) & 0xF) as u8;
-        let b1: u8 = (data.len() & 0xFF) as u8;
-
-        let mut buf = vec![b0, b1];
-        buf.extend(&data[..self.config.tx_dl - 2]);
+    pub async fn send_first_frame(&self, data: &[u8]) -> Result<usize, Error> {
+        let mut buf;
+        if data.len() <= ISO_TP_MAX_DLEN {
+            let b0: u8 = FrameType::First as u8 | ((data.len() >> 8) & 0xF) as u8;
+            let b1: u8 = (data.len() & 0xFF) as u8;
+            buf = vec![b0, b1];
+        } else {
+            let b0: u8 = FrameType::First as u8;
+            let b1: u8 = 0x00;
+            buf = vec![b0, b1];
+            buf.extend((data.len() as u32).to_be_bytes());
+        }
+        let offset = buf.len();
+        buf.extend(&data[..self.max_can_data_length() - buf.len()]);
 
         debug!("TX FF, length: {} data {}", data.len(), hex::encode(&buf));
 
-        let frame = Frame::new(self.config.bus, self.config.tx_id, &buf)?;
+        let frame = self.frame(&buf)?;
         self.adapter.send(&frame).await;
-        Ok(())
+        Ok(offset)
     }
 
     pub async fn send_consecutive_frame(&self, data: &[u8], idx: usize) -> Result<(), Error> {
@@ -150,7 +215,8 @@ impl<'a> IsoTPAdapter<'a> {
 
         debug!("TX CF, idx: {} data {}", idx, hex::encode(&buf));
 
-        let frame = Frame::new(self.config.bus, self.config.tx_id, &buf)?;
+        let frame = self.frame(&buf)?;
+
         self.adapter.send(&frame).await;
 
         Ok(())
@@ -185,7 +251,7 @@ impl<'a> IsoTPAdapter<'a> {
             .timeout(self.config.timeout);
         tokio::pin!(stream);
 
-        self.send_first_frame(data).await?;
+        let offset = self.send_first_frame(data).await?;
         let frame = stream.next().await.unwrap()?;
         let mut fc_config = self.receive_flow_control(&frame)?;
 
@@ -197,7 +263,8 @@ impl<'a> IsoTPAdapter<'a> {
             None => fc_config.separation_time_min,
         };
 
-        let chunks = data[self.config.tx_dl - 2..].chunks(self.config.tx_dl - 1);
+        let tx_dl = self.max_can_data_length();
+        let chunks = data[tx_dl - offset..].chunks(tx_dl - 1);
         let mut it = chunks.enumerate().peekable();
         while let Some((idx, chunk)) = it.next() {
             self.send_consecutive_frame(chunk, idx).await?;
@@ -223,9 +290,13 @@ impl<'a> IsoTPAdapter<'a> {
     pub async fn send(&self, data: &[u8]) -> Result<(), Error> {
         debug!("TX {}", hex::encode(data));
 
-        if data.len() < self.config.tx_dl {
+        // Single frame has 1 byte of overhead for CAN, and 2 bytes for CAN-FD with escape sequence
+        let fits_in_single_frame =
+            data.len() < CAN_MAX_DLEN || data.len() < self.max_can_data_length() - 1;
+
+        if fits_in_single_frame {
             self.send_single_frame(data).await?;
-        } else if data.len() <= 4095 {
+        } else if data.len() <= self.max_isotp_data_length() {
             self.send_multiple(data).await?;
         } else {
             return Err(crate::isotp::error::Error::DataTooLarge.into());
@@ -234,37 +305,45 @@ impl<'a> IsoTPAdapter<'a> {
         Ok(())
     }
     async fn recv_single_frame(&self, frame: &Frame) -> Result<Vec<u8>, Error> {
-        let len = (frame.data[0] & 0xF) as usize;
+        let mut len = (frame.data[0] & 0xF) as usize;
+        let mut offset = 1;
+
+        // CAN-FD Escape sequence
         if len == 0 {
-            unimplemented!("CAN FD escape sequence for single frame not supported");
+            len = frame.data[1] as usize;
+            offset = 2;
         }
 
         // Check if the frame contains enough data
-        if len + 1 > frame.data.len() {
+        if len + offset > frame.data.len() {
             return Err(crate::isotp::error::Error::MalformedFrame.into());
         }
 
         debug!("RX SF, length: {} data {}", len, hex::encode(&frame.data));
 
-        Ok(frame.data[1..len + 1].to_vec())
+        Ok(frame.data[offset..len + offset].to_vec())
     }
 
     async fn recv_first_frame(&self, frame: &Frame, buf: &mut Vec<u8>) -> Result<usize, Error> {
         let b0 = frame.data[0] as u16;
         let b1 = frame.data[1] as u16;
-        let len = ((b0 << 8 | b1) & 0xFFF) as usize;
+        let mut len = ((b0 << 8 | b1) & 0xFFF) as usize;
+        let mut offset = 2;
 
-        debug!("RX FF, length: {}, data {}", len, hex::encode(&frame.data));
+        // CAN-FD Escape sequence
         if len == 0 {
-            unimplemented!("CAN FD escape sequence for first frame not supported");
+            offset = 6;
+            len = u32::from_be_bytes([frame.data[2], frame.data[3], frame.data[4], frame.data[5]])
+                as usize;
         }
+        debug!("RX FF, length: {}, data {}", len, hex::encode(&frame.data));
 
         // A FF cannot use CAN frame data optmization, and always needs to be full length.
-        if frame.data.len() < self.config.tx_dl {
+        if frame.data.len() < self.max_can_data_length() {
             return Err(crate::isotp::error::Error::MalformedFrame.into());
         }
 
-        buf.extend(&frame.data[2..]);
+        buf.extend(&frame.data[offset..]);
 
         // Send Flow Control
         let mut flow_control = vec![0x30, 0x00, 0x00];
@@ -272,7 +351,7 @@ impl<'a> IsoTPAdapter<'a> {
 
         debug!("TX FC, data {}", hex::encode(&flow_control));
 
-        let frame = Frame::new(self.config.bus, self.config.tx_id, &flow_control)?;
+        let frame = self.frame(&flow_control)?;
         self.adapter.send(&frame).await;
 
         Ok(len)
@@ -289,9 +368,10 @@ impl<'a> IsoTPAdapter<'a> {
         let remaining_len = len - buf.len();
 
         // Only the last consecutive frame can use CAN frame data optimization
-        if remaining_len >= self.config.tx_dl - 1 {
+        let tx_dl = self.max_can_data_length();
+        if remaining_len >= tx_dl - 1 {
             // Ensure frame is full length
-            if frame.data.len() < self.config.tx_dl {
+            if frame.data.len() < tx_dl {
                 return Err(crate::isotp::error::Error::MalformedFrame.into());
             }
         } else {
