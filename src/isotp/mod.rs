@@ -141,18 +141,22 @@ impl<'a> IsoTPAdapter<'a> {
         }
     }
 
+    /// Ofset from the start of the frame. 1 in case of extended address, 0 otherwise.
     fn offset(&self) -> usize {
         self.config.ext_address.is_some() as usize
     }
 
+    /// Maximum data for a clasic CAN frame, taking into account space needed for the extended address.
     fn can_max_dlen(&self) -> usize {
         CAN_MAX_DLEN - self.offset()
     }
 
+    /// Maximum data for a CAN-FD frame, taking into account space needed for the extended address.
     fn can_fd_max_dlen(&self) -> usize {
         CAN_FD_MAX_DLEN - self.offset()
     }
 
+    /// Maximum data length for a CAN frame based on the current config
     fn max_can_data_length(&self) -> usize {
         if self.config.fd {
             self.can_fd_max_dlen()
@@ -161,6 +165,7 @@ impl<'a> IsoTPAdapter<'a> {
         }
     }
 
+    /// Maximum data length for an ISO-TP packet based on the current config
     fn max_isotp_data_length(&self) -> usize {
         if self.config.fd {
             ISO_TP_FD_MAX_DLEN
@@ -169,6 +174,7 @@ impl<'a> IsoTPAdapter<'a> {
         }
     }
 
+    /// Build a CAN frame from the payload. Inserts extended address and padding if needed.
     fn frame(&self, data: &[u8]) -> Result<Frame, Error> {
         let mut data = data.to_vec();
 
@@ -192,6 +198,7 @@ impl<'a> IsoTPAdapter<'a> {
 
         Ok(frame)
     }
+
     pub async fn send_single_frame(&self, data: &[u8]) -> Result<(), Error> {
         let mut buf;
 
@@ -356,46 +363,46 @@ impl<'a> IsoTPAdapter<'a> {
 
         Ok(())
     }
-    async fn recv_single_frame(&self, frame: &Frame) -> Result<Vec<u8>, Error> {
-        let mut len = (frame.data[0] & 0xF) as usize;
+
+    async fn recv_single_frame(&self, data: &[u8]) -> Result<Vec<u8>, Error> {
+        let mut len = (data[0] & 0xF) as usize;
         let mut offset = 1;
 
         // CAN-FD Escape sequence
         if len == 0 {
-            len = frame.data[1] as usize;
+            len = data[1] as usize;
             offset = 2;
         }
 
         // Check if the frame contains enough data
-        if len + offset > frame.data.len() {
+        if len + offset > data.len() {
             return Err(crate::isotp::error::Error::MalformedFrame.into());
         }
 
-        debug!("RX SF, length: {} data {}", len, hex::encode(&frame.data));
+        debug!("RX SF, length: {} data {}", len, hex::encode(data));
 
-        Ok(frame.data[offset..len + offset].to_vec())
+        Ok(data[offset..len + offset].to_vec())
     }
 
-    async fn recv_first_frame(&self, frame: &Frame, buf: &mut Vec<u8>) -> Result<usize, Error> {
-        let b0 = frame.data[0] as u16;
-        let b1 = frame.data[1] as u16;
+    async fn recv_first_frame(&self, data: &[u8], buf: &mut Vec<u8>) -> Result<usize, Error> {
+        let b0 = data[0] as u16;
+        let b1 = data[1] as u16;
         let mut len = ((b0 << 8 | b1) & 0xFFF) as usize;
         let mut offset = 2;
 
         // CAN-FD Escape sequence
         if len == 0 {
             offset = 6;
-            len = u32::from_be_bytes([frame.data[2], frame.data[3], frame.data[4], frame.data[5]])
-                as usize;
+            len = u32::from_be_bytes([data[2], data[3], data[4], data[5]]) as usize;
         }
-        debug!("RX FF, length: {}, data {}", len, hex::encode(&frame.data));
+        debug!("RX FF, length: {}, data {}", len, hex::encode(data));
 
         // A FF cannot use CAN frame data optmization, and always needs to be full length.
-        if frame.data.len() < self.max_can_data_length() {
+        if data.len() < self.max_can_data_length() {
             return Err(crate::isotp::error::Error::MalformedFrame.into());
         }
 
-        buf.extend(&frame.data[offset..]);
+        buf.extend(&data[offset..]);
 
         // Send Flow Control
         let mut flow_control = vec![0x30, 0x00, 0x00];
@@ -411,35 +418,35 @@ impl<'a> IsoTPAdapter<'a> {
 
     async fn recv_consecutive_frame(
         &self,
-        frame: &Frame,
+        data: &[u8],
         buf: &mut Vec<u8>,
         len: usize,
         idx: u8,
     ) -> Result<u8, Error> {
-        let msg_idx = frame.data[0] & 0xF;
+        let msg_idx = data[0] & 0xF;
         let remaining_len = len - buf.len();
 
         // Only the last consecutive frame can use CAN frame data optimization
         let tx_dl = self.max_can_data_length();
         if remaining_len >= tx_dl - 1 {
             // Ensure frame is full length
-            if frame.data.len() < tx_dl {
+            if data.len() < tx_dl {
                 return Err(crate::isotp::error::Error::MalformedFrame.into());
             }
         } else {
             // Ensure frame is long enough to contain the remaining data
-            if frame.data.len() - 1 < remaining_len {
+            if data.len() - 1 < remaining_len {
                 return Err(crate::isotp::error::Error::MalformedFrame.into());
             }
         }
 
-        let end_idx = std::cmp::min(remaining_len + 1, frame.data.len());
+        let end_idx = std::cmp::min(remaining_len + 1, data.len());
 
-        buf.extend(&frame.data[1..end_idx]);
+        buf.extend(&data[1..end_idx]);
         debug!(
             "RX CF, idx: {}, data {} {}",
             idx,
-            hex::encode(&frame.data),
+            hex::encode(data),
             hex::encode(&buf)
         );
 
@@ -462,24 +469,23 @@ impl<'a> IsoTPAdapter<'a> {
 
         while let Some(frame) = stream.next().await {
             // Remove extended address from frame
-            let mut frame = frame?;
-            frame.data = frame.data.split_off(self.offset());
+            let data = &frame?.data[self.offset()..];
 
-            match FrameType::from_repr(frame.data[0] & FRAME_TYPE_MASK) {
+            match FrameType::from_repr(data[0] & FRAME_TYPE_MASK) {
                 Some(FrameType::Single) => {
-                    return self.recv_single_frame(&frame).await;
+                    return self.recv_single_frame(data).await;
                 }
                 Some(FrameType::First) => {
                     // If we already received a first frame, something went wrong
                     if len.is_some() {
                         return Err(Error::IsoTPError(crate::isotp::error::Error::OutOfOrder));
                     }
-                    len = Some(self.recv_first_frame(&frame, &mut buf).await?);
+                    len = Some(self.recv_first_frame(data, &mut buf).await?);
                 }
                 Some(FrameType::Consecutive) => {
                     if let Some(len) = len {
                         idx = self
-                            .recv_consecutive_frame(&frame, &mut buf, len, idx)
+                            .recv_consecutive_frame(data, &mut buf, len, idx)
                             .await?;
                         if buf.len() >= len {
                             return Ok(buf);
