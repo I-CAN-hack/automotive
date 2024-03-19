@@ -14,7 +14,7 @@ jobs:
     - uses: actions/checkout@v3
     - name: Setup SocketCAN
       run: |
-        sudo apt-get -y install linux-modules-extra-$(uname -r) pyton3-scapy
+        sudo apt-get -y install linux-modules-extra-$(uname -r) python3-scapy
         sudo scripts/set_up_vcan.sh
     - name: Build
       run: cargo build --verbose
