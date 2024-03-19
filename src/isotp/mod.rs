@@ -34,6 +34,8 @@ use self::types::FlowControlConfig;
 const DEFAULT_TIMEOUT_MS: u64 = 100;
 const DEFAULT_PADDING_BYTE: u8 = 0xAA;
 
+const MAX_WAIT_FC: usize = 10;
+
 const CAN_MAX_DLEN: usize = 8;
 const CAN_FD_MAX_DLEN: usize = 64;
 
@@ -222,25 +224,38 @@ impl<'a> IsoTPAdapter<'a> {
         Ok(())
     }
 
-    fn receive_flow_control(&self, frame: &Frame) -> Result<FlowControlConfig, Error> {
-        // Check if Flow Control
-        if FrameType::from_repr(frame.data[0] & FRAME_TYPE_MASK) != Some(FrameType::FlowControl) {
-            return Err(crate::isotp::error::Error::FlowControl.into());
-        };
+    async fn receive_flow_control(
+        &self,
+        stream: &mut std::pin::Pin<&mut Timeout<impl Stream<Item = Frame>>>,
+    ) -> Result<FlowControlConfig, Error> {
+        for _ in 0..MAX_WAIT_FC {
+            let frame = stream.next().await.unwrap()?;
+            debug!("RX FC, data {}", hex::encode(&frame.data));
 
-        // Check Flow Status
-        match FlowStatus::from_repr(frame.data[0] & FLOW_SATUS_MASK) {
-            Some(FlowStatus::ContinueToSend) => {} // Ok
-            Some(FlowStatus::Wait) => unimplemented!("Wait flow control not implemented"),
-            Some(FlowStatus::Overflow) => return Err(crate::isotp::error::Error::Overflow.into()),
-            None => return Err(crate::isotp::error::Error::MalformedFrame.into()),
-        };
+            // Check if Flow Control
+            if FrameType::from_repr(frame.data[0] & FRAME_TYPE_MASK) != Some(FrameType::FlowControl)
+            {
+                return Err(crate::isotp::error::Error::FlowControl.into());
+            };
 
-        // Parse block size and separation time
-        let config = types::FlowControlConfig::try_from(frame)?;
+            // Check Flow Status
+            match FlowStatus::from_repr(frame.data[0] & FLOW_SATUS_MASK) {
+                Some(FlowStatus::ContinueToSend) => {} // Ok
+                Some(FlowStatus::Wait) => continue,    // Wait for next flow control
+                Some(FlowStatus::Overflow) => {
+                    return Err(crate::isotp::error::Error::Overflow.into())
+                }
+                None => return Err(crate::isotp::error::Error::MalformedFrame.into()),
+            };
 
-        debug!("RX FC, {:?} data {}", config, hex::encode(&frame.data));
-        Ok(config)
+            // Parse block size and separation time
+            let config = types::FlowControlConfig::try_from(&frame)?;
+
+            debug!("RX FC, {:?} data {}", config, hex::encode(&frame.data));
+            return Ok(config);
+        }
+
+        Err(crate::isotp::error::Error::TooManyFCWait.into())
     }
 
     async fn send_multiple(&self, data: &[u8]) -> Result<(), Error> {
@@ -252,10 +267,7 @@ impl<'a> IsoTPAdapter<'a> {
         tokio::pin!(stream);
 
         let offset = self.send_first_frame(data).await?;
-        let frame = stream.next().await.unwrap()?;
-        let mut fc_config = self.receive_flow_control(&frame)?;
-
-        debug!("RX FC, data {}", hex::encode(&frame.data));
+        let mut fc_config = self.receive_flow_control(&mut stream).await?;
 
         // Check for separation time override
         let st_min = match self.config.separation_time_min {
@@ -272,8 +284,7 @@ impl<'a> IsoTPAdapter<'a> {
             // Wait for flow control every `block_size` frames, except for the first frame
             if fc_config.block_size != 0 && idx > 0 && idx % fc_config.block_size as usize == 0 {
                 // Wait for next flow control
-                let frame = stream.next().await.unwrap()?;
-                fc_config = self.receive_flow_control(&frame)?;
+                fc_config = self.receive_flow_control(&mut stream).await?;
             } else {
                 // Sleep for separation time between frames
                 let last = it.peek().is_none();
