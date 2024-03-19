@@ -1,6 +1,6 @@
 #![allow(dead_code, unused_imports)]
 use automotive::async_can::AsyncCanAdapter;
-use automotive::isotp::IsoTPAdapter;
+use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
 use automotive::uds::error::Error as UDSError;
 use automotive::uds::error::NegativeResponseCode;
 use automotive::uds::UDSClient;
