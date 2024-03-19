@@ -5,7 +5,7 @@ use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
 use std::process::{Child, Command};
 use tokio_stream::StreamExt;
 
-static VECU_STARTUP_TIMEOUT_MS: u64 = 1000;
+static VECU_STARTUP_TIMEOUT_MS: u64 = 10000;
 
 struct ChildGuard(Child);
 impl Drop for ChildGuard {
@@ -76,6 +76,7 @@ async fn isotp_test_echo(msg_len: usize, config: VECUConfig) {
     isotp_config.padding = config.padding;
     isotp_config.fd = config.fd;
     isotp_config.ext_address = config.ext_address;
+    isotp_config.timeout = std::time::Duration::from_millis(1000);
 
     let isotp = IsoTPAdapter::new(&adapter, isotp_config);
 

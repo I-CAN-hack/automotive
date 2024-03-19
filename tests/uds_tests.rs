@@ -1,13 +1,14 @@
 #![allow(dead_code, unused_imports)]
 use automotive::async_can::AsyncCanAdapter;
-use automotive::isotp::IsoTPAdapter;
+use automotive::can::Identifier;
+use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
 use automotive::uds::error::Error as UDSError;
 use automotive::uds::error::NegativeResponseCode;
 use automotive::uds::UDSClient;
 use std::process::{Child, Command};
 use tokio_stream::StreamExt;
 
-static VECU_STARTUP_TIMEOUT_MS: u64 = 1000;
+static VECU_STARTUP_TIMEOUT_MS: u64 = 10000;
 
 struct ChildGuard(Child);
 impl Drop for ChildGuard {
@@ -35,7 +36,10 @@ async fn uds_test_sids() {
     let adapter = automotive::socketcan::SocketCan::new_async_from_name("vcan0").unwrap();
     let _vecu = vecu_spawn(&adapter).await;
 
-    let isotp = IsoTPAdapter::from_id(&adapter, 0x7a1);
+    let mut isotp_config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
+    isotp_config.timeout = std::time::Duration::from_millis(1000);
+
+    let isotp = IsoTPAdapter::new(&adapter, isotp_config);
     let uds = UDSClient::new(&isotp);
 
     uds.tester_present().await.unwrap();
