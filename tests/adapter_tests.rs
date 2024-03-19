@@ -15,7 +15,7 @@ fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
     let mut frames = vec![];
 
     for i in 0..BULK_NUM_FRAMES {
-        frames.push(Frame::new(0, 0x123.into(), &i.to_be_bytes()));
+        frames.push(Frame::new(0, 0x123.into(), &i.to_be_bytes()).unwrap());
     }
 
     adapter.send(&frames).unwrap();
@@ -45,7 +45,7 @@ async fn bulk_send(adapter: &AsyncCanAdapter) {
     let mut frames = vec![];
 
     for i in 0..BULK_NUM_FRAMES {
-        frames.push(Frame::new(0, 0x123.into(), &i.to_be_bytes()));
+        frames.push(Frame::new(0, 0x123.into(), &i.to_be_bytes()).unwrap());
     }
 
     let r = frames.iter().map(|frame| adapter.send(frame));
@@ -122,5 +122,7 @@ async fn vcan_bulk_send_async() {
 #[serial_test::serial]
 async fn vcan_bulk_send_fd() {
     let adapter = automotive::socketcan::SocketCan::new_async_from_name("vcan0").unwrap();
-    adapter.send(&Frame::new(0, 0x123.into(), &[0u8; 64])).await;
+    adapter
+        .send(&Frame::new(0, 0x123.into(), &[0u8; 64]).unwrap())
+        .await;
 }
