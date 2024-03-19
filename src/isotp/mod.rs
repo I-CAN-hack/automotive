@@ -184,7 +184,7 @@ impl<'a> IsoTPAdapter<'a> {
 
         self.send_first_frame(data).await;
         let frame = stream.next().await.unwrap()?;
-        let fc_config = self.receive_flow_control(&frame)?;
+        let mut fc_config = self.receive_flow_control(&frame)?;
 
         debug!("RX FC, data {}", hex::encode(&frame.data));
 
@@ -199,11 +199,19 @@ impl<'a> IsoTPAdapter<'a> {
         while let Some((idx, chunk)) = it.next() {
             self.send_consecutive_frame(chunk, idx).await;
 
-            // Sleep for separation time between frames
-            let last = it.peek().is_none();
-            if !last {
-                tokio::time::sleep(st_min).await;
+            // Wait for flow control every `block_size` frames, except for the first frame
+            if fc_config.block_size != 0 && idx > 0 && idx % fc_config.block_size as usize == 0 {
+                // Wait for next flow control
+                let frame = stream.next().await.unwrap()?;
+                fc_config = self.receive_flow_control(&frame)?;
+            } else {
+                // Sleep for separation time between frames
+                let last = it.peek().is_none();
+                if !last {
+                    tokio::time::sleep(st_min).await;
+                }
             }
+
         }
 
         Ok(())
