@@ -12,7 +12,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+    - name: Setup SocketCAN
+      run: |
+        sudo apt-get -y install linux-modules-extra-$(uname -r)
+        sudo scripts/set_up_vcan.sh
     - name: Build
       run: cargo build --verbose
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --features=test_vcan --verbose
