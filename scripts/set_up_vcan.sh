@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+set -e
 
 sudo modprobe can
 sudo modprobe can-isotp
