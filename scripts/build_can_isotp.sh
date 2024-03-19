@@ -8,6 +8,6 @@ git checkout mainline-5.4+
 make
 sudo make modules_install
 
-sudo modprobe can
-sudo insmod ./net/can/can-isotp.ko || true
-sudo dmesg
+# sudo modprobe can
+# sudo insmod ./net/can/can-isotp.ko || true
+# sudo dmesg
