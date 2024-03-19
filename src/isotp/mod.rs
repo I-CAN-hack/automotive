@@ -115,19 +115,19 @@ impl<'a> IsoTPAdapter<'a> {
             data.extend(std::iter::repeat(padding).take(len));
         }
     }
-
-    pub async fn send_single_frame(&self, data: &[u8]) {
+    pub async fn send_single_frame(&self, data: &[u8]) -> Result<(), Error> {
         let mut buf = vec![FrameType::Single as u8 | data.len() as u8];
         buf.extend(data);
         self.pad(&mut buf);
 
         debug!("TX SF, length: {} data {}", data.len(), hex::encode(&buf));
 
-        let frame = Frame::new(self.config.bus, self.config.tx_id, &buf);
+        let frame = Frame::new(self.config.bus, self.config.tx_id, &buf)?;
         self.adapter.send(&frame).await;
+        Ok(())
     }
 
-    pub async fn send_first_frame(&self, data: &[u8]) {
+    pub async fn send_first_frame(&self, data: &[u8]) -> Result<(), Error> {
         let b0: u8 = FrameType::First as u8 | ((data.len() >> 8) & 0xF) as u8;
         let b1: u8 = (data.len() & 0xFF) as u8;
 
@@ -136,11 +136,12 @@ impl<'a> IsoTPAdapter<'a> {
 
         debug!("TX FF, length: {} data {}", data.len(), hex::encode(&buf));
 
-        let frame = Frame::new(self.config.bus, self.config.tx_id, &buf);
+        let frame = Frame::new(self.config.bus, self.config.tx_id, &buf)?;
         self.adapter.send(&frame).await;
+        Ok(())
     }
 
-    pub async fn send_consecutive_frame(&self, data: &[u8], idx: usize) {
+    pub async fn send_consecutive_frame(&self, data: &[u8], idx: usize) -> Result<(), Error> {
         let idx = ((idx + 1) & 0xF) as u8;
 
         let mut buf = vec![FrameType::Consecutive as u8 | idx];
@@ -149,8 +150,10 @@ impl<'a> IsoTPAdapter<'a> {
 
         debug!("TX CF, idx: {} data {}", idx, hex::encode(&buf));
 
-        let frame = Frame::new(self.config.bus, self.config.tx_id, &buf);
+        let frame = Frame::new(self.config.bus, self.config.tx_id, &buf)?;
         self.adapter.send(&frame).await;
+
+        Ok(())
     }
 
     fn receive_flow_control(&self, frame: &Frame) -> Result<FlowControlConfig, Error> {
@@ -182,7 +185,7 @@ impl<'a> IsoTPAdapter<'a> {
             .timeout(self.config.timeout);
         tokio::pin!(stream);
 
-        self.send_first_frame(data).await;
+        self.send_first_frame(data).await?;
         let frame = stream.next().await.unwrap()?;
         let mut fc_config = self.receive_flow_control(&frame)?;
 
@@ -197,7 +200,7 @@ impl<'a> IsoTPAdapter<'a> {
         let chunks = data[self.config.tx_dl - 2..].chunks(self.config.tx_dl - 1);
         let mut it = chunks.enumerate().peekable();
         while let Some((idx, chunk)) = it.next() {
-            self.send_consecutive_frame(chunk, idx).await;
+            self.send_consecutive_frame(chunk, idx).await?;
 
             // Wait for flow control every `block_size` frames, except for the first frame
             if fc_config.block_size != 0 && idx > 0 && idx % fc_config.block_size as usize == 0 {
@@ -221,7 +224,7 @@ impl<'a> IsoTPAdapter<'a> {
         debug!("TX {}", hex::encode(data));
 
         if data.len() < self.config.tx_dl {
-            self.send_single_frame(data).await;
+            self.send_single_frame(data).await?;
         } else if data.len() <= 4095 {
             self.send_multiple(data).await?;
         } else {
@@ -269,7 +272,7 @@ impl<'a> IsoTPAdapter<'a> {
 
         debug!("TX FC, data {}", hex::encode(&flow_control));
 
-        let frame = Frame::new(self.config.bus, self.config.tx_id, &flow_control);
+        let frame = Frame::new(self.config.bus, self.config.tx_id, &flow_control)?;
         self.adapter.send(&frame).await;
 
         Ok(len)

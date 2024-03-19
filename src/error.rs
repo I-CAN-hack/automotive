@@ -6,6 +6,8 @@ use thiserror::Error;
 pub enum Error {
     #[error("Not Found")]
     NotFound,
+    #[error("Not Supported")]
+    NotSupported,
     #[error("Malformed Frame")]
     MalformedFrame,
     #[error("Timeout")]

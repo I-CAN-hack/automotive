@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+static DLC_TO_LEN: &[usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64];
+
 /// Identifier for a CAN frame
 #[derive(Copy, Clone, PartialOrd, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -62,18 +64,37 @@ pub struct Frame {
     pub data: Vec<u8>,
     /// Wheter the frame was sent out by the adapter
     pub loopback: bool,
-    // TODO: Add timestamp, can-fd, rtr, dlc
+    /// CAN-FD Frame
+    pub fd: bool,
+    // TODO: Add timestamp, rtr, dlc
 }
 impl Unpin for Frame {}
 
 impl Frame {
-    pub fn new(bus: u8, id: Identifier, data: &[u8]) -> Frame {
-        Frame {
+    pub fn new(bus: u8, id: Identifier, data: &[u8]) -> Result<Frame, crate::error::Error> {
+        // Check if the data length is valid
+        if !DLC_TO_LEN.contains(&data.len()) {
+            return Err(crate::error::Error::MalformedFrame);
+        }
+
+        // Check if the ID makes sense
+        match id {
+            Identifier::Standard(id) if id > 0x7ff => {
+                return Err(crate::error::Error::MalformedFrame)
+            }
+            Identifier::Extended(id) if id > 0x1fffffff => {
+                return Err(crate::error::Error::MalformedFrame)
+            }
+            _ => {}
+        };
+
+        Ok(Frame {
             bus,
             id,
             data: data.to_vec(),
             loopback: false,
-        }
+            fd: data.len() > 8,
+        })
     }
 }
 
@@ -84,6 +105,7 @@ impl fmt::Debug for Frame {
             .field("id", &self.id)
             .field("data", &hex::encode(&self.data))
             .field("loopback", &self.loopback)
+            .field("fd", &self.fd)
             .finish()
     }
 }

@@ -47,6 +47,10 @@ pub fn pack_can_buffer(frames: &[Frame]) -> Result<Vec<Vec<u8>>, Error> {
             return Err(Error::MalformedFrame);
         }
 
+        if frame.fd {
+            return Err(Error::NotSupported);
+        }
+
         let dlc = DLC_TO_LEN.iter().position(|&x| x == frame.data.len());
         let dlc = dlc.ok_or(Error::MalformedFrame)? as u8;
 
@@ -111,11 +115,16 @@ pub fn unpack_can_buffer(dat: &mut Vec<u8>) -> Result<Vec<Frame>, Error> {
             ));
         }
 
+        // Panda doesn't properly communicate if a frame was FD or not.
+        // We'll assume it was FD when the data length is > 8.
+        let fd = data_len > 8;
+
         ret.push(Frame {
             id,
             bus,
             data: dat[CANPACKET_HEAD_SIZE..(CANPACKET_HEAD_SIZE + data_len)].to_vec(),
             loopback: returned,
+            fd,
         });
 
         dat.drain(0..(CANPACKET_HEAD_SIZE + data_len));
@@ -171,12 +180,14 @@ mod tests {
                 id: Identifier::Standard(0x123),
                 data: vec![1, 2, 3, 4, 5, 6, 7, 8],
                 loopback: false,
+                fd: false,
             },
             Frame {
                 bus: 1,
                 id: Identifier::Extended(0x123),
                 data: vec![1, 2, 3, 4],
                 loopback: false,
+                fd: false,
             },
         ];
 
@@ -194,6 +205,7 @@ mod tests {
             id: Identifier::Standard(0x123),
             data: vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
             loopback: false,
+            fd: false,
         }];
         let r = pack_can_buffer(&frames);
         assert_eq!(r, Err(Error::MalformedFrame));
@@ -206,6 +218,7 @@ mod tests {
             id: Identifier::Standard(0xfff),
             data: vec![1, 2, 3, 4, 5, 6, 7, 8],
             loopback: false,
+            fd: false,
         }];
         let r = pack_can_buffer(&frames);
         assert_eq!(r, Err(Error::MalformedFrame));
