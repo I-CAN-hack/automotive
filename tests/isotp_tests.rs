@@ -61,10 +61,10 @@ async fn isotp_test_echo(msg_len: usize, config: VECUConfig) {
     let adapter = automotive::socketcan::SocketCan::new_async_from_name("vcan0").unwrap();
     let _vecu = vecu_spawn(&adapter, config).await;
 
-    let mut config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
-    config.padding = config.padding;
+    let mut isotp_config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
+    isotp_config.padding = config.padding;
 
-    let isotp = IsoTPAdapter::new(&adapter, config);
+    let isotp = IsoTPAdapter::new(&adapter, isotp_config);
 
     let mut stream = isotp.recv();
     let request = vec![0xaa; msg_len];
