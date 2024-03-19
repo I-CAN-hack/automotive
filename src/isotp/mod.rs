@@ -60,6 +60,8 @@ pub struct IsoTPConfig {
     pub separation_time_min: Option<std::time::Duration>,
     /// Enable CAN-FD Mode
     pub fd: bool,
+    /// Extended address
+    pub ext_address: Option<u8>,
 }
 
 impl IsoTPConfig {
@@ -96,6 +98,7 @@ impl IsoTPConfig {
             timeout: std::time::Duration::from_millis(DEFAULT_TIMEOUT_MS),
             separation_time_min: None,
             fd: false,
+            ext_address: None,
         }
     }
 }
@@ -119,26 +122,42 @@ impl<'a> IsoTPAdapter<'a> {
     }
 
     fn pad(&self, data: &mut Vec<u8>) {
+        // Ensure we leave space for the extended address
+        let offset = self.config.ext_address.is_some() as usize;
+        let len = data.len() + offset;
+
         // Pad to next valid DLC
-        if !DLC_TO_LEN.contains(&data.len()) {
+        if !DLC_TO_LEN.contains(&len) {
             let idx = DLC_TO_LEN.iter().position(|&x| x > data.len()).unwrap();
             let padding = self.config.padding.unwrap_or(DEFAULT_PADDING_BYTE);
-            let len = DLC_TO_LEN[idx] - data.len();
-            data.extend(std::iter::repeat(padding).take(len));
+            let padding_len = DLC_TO_LEN[idx] - len;
+            data.extend(std::iter::repeat(padding).take(padding_len));
         }
 
         // Pad to full length if padding is enabled
         if let Some(padding) = self.config.padding {
-            let len = self.max_can_data_length() - data.len();
-            data.extend(std::iter::repeat(padding).take(len));
+            let padding_len = self.max_can_data_length() - len;
+            data.extend(std::iter::repeat(padding).take(padding_len));
         }
+    }
+
+    fn offset(&self) -> usize {
+        self.config.ext_address.is_some() as usize
+    }
+
+    fn can_max_dlen(&self) -> usize {
+        CAN_MAX_DLEN - self.offset()
+    }
+
+    fn can_fd_max_dlen(&self) -> usize {
+        CAN_FD_MAX_DLEN - self.offset()
     }
 
     fn max_can_data_length(&self) -> usize {
         if self.config.fd {
-            CAN_FD_MAX_DLEN
+            self.can_fd_max_dlen()
         } else {
-            CAN_MAX_DLEN
+            self.can_max_dlen()
         }
     }
 
@@ -151,6 +170,12 @@ impl<'a> IsoTPAdapter<'a> {
     }
 
     fn frame(&self, data: &[u8]) -> Result<Frame, Error> {
+        let mut data = data.to_vec();
+
+        if let Some(ext_address) = self.config.ext_address {
+            data.insert(0, ext_address);
+        }
+
         // Check if the data length is valid
         if !DLC_TO_LEN.contains(&data.len()) {
             println!("len {}", data.len());
@@ -160,7 +185,7 @@ impl<'a> IsoTPAdapter<'a> {
         let frame = Frame {
             bus: self.config.bus,
             id: self.config.tx_id,
-            data: data.to_vec(),
+            data,
             loopback: false,
             fd: self.config.fd,
         };
@@ -170,7 +195,8 @@ impl<'a> IsoTPAdapter<'a> {
     pub async fn send_single_frame(&self, data: &[u8]) -> Result<(), Error> {
         let mut buf;
 
-        if data.len() < CAN_MAX_DLEN {
+        if data.len() < 0xf {
+            // Len fits in single nibble
             buf = vec![FrameType::Single as u8 | data.len() as u8];
         } else {
             // Use escape sequence for length, length is in the next byte
@@ -230,7 +256,11 @@ impl<'a> IsoTPAdapter<'a> {
         stream: &mut std::pin::Pin<&mut Timeout<impl Stream<Item = Frame>>>,
     ) -> Result<FlowControlConfig, Error> {
         for _ in 0..MAX_WAIT_FC {
-            let frame = stream.next().await.unwrap()?;
+            let mut frame = stream.next().await.unwrap()?;
+
+            // Remove extended address from frame
+            frame.data = frame.data.split_off(self.offset());
+
             debug!("RX FC, data {}", hex::encode(&frame.data));
 
             // Check if Flow Control
@@ -263,7 +293,17 @@ impl<'a> IsoTPAdapter<'a> {
         // Stream for receiving flow control
         let stream = self
             .adapter
-            .recv_filter(|frame| frame.id == self.config.rx_id && !frame.loopback)
+            .recv_filter(|frame| {
+                if frame.id != self.config.rx_id || frame.loopback {
+                    return false;
+                }
+
+                if self.config.ext_address.is_some() {
+                    return frame.data.first() == self.config.ext_address.as_ref();
+                }
+
+                true
+            })
             .timeout(self.config.timeout);
         tokio::pin!(stream);
 
@@ -304,7 +344,7 @@ impl<'a> IsoTPAdapter<'a> {
 
         // Single frame has 1 byte of overhead for CAN, and 2 bytes for CAN-FD with escape sequence
         let fits_in_single_frame =
-            data.len() < CAN_MAX_DLEN || data.len() < self.max_can_data_length() - 1;
+            data.len() < self.can_max_dlen() || data.len() < self.max_can_data_length() - 1;
 
         if fits_in_single_frame {
             self.send_single_frame(data).await?;
@@ -421,7 +461,10 @@ impl<'a> IsoTPAdapter<'a> {
         let mut idx: u8 = 1;
 
         while let Some(frame) = stream.next().await {
-            let frame = frame?;
+            // Remove extended address from frame
+            let mut frame = frame?;
+            frame.data = frame.data.split_off(self.offset());
+
             match FrameType::from_repr(frame.data[0] & FRAME_TYPE_MASK) {
                 Some(FrameType::Single) => {
                     return self.recv_single_frame(&frame).await;
@@ -458,7 +501,17 @@ impl<'a> IsoTPAdapter<'a> {
     pub fn recv(&self) -> impl Stream<Item = Result<Vec<u8>, Error>> + '_ {
         let stream = self
             .adapter
-            .recv_filter(|frame| frame.id == self.config.rx_id && !frame.loopback)
+            .recv_filter(|frame| {
+                if frame.id != self.config.rx_id || frame.loopback {
+                    return false;
+                }
+
+                if self.config.ext_address.is_some() {
+                    return frame.data.first() == self.config.ext_address.as_ref();
+                }
+
+                true
+            })
             .timeout(self.config.timeout);
 
         Box::pin(stream! {
