@@ -14,8 +14,8 @@ jobs:
     - uses: actions/checkout@v3
     - name: Setup SocketCAN
       run: |
+        sudo apt-get -y install can-utils
         pip install --user scapy
-        scripts/build_can_isotp.sh
         scripts/set_up_vcan.sh
     - name: Build
       run: cargo build --verbose
