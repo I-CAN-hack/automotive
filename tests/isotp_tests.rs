@@ -118,12 +118,15 @@ async fn isotp_test_stmin() {
 #[tokio::test]
 #[serial_test::serial]
 async fn isotp_test_bs() {
-    let config = VECUConfig {
-        bs: 4,
-        ..Default::default()
-    };
+    for bs in 1..=8 {
+        let config = VECUConfig {
+            bs,
+            ..Default::default()
+        };
+        isotp_test_echo(64, config).await;
 
-    // TODO: can we ensure that we actually wait for the
-    // flow control between blocks?
-    isotp_test_echo(64, config).await;
+        // TODO: can we ensure that we actually wait for the
+        // flow control between blocks?
+        isotp_test_echo(64, config).await;
+    }
 }
