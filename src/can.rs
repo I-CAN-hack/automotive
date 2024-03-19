@@ -62,17 +62,21 @@ pub struct Frame {
     pub data: Vec<u8>,
     /// Wheter the frame was sent out by the adapter
     pub loopback: bool,
-    // TODO: Add timestamp, can-fd, rtr, dlc
+    /// CAN-FD Frame
+    pub fd: bool,
+    // TODO: Add timestamp, rtr, dlc
 }
 impl Unpin for Frame {}
 
 impl Frame {
     pub fn new(bus: u8, id: Identifier, data: &[u8]) -> Frame {
+        // TODO: Check if data has a valid length (check DLC table)
         Frame {
             bus,
             id,
             data: data.to_vec(),
             loopback: false,
+            fd: data.len() > 8,
         }
     }
 }

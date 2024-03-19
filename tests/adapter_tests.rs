@@ -90,3 +90,37 @@ async fn socketcan_bulk_send_async() {
     let adapter = automotive::socketcan::SocketCan::new_async_from_name("can0").unwrap();
     bulk_send(&adapter).await;
 }
+
+// #[cfg(feature = "test_socketcan")]
+// #[tokio::test]
+// #[serial_test::serial]
+// async fn vcan_bulk_send_fd() {
+//     let adapter = automotive::socketcan::SocketCan::new_async_from_name("can0").unwrap();
+//     adapter.send(&Frame::new(0, 0x123.into(), &[0u8; 64])).await;
+// }
+
+#[cfg(feature = "test_vcan")]
+#[test]
+#[serial_test::serial]
+fn vcan_bulk_send_sync() {
+    use socketcan::Socket;
+    let socket = socketcan::CanFdSocket::open("vcan0").unwrap();
+    let mut adapter = automotive::socketcan::SocketCan::new(socket);
+    bulk_send_sync(&mut adapter);
+}
+
+#[cfg(feature = "test_vcan")]
+#[tokio::test]
+#[serial_test::serial]
+async fn vcan_bulk_send_async() {
+    let adapter = automotive::socketcan::SocketCan::new_async_from_name("vcan0").unwrap();
+    bulk_send(&adapter).await;
+}
+
+#[cfg(feature = "test_vcan")]
+#[tokio::test]
+#[serial_test::serial]
+async fn vcan_bulk_send_fd() {
+    let adapter = automotive::socketcan::SocketCan::new_async_from_name("vcan0").unwrap();
+    adapter.send(&Frame::new(0, 0x123.into(), &[0u8; 64])).await;
+}

@@ -17,6 +17,7 @@ impl From<socketcan::frame::CanDataFrame> for crate::can::Frame {
             id: frame.id().into(),
             data: frame.data().to_vec(),
             loopback: false,
+            fd: false,
         }
     }
 }
@@ -28,16 +29,22 @@ impl From<socketcan::frame::CanFdFrame> for crate::can::Frame {
             id: frame.id().into(),
             data: frame.data().to_vec(),
             loopback: false,
+            fd: true,
         }
     }
 }
 
 impl From<crate::can::Frame> for socketcan::frame::CanAnyFrame {
     fn from(frame: crate::can::Frame) -> Self {
-        // TODO: Check if source is FD frame
-        socketcan::frame::CanAnyFrame::Normal(
-            socketcan::frame::CanDataFrame::new(frame.id, &frame.data).unwrap(),
-        )
+        let id: socketcan::Id = frame.id.into();
+        match frame.fd {
+            true => socketcan::frame::CanAnyFrame::Fd(
+                socketcan::frame::CanFdFrame::new(id, &frame.data).unwrap(),
+            ),
+            false => socketcan::frame::CanAnyFrame::Normal(
+                socketcan::frame::CanDataFrame::new(id, &frame.data).unwrap(),
+            ),
+        }
     }
 }
 
