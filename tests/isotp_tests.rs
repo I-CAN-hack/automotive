@@ -80,8 +80,10 @@ async fn isotp_test_echo(msg_len: usize, config: VECUConfig) {
 async fn isotp_test_flow_control() {
     let config = VECUConfig::default();
     // Single frame
+    isotp_test_echo(1, config).await;
     isotp_test_echo(7, config).await;
     // Flow control
+    isotp_test_echo(62, config).await; // No padding on last CF
     isotp_test_echo(64, config).await;
     // Overflow IDX in flow control
     isotp_test_echo(256, config).await;
@@ -95,7 +97,10 @@ async fn isotp_test_padding() {
         padding: Some(0xCC),
         ..Default::default()
     };
+
+    isotp_test_echo(1, config).await;
     isotp_test_echo(5, config).await;
+    isotp_test_echo(62, config).await; // No padding on last CF
     isotp_test_echo(64, config).await;
 }
 

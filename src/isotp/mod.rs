@@ -211,7 +211,6 @@ impl<'a> IsoTPAdapter<'a> {
                     tokio::time::sleep(st_min).await;
                 }
             }
-
         }
 
         Ok(())
@@ -237,6 +236,11 @@ impl<'a> IsoTPAdapter<'a> {
             unimplemented!("CAN FD escape sequence for single frame not supported");
         }
 
+        // Check if the frame contains enough data
+        if len + 1 > frame.data.len() {
+            return Err(crate::isotp::error::Error::MalformedFrame.into());
+        }
+
         debug!("RX SF, length: {} data {}", len, hex::encode(&frame.data));
 
         Ok(frame.data[1..len + 1].to_vec())
@@ -250,6 +254,11 @@ impl<'a> IsoTPAdapter<'a> {
         debug!("RX FF, length: {}, data {}", len, hex::encode(&frame.data));
         if len == 0 {
             unimplemented!("CAN FD escape sequence for first frame not supported");
+        }
+
+        // A FF cannot use CAN frame data optmization, and always needs to be full length.
+        if frame.data.len() < self.config.tx_dl {
+            return Err(crate::isotp::error::Error::MalformedFrame.into());
         }
 
         buf.extend(&frame.data[2..]);
@@ -275,6 +284,20 @@ impl<'a> IsoTPAdapter<'a> {
     ) -> Result<u8, Error> {
         let msg_idx = frame.data[0] & 0xF;
         let remaining_len = len - buf.len();
+
+        // Only the last consecutive frame can use CAN frame data optimization
+        if remaining_len >= self.config.tx_dl - 1 {
+            // Ensure frame is full length
+            if frame.data.len() < self.config.tx_dl {
+                return Err(crate::isotp::error::Error::MalformedFrame.into());
+            }
+        } else {
+            // Ensure frame is long enough to contain the remaining data
+            if frame.data.len() - 1 < remaining_len {
+                return Err(crate::isotp::error::Error::MalformedFrame.into());
+            }
+        }
+
         let end_idx = std::cmp::min(remaining_len + 1, frame.data.len());
 
         buf.extend(&frame.data[1..end_idx]);
