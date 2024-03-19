@@ -34,6 +34,7 @@ use self::types::FlowControlConfig;
 const DEFAULT_TIMEOUT_MS: u64 = 100;
 const DEFAULT_PADDING_BYTE: u8 = 0xAA;
 
+/// N_WFTmax in ISO 15765-2
 const MAX_WAIT_FC: usize = 10;
 
 const CAN_MAX_DLEN: usize = 8;
