@@ -9,7 +9,7 @@ Welcome to the `automotive` crate documentation. The purpose of this crate is to
 The following adapter opens the first available adapter on the system, and then receives all frames.
 
 ```rust
-let adapter = automotive::adapter::get_adapter().unwrap();
+let adapter = automotive::can::get_adapter().unwrap();
 let mut stream = adapter.recv();
 
 while let Some(frame) = stream.next().await {
@@ -23,7 +23,7 @@ while let Some(frame) = stream.next().await {
 The automotive crate also supplies interfaces for various diagnostic protocols such as UDS. The adapter is first wrapped to support the ISO Transport Layer, then a UDS Client is created. All methods are fully async, making it easy to communicate with multiple ECUs in parallel. See [https://github.com/I-CAN-hack/automotive/issues/21](https://github.com/I-CAN-hack/automotive/issues/21) for progress on the supported SIDs.
 
 ```rust
-let adapter = automotive::adapter::get_adapter().unwrap();
+let adapter = automotive::can::get_adapter().unwrap();
 let isotp = automotive::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
 let uds = automotive::uds::UDSClient::new(&isotp);
 

@@ -8,7 +8,7 @@
 //! ```rust
 //! use futures_util::stream::StreamExt;
 //! async fn can_example() {
-//!     let adapter = automotive::adapter::get_adapter().unwrap();
+//!     let adapter = automotive::can::get_adapter().unwrap();
 //!     let mut stream = adapter.recv();
 //!
 //!     while let Some(frame) = stream.next().await {
@@ -24,12 +24,12 @@
 //!
 //! ```rust
 //! async fn uds_example() {
-//!     let adapter = automotive::adapter::get_adapter().unwrap();
+//!     let adapter = automotive::can::get_adapter().unwrap();
 //!     let isotp = automotive::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
 //!     let uds = automotive::uds::UDSClient::new(&isotp);
 //!
 //!     uds.tester_present().await.unwrap();
-//!     let response = uds.read_data_by_identifier(automotive::uds::constants::DataIdentifier::ApplicationSoftwareIdentification as u16).await.unwrap();
+//!     let response = uds.read_data_by_identifier(automotive::uds::DataIdentifier::ApplicationSoftwareIdentification as u16).await.unwrap();
 //!
 //!     println!("Application Software Identification: {}", hex::encode(response));
 //! }
@@ -40,13 +40,14 @@
 //!  - comma.ai panda (all platforms)
 //!
 
-pub mod adapter;
-pub mod async_can;
 pub mod can;
-pub mod error;
+mod error;
 pub mod isotp;
 pub mod panda;
 pub mod uds;
+
+pub use error::Error;
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(target_os = "linux")]
 pub mod socketcan;

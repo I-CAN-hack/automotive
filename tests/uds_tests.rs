@@ -1,9 +1,9 @@
 #![allow(dead_code, unused_imports)]
-use automotive::async_can::AsyncCanAdapter;
+use automotive::can::AsyncCanAdapter;
 use automotive::can::Identifier;
 use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
-use automotive::uds::error::Error as UDSError;
-use automotive::uds::error::NegativeResponseCode;
+use automotive::uds::Error as UDSError;
+use automotive::uds::NegativeResponseCode;
 use automotive::uds::UDSClient;
 use std::process::{Child, Command};
 use tokio_stream::StreamExt;

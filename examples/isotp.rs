@@ -7,7 +7,7 @@ use tracing_subscriber;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let adapter = automotive::adapter::get_adapter().unwrap();
+    let adapter = automotive::can::get_adapter().unwrap();
     let config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
     let isotp = IsoTPAdapter::new(&adapter, config);
 

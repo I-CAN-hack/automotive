@@ -1,7 +1,7 @@
 //! Convenience functions to get a CAN adapter.
 
 /// Convenience function to get the first available adapter on the system. Supports both comma.ai panda, and SocketCAN.
-pub fn get_adapter() -> Result<crate::async_can::AsyncCanAdapter, crate::error::Error> {
+pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error> {
     if let Ok(panda) = crate::panda::Panda::new_async() {
         return Ok(panda);
     }

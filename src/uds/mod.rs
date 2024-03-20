@@ -2,24 +2,24 @@
 //! ## Example
 //! ```rust
 //! async fn uds_example() {
-//!     let adapter = automotive::adapter::get_adapter().unwrap();
+//!     let adapter = automotive::can::get_adapter().unwrap();
 //!     let isotp = automotive::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
 //!     let uds = automotive::uds::UDSClient::new(&isotp);
 //!
 //!     uds.tester_present().await.unwrap();
-//!     let response = uds.read_data_by_identifier(automotive::uds::constants::DataIdentifier::ApplicationSoftwareIdentification as u16).await.unwrap();
+//!     let response = uds.read_data_by_identifier(automotive::uds::DataIdentifier::ApplicationSoftwareIdentification as u16).await.unwrap();
 //!
 //!     println!("Application Software Identification: {}", hex::encode(response));
 //! }
 
-pub mod constants;
-pub mod error;
-pub mod types;
+mod constants;
+mod error;
+mod types;
 
-use crate::error::Error;
 use crate::isotp::IsoTPAdapter;
-use crate::uds::constants::{ServiceIdentifier, NEGATIVE_RESPONSE, POSITIVE_RESPONSE};
-use crate::uds::error::NegativeResponseCode;
+use crate::Result;
+pub use constants::*;
+pub use error::{Error, NegativeResponseCode};
 
 use tokio_stream::StreamExt;
 use tracing::info;
@@ -40,7 +40,7 @@ impl<'a> UDSClient<'a> {
         sid: u8,
         sub_function: Option<u8>,
         data: Option<&[u8]>,
-    ) -> Result<Vec<u8>, Error> {
+    ) -> Result<Vec<u8>> {
         let mut request: Vec<u8> = vec![sid];
 
         if let Some(sub_function) = sub_function {
@@ -68,24 +68,18 @@ impl<'a> UDSClient<'a> {
                     continue;
                 }
 
-                return Err(Error::UDSError(crate::uds::error::Error::NegativeResponse(
-                    code,
-                )));
+                return Err(Error::NegativeResponse(code).into());
             }
 
             // Check service id
             if response_sid != sid | POSITIVE_RESPONSE {
-                return Err(Error::UDSError(crate::uds::error::Error::InvalidServiceId(
-                    response_sid,
-                )));
+                return Err(Error::InvalidServiceId(response_sid).into());
             }
 
             // Check sub function
             if let Some(sub_function) = sub_function {
                 if response[1] != sub_function {
-                    return Err(Error::UDSError(
-                        crate::uds::error::Error::InvalidSubFunction(response[1]),
-                    ));
+                    return Err(Error::InvalidSubFunction(response[1]).into());
                 }
             }
 
@@ -98,7 +92,7 @@ impl<'a> UDSClient<'a> {
     pub async fn diagnostic_session_control(
         &self,
         session_type: u8,
-    ) -> Result<Option<types::SessionParameterRecord>, Error> {
+    ) -> Result<Option<types::SessionParameterRecord>> {
         let result = self
             .request(
                 ServiceIdentifier::DiagnosticSessionControl as u8,
@@ -126,7 +120,7 @@ impl<'a> UDSClient<'a> {
     }
 
     /// 0x11 - ECU Reset. The `reset_type` parameter can be used to specify the type of reset to perform. Use the [`constants::ResetType`] enum for  the reset types defined in the standard. This function returns the power down time when the reset type is [`constants::ResetType::EnableRapidPowerShutDown`].
-    pub async fn ecu_reset(&self, reset_type: u8) -> Result<Option<u8>, Error> {
+    pub async fn ecu_reset(&self, reset_type: u8) -> Result<Option<u8>> {
         let result = self
             .request(ServiceIdentifier::EcuReset as u8, Some(reset_type), None)
             .await?;
@@ -141,11 +135,7 @@ impl<'a> UDSClient<'a> {
     }
 
     /// 0x27 - Security Access. Odd `access_type` values are used to request a seed, even values to send a key. The `data` parameter is optional when requesting a seed. You can use the [`constants::SecurityAccessType`] enum for the default security level.
-    pub async fn security_access(
-        &self,
-        access_type: u8,
-        data: Option<&[u8]>,
-    ) -> Result<Vec<u8>, Error> {
+    pub async fn security_access(&self, access_type: u8, data: Option<&[u8]>) -> Result<Vec<u8>> {
         let send_key = access_type % 2 == 0;
         if send_key && data.is_none() {
             panic!("Missing data parameter when sending key");
@@ -163,7 +153,7 @@ impl<'a> UDSClient<'a> {
     }
 
     /// 0x3E - Tester Present
-    pub async fn tester_present(&self) -> Result<(), Error> {
+    pub async fn tester_present(&self) -> Result<()> {
         self.request(ServiceIdentifier::TesterPresent as u8, Some(0), None)
             .await?;
         Ok(())
@@ -175,7 +165,7 @@ impl<'a> UDSClient<'a> {
         memory_address: &[u8],
         memory_size: &[u8],
         data: Option<&[u8]>,
-    ) -> Result<Vec<u8>, Error> {
+    ) -> Result<Vec<u8>> {
         assert!(
             sid == ServiceIdentifier::ReadMemoryByAddress
                 || sid == ServiceIdentifier::WriteMemoryByAddress
@@ -197,7 +187,7 @@ impl<'a> UDSClient<'a> {
     }
 
     /// 0x22 - Read Data By Identifier. Specify a 16 bit data identifier, or use a constant from [`constants::DataIdentifier`] for standardized identifiers. Reading multiple identifiers simultaneously is possible on some ECUs, but not supported by this function.
-    pub async fn read_data_by_identifier(&self, data_identifier: u16) -> Result<Vec<u8>, Error> {
+    pub async fn read_data_by_identifier(&self, data_identifier: u16) -> Result<Vec<u8>> {
         let did = data_identifier.to_be_bytes();
         let resp = self
             .request(
@@ -208,16 +198,12 @@ impl<'a> UDSClient<'a> {
             .await?;
 
         if resp.len() < 2 {
-            return Err(Error::UDSError(
-                crate::uds::error::Error::InvalidResponseLength,
-            ));
+            return Err(Error::InvalidResponseLength.into());
         }
 
         let did = u16::from_be_bytes([resp[0], resp[1]]);
         if did != data_identifier {
-            return Err(Error::UDSError(
-                crate::uds::error::Error::InvalidDataIdentifier(did),
-            ));
+            return Err(Error::InvalidDataIdentifier(did).into());
         }
 
         Ok(resp[2..].to_vec())
@@ -228,7 +214,7 @@ impl<'a> UDSClient<'a> {
         &self,
         memory_address: &[u8],
         memory_size: &[u8],
-    ) -> Result<Vec<u8>, Error> {
+    ) -> Result<Vec<u8>> {
         self.read_write_memory_by_adddress(
             ServiceIdentifier::ReadMemoryByAddress,
             memory_address,
@@ -243,7 +229,7 @@ impl<'a> UDSClient<'a> {
         &self,
         data_identifier: u16,
         data_record: &[u8],
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let mut data: Vec<u8> = data_identifier.to_be_bytes().to_vec();
         data.extend(data_record);
 
@@ -256,16 +242,12 @@ impl<'a> UDSClient<'a> {
             .await?;
 
         if resp.len() < 2 {
-            return Err(Error::UDSError(
-                crate::uds::error::Error::InvalidResponseLength,
-            ));
+            return Err(Error::InvalidResponseLength.into());
         }
 
         let did = u16::from_be_bytes([resp[0], resp[1]]);
         if did != data_identifier {
-            return Err(Error::UDSError(
-                crate::uds::error::Error::InvalidDataIdentifier(did),
-            ));
+            return Err(Error::InvalidDataIdentifier(did).into());
         }
 
         Ok(())
@@ -277,7 +259,7 @@ impl<'a> UDSClient<'a> {
         memory_address: &[u8],
         memory_size: &[u8],
         data: &[u8],
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         self.read_write_memory_by_adddress(
             ServiceIdentifier::WriteMemoryByAddress,
             memory_address,
@@ -294,7 +276,7 @@ impl<'a> UDSClient<'a> {
         routine_control_type: constants::RoutineControlType,
         routine_identifier: u16,
         data: Option<&[u8]>,
-    ) -> Result<Option<Vec<u8>>, Error> {
+    ) -> Result<Option<Vec<u8>>> {
         let mut buf: Vec<u8> = vec![];
         buf.extend(routine_identifier.to_be_bytes());
         if let Some(data) = data {
@@ -310,16 +292,12 @@ impl<'a> UDSClient<'a> {
             .await?;
 
         if resp.len() < 2 {
-            return Err(Error::UDSError(
-                crate::uds::error::Error::InvalidResponseLength,
-            ));
+            return Err(Error::InvalidResponseLength.into());
         }
 
         let id = u16::from_be_bytes([resp[0], resp[1]]);
         if id != routine_identifier {
-            return Err(Error::UDSError(
-                crate::uds::error::Error::InvalidDataIdentifier(id),
-            ));
+            return Err(Error::InvalidDataIdentifier(id).into());
         }
 
         Ok(if resp.len() > 2 {
@@ -336,7 +314,7 @@ impl<'a> UDSClient<'a> {
         encryption_method: u8,
         memory_address: &[u8],
         memory_size: &[u8],
-    ) -> Result<usize, Error> {
+    ) -> Result<usize> {
         assert!(
             sid == ServiceIdentifier::RequestDownload || sid == ServiceIdentifier::RequestUpload
         );
@@ -357,16 +335,12 @@ impl<'a> UDSClient<'a> {
 
         // Ensure the response contains at least a length format
         if resp.is_empty() {
-            return Err(Error::UDSError(
-                crate::uds::error::Error::InvalidResponseLength,
-            ));
+            return Err(Error::InvalidResponseLength.into());
         }
 
         let num_length_bytes = (resp[0] >> 4) as usize;
         if num_length_bytes == 0 || num_length_bytes > 8 || resp.len() != num_length_bytes + 1 {
-            return Err(Error::UDSError(
-                crate::uds::error::Error::InvalidResponseLength,
-            ));
+            return Err(Error::InvalidResponseLength.into());
         }
 
         // Convert the length bytes to a usize
@@ -384,7 +358,7 @@ impl<'a> UDSClient<'a> {
         encryption_method: u8,
         memory_address: &[u8],
         memory_size: &[u8],
-    ) -> Result<usize, Error> {
+    ) -> Result<usize> {
         self.request_download_upload(
             ServiceIdentifier::RequestDownload,
             compression_method,
@@ -402,7 +376,7 @@ impl<'a> UDSClient<'a> {
         encryption_method: u8,
         memory_address: &[u8],
         memory_size: &[u8],
-    ) -> Result<usize, Error> {
+    ) -> Result<usize> {
         self.request_download_upload(
             ServiceIdentifier::RequestUpload,
             compression_method,
@@ -418,7 +392,7 @@ impl<'a> UDSClient<'a> {
         &self,
         block_sequence_counter: u8,
         data: Option<&[u8]>,
-    ) -> Result<Option<Vec<u8>>, Error> {
+    ) -> Result<Option<Vec<u8>>> {
         let mut buf: Vec<u8> = vec![block_sequence_counter];
         if let Some(data) = data {
             buf.extend(data);
@@ -430,16 +404,12 @@ impl<'a> UDSClient<'a> {
 
         // Ensure the response contains at least the block sequence counter
         if resp.is_empty() {
-            return Err(Error::UDSError(
-                crate::uds::error::Error::InvalidResponseLength,
-            ));
+            return Err(Error::InvalidResponseLength.into());
         }
 
         // Check block sequence counter
         if resp[0] != block_sequence_counter {
-            return Err(Error::UDSError(
-                crate::uds::error::Error::InvalidBlockSequenceCounter(resp[0]),
-            ));
+            return Err(Error::InvalidBlockSequenceCounter(resp[0]).into());
         }
 
         Ok(if resp.len() > 1 {
@@ -450,10 +420,7 @@ impl<'a> UDSClient<'a> {
     }
 
     /// 0x37 - Request Transfer Exit. Used to terminate an upload or download. Has optional `data` parameter for additional information, and can optionally return additional information from the ECU. For example, this can be used to contain a checksum.
-    pub async fn request_transfer_exit(
-        &self,
-        data: Option<&[u8]>,
-    ) -> Result<Option<Vec<u8>>, Error> {
+    pub async fn request_transfer_exit(&self, data: Option<&[u8]>) -> Result<Option<Vec<u8>>> {
         let resp = self
             .request(ServiceIdentifier::RequestTransferExit as u8, None, data)
             .await?;

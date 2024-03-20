@@ -1,15 +1,16 @@
 //! Panda CAN adapter support
 
 mod constants;
-pub mod error;
+mod error;
 mod usb_protocol;
 
+pub use error::Error;
 use std::vec;
 
-use crate::async_can::AsyncCanAdapter;
+use crate::can::AsyncCanAdapter;
 use crate::can::CanAdapter;
-use crate::error::Error;
 use crate::panda::constants::{Endpoint, HwType, SafetyModel};
+use crate::Result;
 use tracing::{info, warn};
 
 const VENDOR_ID: u16 = 0xbbaa;
@@ -35,13 +36,13 @@ unsafe impl Send for Panda {}
 
 impl Panda {
     /// Convenience function to create a new panda adapter and wrap in an [`AsyncCanAdapter`]
-    pub fn new_async() -> Result<AsyncCanAdapter, Error> {
+    pub fn new_async() -> Result<AsyncCanAdapter> {
         let panda = Panda::new()?;
         Ok(AsyncCanAdapter::new(panda))
     }
 
     /// Connect to the first available panda. This function will set the safety mode to ALL_OUTPUT and clear all buffers.
-    pub fn new() -> Result<Panda, Error> {
+    pub fn new() -> Result<Panda> {
         for device in rusb::devices().unwrap().iter() {
             let device_desc = device.device_descriptor().unwrap();
 
@@ -63,9 +64,7 @@ impl Panda {
             // Check panda firmware version
             let versions = panda.get_packets_versions()?;
             if versions.can_version != EXPECTED_CAN_PACKET_VERSION {
-                return Err(Error::PandaError(
-                    crate::panda::error::Error::WrongFirmwareVersion,
-                ));
+                return Err(Error::WrongFirmwareVersion.into());
             }
 
             panda.set_safety_model(SafetyModel::AllOutput)?;
@@ -81,10 +80,10 @@ impl Panda {
 
             return Ok(panda);
         }
-        Err(Error::NotFound)
+        Err(crate::Error::NotFound)
     }
 
-    fn flush_rx(&self) -> Result<(), Error> {
+    fn flush_rx(&self) -> Result<()> {
         const N: usize = 16384;
         let mut buf: [u8; N] = [0; N];
 
@@ -100,27 +99,26 @@ impl Panda {
     }
 
     /// Change the safety model of the panda. This can be useful to switch to Silent mode or open/close the relay in the comma.ai harness
-    pub fn set_safety_model(&self, safety_model: SafetyModel) -> Result<(), Error> {
+    pub fn set_safety_model(&self, safety_model: SafetyModel) -> Result<()> {
         let safety_param: u16 = 0;
         self.usb_write_control(Endpoint::SafetyModel, safety_model as u16, safety_param)
     }
 
-    fn set_heartbeat_disabled(&self) -> Result<(), Error> {
+    fn set_heartbeat_disabled(&self) -> Result<()> {
         self.usb_write_control(Endpoint::HeartbeatDisabled, 0, 0)
     }
 
-    fn set_power_save(&self, power_save_enabled: bool) -> Result<(), Error> {
+    fn set_power_save(&self, power_save_enabled: bool) -> Result<()> {
         self.usb_write_control(Endpoint::PowerSave, power_save_enabled as u16, 0)
     }
 
     /// Get the hardware type of the panda. Usefull to detect if it supports CAN-FD.
-    pub fn get_hw_type(&self) -> Result<HwType, Error> {
+    pub fn get_hw_type(&self) -> Result<HwType> {
         let hw_type = self.usb_read_control(Endpoint::HwType, 1)?;
-        HwType::from_repr(hw_type[0])
-            .ok_or(Error::PandaError(crate::panda::error::Error::UnknownHwType))
+        HwType::from_repr(hw_type[0]).ok_or(Error::UnknownHwType.into())
     }
 
-    fn get_packets_versions(&self) -> Result<Versions, Error> {
+    fn get_packets_versions(&self) -> Result<Versions> {
         let versions = self.usb_read_control(Endpoint::PacketsVersions, 3)?;
         Ok({
             Versions {
@@ -131,11 +129,11 @@ impl Panda {
         })
     }
 
-    fn can_reset_communications(&self) -> Result<(), Error> {
+    fn can_reset_communications(&self) -> Result<()> {
         self.usb_write_control(Endpoint::CanResetCommunications, 0, 0)
     }
 
-    fn usb_read_control(&self, endpoint: Endpoint, n: usize) -> Result<Vec<u8>, Error> {
+    fn usb_read_control(&self, endpoint: Endpoint, n: usize) -> Result<Vec<u8>> {
         let mut buf: Vec<u8> = vec![0; n];
 
         let request_type = rusb::request_type(
@@ -150,7 +148,7 @@ impl Panda {
         Ok(buf)
     }
 
-    fn usb_write_control(&self, endpoint: Endpoint, value: u16, index: u16) -> Result<(), Error> {
+    fn usb_write_control(&self, endpoint: Endpoint, value: u16, index: u16) -> Result<()> {
         let request_type = rusb::request_type(
             rusb::Direction::Out,
             rusb::RequestType::Standard,
@@ -170,7 +168,7 @@ impl Panda {
 
 impl CanAdapter for Panda {
     /// Sends a buffer of CAN messages to the panda.
-    fn send(&mut self, frames: &[crate::can::Frame]) -> Result<(), Error> {
+    fn send(&mut self, frames: &[crate::can::Frame]) -> Result<()> {
         if frames.is_empty() {
             return Ok(());
         }
@@ -185,7 +183,7 @@ impl CanAdapter for Panda {
     }
 
     /// Reads the current buffer of available CAN messages from the panda. This function will return an empty vector if no messages are available. In case of a recoverable error (e.g. unpacking error), the buffer will be cleared and an empty vector will be returned.
-    fn recv(&mut self) -> Result<Vec<crate::can::Frame>, Error> {
+    fn recv(&mut self) -> Result<Vec<crate::can::Frame>> {
         let mut buf: [u8; MAX_BULK_SIZE] = [0; MAX_BULK_SIZE];
 
         let recv: usize = self

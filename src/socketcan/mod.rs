@@ -1,5 +1,5 @@
 //! This module provides a [`CanAdapter`] implementation for the [`socketcan`] crate.
-use crate::async_can::AsyncCanAdapter;
+use crate::can::AsyncCanAdapter;
 use crate::can::CanAdapter;
 use crate::error::Error;
 
