@@ -6,7 +6,7 @@ mod usb_protocol;
 
 use std::vec;
 
-use crate::async_can::AsyncCanAdapter;
+use crate::can::AsyncCanAdapter;
 use crate::can::CanAdapter;
 use crate::error::Error;
 use crate::panda::constants::{Endpoint, HwType, SafetyModel};

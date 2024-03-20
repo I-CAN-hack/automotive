@@ -8,7 +8,7 @@
 //! ```rust
 //! use futures_util::stream::StreamExt;
 //! async fn can_example() {
-//!     let adapter = automotive::adapter::get_adapter().unwrap();
+//!     let adapter = automotive::can::get_adapter().unwrap();
 //!     let mut stream = adapter.recv();
 //!
 //!     while let Some(frame) = stream.next().await {
@@ -24,7 +24,7 @@
 //!
 //! ```rust
 //! async fn uds_example() {
-//!     let adapter = automotive::adapter::get_adapter().unwrap();
+//!     let adapter = automotive::can::get_adapter().unwrap();
 //!     let isotp = automotive::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
 //!     let uds = automotive::uds::UDSClient::new(&isotp);
 //!
@@ -40,8 +40,6 @@
 //!  - comma.ai panda (all platforms)
 //!
 
-pub mod adapter;
-pub mod async_can;
 pub mod can;
 pub mod error;
 pub mod isotp;

@@ -3,7 +3,7 @@
 //! ```rust
 //! use futures_util::stream::StreamExt;
 //! async fn isotp_example() {
-//!    let adapter = automotive::adapter::get_adapter().unwrap();
+//!    let adapter = automotive::can::get_adapter().unwrap();
 //!    let config = automotive::isotp::IsoTPConfig::new(0, automotive::can::Identifier::Standard(0x7a1));
 //!    let isotp = automotive::isotp::IsoTPAdapter::new(&adapter, config);
 //!
@@ -17,7 +17,7 @@ pub mod constants;
 pub mod error;
 pub mod types;
 
-use crate::async_can::AsyncCanAdapter;
+use crate::can::AsyncCanAdapter;
 use crate::can::{Frame, Identifier, DLC_TO_LEN};
 use crate::error::Error;
 use crate::isotp::constants::FlowStatus;

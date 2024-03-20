@@ -2,7 +2,7 @@
 //! ## Example
 //! ```rust
 //! async fn uds_example() {
-//!     let adapter = automotive::adapter::get_adapter().unwrap();
+//!     let adapter = automotive::can::get_adapter().unwrap();
 //!     let isotp = automotive::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
 //!     let uds = automotive::uds::UDSClient::new(&isotp);
 //!

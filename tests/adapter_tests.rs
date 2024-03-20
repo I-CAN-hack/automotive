@@ -1,5 +1,5 @@
 #![allow(dead_code, unused_imports)]
-use automotive::async_can::AsyncCanAdapter;
+use automotive::can::AsyncCanAdapter;
 use automotive::can::{CanAdapter, Frame};
 use automotive::panda::Panda;
 use std::time::Duration;

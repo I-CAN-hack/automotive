@@ -1,4 +1,4 @@
-use automotive::async_can::AsyncCanAdapter;
+use automotive::can::AsyncCanAdapter;
 use automotive::can::Identifier;
 use automotive::error::Error;
 use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
@@ -43,7 +43,7 @@ async fn get_version(adapter: &AsyncCanAdapter, identifier: u32) -> Result<(), E
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let adapter = automotive::adapter::get_adapter().unwrap();
+    let adapter = automotive::can::get_adapter().unwrap();
 
     let standard_ids = 0x700..=0x7ff;
     let extended_ids = (0x00..=0xff).map(|i| 0x18da0000 + (i << 8) + 0xf1);

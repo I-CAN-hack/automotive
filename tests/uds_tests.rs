@@ -1,5 +1,5 @@
 #![allow(dead_code, unused_imports)]
-use automotive::async_can::AsyncCanAdapter;
+use automotive::can::AsyncCanAdapter;
 use automotive::can::Identifier;
 use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
 use automotive::uds::error::Error as UDSError;
