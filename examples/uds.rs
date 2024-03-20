@@ -1,4 +1,4 @@
-use automotive::uds::constants::{DataIdentifier, SessionType};
+use automotive::uds::{DataIdentifier, SessionType};
 use bstr::ByteSlice;
 
 #[tokio::main]

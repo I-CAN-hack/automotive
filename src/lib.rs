@@ -29,7 +29,7 @@
 //!     let uds = automotive::uds::UDSClient::new(&isotp);
 //!
 //!     uds.tester_present().await.unwrap();
-//!     let response = uds.read_data_by_identifier(automotive::uds::constants::DataIdentifier::ApplicationSoftwareIdentification as u16).await.unwrap();
+//!     let response = uds.read_data_by_identifier(automotive::uds::DataIdentifier::ApplicationSoftwareIdentification as u16).await.unwrap();
 //!
 //!     println!("Application Software Identification: {}", hex::encode(response));
 //! }
@@ -41,10 +41,13 @@
 //!
 
 pub mod can;
-pub mod error;
+mod error;
 pub mod isotp;
 pub mod panda;
 pub mod uds;
+
+pub use error::Error;
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(target_os = "linux")]
 pub mod socketcan;

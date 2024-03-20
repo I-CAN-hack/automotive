@@ -1,9 +1,9 @@
 use automotive::can::AsyncCanAdapter;
 use automotive::can::Identifier;
-use automotive::error::Error;
 use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
+use automotive::Error;
 
-use automotive::uds::constants::DataIdentifier;
+use automotive::uds::DataIdentifier;
 use automotive::uds::UDSClient;
 
 use bstr::ByteSlice;
