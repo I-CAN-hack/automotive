@@ -1,10 +1,10 @@
 //! Error types for the Vector Client.
 use thiserror::Error;
 
-#[derive(Error, Debug, PartialEq, Copy, Clone)]
+#[derive(Error, Debug, PartialEq, Clone)]
 pub enum Error {
     #[error("Driver error: {0}")]
-    DriverError(u8),
+    DriverError(String),
     // #[error("Invalid Response Sub Function ID: {0}")]
     // InvalidSubFunction(u8),
     // #[error("Invalid Response Data Identifer: {0}")]

@@ -2,7 +2,7 @@
 use thiserror::Error;
 
 /// The main error type for the library. Each module has it's own error type that is contained by this error.
-#[derive(Error, Debug, PartialEq, Copy, Clone)]
+#[derive(Error, Debug, PartialEq, Clone)]
 pub enum Error {
     #[error("Not Found")]
     NotFound,
