@@ -7,6 +7,7 @@ use crate::can::Frame;
 use crate::can::Identifier;
 use async_stream::stream;
 use futures_core::stream::Stream;
+use tokio::sync::Mutex;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::debug;
 
@@ -83,7 +84,7 @@ fn process<T: CanAdapter>(
 pub struct AsyncCanAdapter {
     processing_handle: Option<std::thread::JoinHandle<()>>,
     recv_receiver: broadcast::Receiver<Frame>,
-    send_sender: mpsc::Sender<(Frame, oneshot::Sender<()>)>,
+    send_sender: Mutex<mpsc::Sender<(Frame, oneshot::Sender<()>)>>,
     shutdown: Option<oneshot::Sender<()>>,
 }
 
@@ -97,7 +98,7 @@ impl AsyncCanAdapter {
             shutdown: Some(shutdown_sender),
             processing_handle: None,
             recv_receiver,
-            send_sender,
+            send_sender: Mutex::new(send_sender),
         };
 
         ret.processing_handle = Some(std::thread::spawn(move || {
@@ -112,6 +113,8 @@ impl AsyncCanAdapter {
         // Create oneshot channel to signal the completion of the send operation
         let (callback_sender, callback_receiver) = oneshot::channel();
         self.send_sender
+            .lock()
+            .await
             .send((frame.clone(), callback_sender))
             .await
             .unwrap();
