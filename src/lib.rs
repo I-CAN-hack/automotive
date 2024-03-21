@@ -40,6 +40,12 @@
 //!  - comma.ai panda (all platforms)
 //!
 
+#![allow(non_upper_case_globals)]
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+
+include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+
 pub mod can;
 mod error;
 pub mod isotp;
@@ -51,3 +57,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(target_os = "linux")]
 pub mod socketcan;
+
+// #[cfg(target_os = "windows")]
+pub mod vector;
