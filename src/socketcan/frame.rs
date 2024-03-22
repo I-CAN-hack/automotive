@@ -38,12 +38,10 @@ impl From<crate::can::Frame> for socketcan::frame::CanAnyFrame {
     fn from(frame: crate::can::Frame) -> Self {
         let id: socketcan::Id = frame.id.into();
         match frame.fd {
-            true => socketcan::frame::CanAnyFrame::Fd(
-                socketcan::frame::CanFdFrame::new(id, &frame.data).unwrap(),
-            ),
-            false => socketcan::frame::CanAnyFrame::Normal(
-                socketcan::frame::CanDataFrame::new(id, &frame.data).unwrap(),
-            ),
+            true => socketcan::frame::CanAnyFrame::Fd(socketcan::frame::CanFdFrame::new(id, &frame.data).unwrap()),
+            false => {
+                socketcan::frame::CanAnyFrame::Normal(socketcan::frame::CanDataFrame::new(id, &frame.data).unwrap())
+            }
         }
     }
 }
@@ -63,9 +61,7 @@ impl From<crate::can::Identifier> for socketcan::Id {
             crate::can::Identifier::Standard(id) => {
                 socketcan::Id::Standard(socketcan::StandardId::new(id as u16).unwrap())
             }
-            crate::can::Identifier::Extended(id) => {
-                socketcan::Id::Extended(socketcan::ExtendedId::new(id).unwrap())
-            }
+            crate::can::Identifier::Extended(id) => socketcan::Id::Extended(socketcan::ExtendedId::new(id).unwrap()),
         }
     }
 }

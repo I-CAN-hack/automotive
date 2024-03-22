@@ -85,12 +85,8 @@ impl Frame {
 
         // Check if the ID makes sense
         match id {
-            Identifier::Standard(id) if id > 0x7ff => {
-                return Err(crate::error::Error::MalformedFrame)
-            }
-            Identifier::Extended(id) if id > 0x1fffffff => {
-                return Err(crate::error::Error::MalformedFrame)
-            }
+            Identifier::Standard(id) if id > 0x7ff => return Err(crate::error::Error::MalformedFrame),
+            Identifier::Extended(id) if id > 0x1fffffff => return Err(crate::error::Error::MalformedFrame),
             _ => {}
         };
 
@@ -128,19 +124,10 @@ mod tests {
 
     #[test]
     fn id_compare() {
-        assert_eq!(
-            true,
-            Identifier::Standard(0x123) < Identifier::Standard(0x124)
-        );
-        assert_eq!(
-            true,
-            Identifier::Standard(0x7ff) > Identifier::Standard(0x100)
-        );
+        assert_eq!(true, Identifier::Standard(0x123) < Identifier::Standard(0x124));
+        assert_eq!(true, Identifier::Standard(0x7ff) > Identifier::Standard(0x100));
 
         // Extended IDs always have lower priority than standard IDs
-        assert_eq!(
-            true,
-            Identifier::Extended(0x1) > Identifier::Standard(0x100)
-        );
+        assert_eq!(true, Identifier::Extended(0x1) > Identifier::Standard(0x100));
     }
 }

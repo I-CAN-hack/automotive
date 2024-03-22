@@ -5,6 +5,8 @@ use thiserror::Error;
 pub enum Error {
     #[error("Driver error: {0}")]
     DriverError(String),
+    #[error("BitTimming error: {0}")]
+    BitTimingError(String),
     // #[error("Invalid Response Sub Function ID: {0}")]
     // InvalidSubFunction(u8),
     // #[error("Invalid Response Data Identifer: {0}")]

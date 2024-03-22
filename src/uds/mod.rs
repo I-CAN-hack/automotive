@@ -35,12 +35,7 @@ impl<'a> UDSClient<'a> {
     }
 
     /// Helper function to make custom UDS requests. This function will verify the ECU responds with the correct service identifier and sub function, handle negative responses, and will return the response data.
-    pub async fn request(
-        &self,
-        sid: u8,
-        sub_function: Option<u8>,
-        data: Option<&[u8]>,
-    ) -> Result<Vec<u8>> {
+    pub async fn request(&self, sid: u8, sub_function: Option<u8>, data: Option<&[u8]>) -> Result<Vec<u8>> {
         let mut request: Vec<u8> = vec![sid];
 
         if let Some(sub_function) = sub_function {
@@ -89,10 +84,7 @@ impl<'a> UDSClient<'a> {
     }
 
     /// 0x10 - Diagnostic Session Control. ECU may optionally return 4 bytes of sessionParameterRecord with some timing information.
-    pub async fn diagnostic_session_control(
-        &self,
-        session_type: u8,
-    ) -> Result<Option<types::SessionParameterRecord>> {
+    pub async fn diagnostic_session_control(&self, session_type: u8) -> Result<Option<types::SessionParameterRecord>> {
         let result = self
             .request(
                 ServiceIdentifier::DiagnosticSessionControl as u8,
@@ -105,8 +97,7 @@ impl<'a> UDSClient<'a> {
             let p2_server_max = u16::from_be_bytes([result[0], result[1]]);
             let p2_server_max = std::time::Duration::from_millis(p2_server_max as u64);
             let p2_star_server_max = u16::from_be_bytes([result[0], result[1]]);
-            let p2_star_server_max =
-                std::time::Duration::from_millis(p2_star_server_max as u64 * 10);
+            let p2_star_server_max = std::time::Duration::from_millis(p2_star_server_max as u64 * 10);
 
             Some(types::SessionParameterRecord {
                 p2_server_max,
@@ -125,11 +116,7 @@ impl<'a> UDSClient<'a> {
             .request(ServiceIdentifier::EcuReset as u8, Some(reset_type), None)
             .await?;
 
-        let result = if result.len() == 1 {
-            Some(result[0])
-        } else {
-            None
-        };
+        let result = if result.len() == 1 { Some(result[0]) } else { None };
 
         Ok(result)
     }
@@ -142,11 +129,7 @@ impl<'a> UDSClient<'a> {
         }
 
         let resp = self
-            .request(
-                ServiceIdentifier::SecurityAccess as u8,
-                Some(access_type),
-                data,
-            )
+            .request(ServiceIdentifier::SecurityAccess as u8, Some(access_type), data)
             .await?;
 
         Ok(resp)
@@ -166,15 +149,11 @@ impl<'a> UDSClient<'a> {
         memory_size: &[u8],
         data: Option<&[u8]>,
     ) -> Result<Vec<u8>> {
-        assert!(
-            sid == ServiceIdentifier::ReadMemoryByAddress
-                || sid == ServiceIdentifier::WriteMemoryByAddress
-        );
+        assert!(sid == ServiceIdentifier::ReadMemoryByAddress || sid == ServiceIdentifier::WriteMemoryByAddress);
         assert!(!memory_address.is_empty() && memory_address.len() <= 0xF);
         assert!(!memory_size.is_empty() && memory_size.len() <= 0xF);
 
-        let address_and_length_format =
-            ((memory_size.len() as u8) << 4) | (memory_address.len() as u8);
+        let address_and_length_format = ((memory_size.len() as u8) << 4) | (memory_address.len() as u8);
 
         let mut buf: Vec<u8> = vec![address_and_length_format];
         buf.extend(memory_address);
@@ -190,11 +169,7 @@ impl<'a> UDSClient<'a> {
     pub async fn read_data_by_identifier(&self, data_identifier: u16) -> Result<Vec<u8>> {
         let did = data_identifier.to_be_bytes();
         let resp = self
-            .request(
-                ServiceIdentifier::ReadDataByIdentifier as u8,
-                None,
-                Some(&did),
-            )
+            .request(ServiceIdentifier::ReadDataByIdentifier as u8, None, Some(&did))
             .await?;
 
         if resp.len() < 2 {
@@ -210,11 +185,7 @@ impl<'a> UDSClient<'a> {
     }
 
     /// 0x23 - Read Memory By Address. The `memory_address` parameter should be the address to read from, and the `memory_size` parameter should be the number of bytes to read.
-    pub async fn read_memory_by_address(
-        &self,
-        memory_address: &[u8],
-        memory_size: &[u8],
-    ) -> Result<Vec<u8>> {
+    pub async fn read_memory_by_address(&self, memory_address: &[u8], memory_size: &[u8]) -> Result<Vec<u8>> {
         self.read_write_memory_by_adddress(
             ServiceIdentifier::ReadMemoryByAddress,
             memory_address,
@@ -225,20 +196,12 @@ impl<'a> UDSClient<'a> {
     }
 
     /// 0x2E - Write Data By Identifier. Specify a 16 bit data identifier, or use a constant from [`constants::DataIdentifier`] for standardized identifiers.
-    pub async fn write_data_by_identifier(
-        &self,
-        data_identifier: u16,
-        data_record: &[u8],
-    ) -> Result<()> {
+    pub async fn write_data_by_identifier(&self, data_identifier: u16, data_record: &[u8]) -> Result<()> {
         let mut data: Vec<u8> = data_identifier.to_be_bytes().to_vec();
         data.extend(data_record);
 
         let resp = self
-            .request(
-                ServiceIdentifier::WriteDataByIdentifier as u8,
-                None,
-                Some(&data),
-            )
+            .request(ServiceIdentifier::WriteDataByIdentifier as u8, None, Some(&data))
             .await?;
 
         if resp.len() < 2 {
@@ -254,12 +217,7 @@ impl<'a> UDSClient<'a> {
     }
 
     /// 0x3D - Write Memory By Address. The `memory_address` parameter should be the address to write to, and the `memory_size` parameter should be the number of bytes to write. The `data` parameter should be the data to write.
-    pub async fn write_memory_by_address(
-        &self,
-        memory_address: &[u8],
-        memory_size: &[u8],
-        data: &[u8],
-    ) -> Result<()> {
+    pub async fn write_memory_by_address(&self, memory_address: &[u8], memory_size: &[u8], data: &[u8]) -> Result<()> {
         self.read_write_memory_by_adddress(
             ServiceIdentifier::WriteMemoryByAddress,
             memory_address,
@@ -300,11 +258,7 @@ impl<'a> UDSClient<'a> {
             return Err(Error::InvalidDataIdentifier(id).into());
         }
 
-        Ok(if resp.len() > 2 {
-            Some(resp[2..].to_vec())
-        } else {
-            None
-        })
+        Ok(if resp.len() > 2 { Some(resp[2..].to_vec()) } else { None })
     }
 
     async fn request_download_upload(
@@ -315,17 +269,14 @@ impl<'a> UDSClient<'a> {
         memory_address: &[u8],
         memory_size: &[u8],
     ) -> Result<usize> {
-        assert!(
-            sid == ServiceIdentifier::RequestDownload || sid == ServiceIdentifier::RequestUpload
-        );
+        assert!(sid == ServiceIdentifier::RequestDownload || sid == ServiceIdentifier::RequestUpload);
         assert!(compression_method <= 0xF);
         assert!(encryption_method <= 0xF);
         assert!(!memory_address.is_empty() && memory_address.len() <= 0xF);
         assert!(!memory_size.is_empty() && memory_size.len() <= 0xF);
 
         let data_format = (compression_method << 4) | encryption_method;
-        let address_and_length_format =
-            ((memory_size.len() as u8) << 4) | (memory_address.len() as u8);
+        let address_and_length_format = ((memory_size.len() as u8) << 4) | (memory_address.len() as u8);
 
         let mut data: Vec<u8> = vec![data_format, address_and_length_format];
         data.extend(memory_address);
@@ -388,11 +339,7 @@ impl<'a> UDSClient<'a> {
     }
 
     /// 0x36 - Transfer Data. Used to transfer data to or from the ECU. The `data` parameter should be a slice of the data to transfer. The `transfer_request` parameter should be the sequence number of the transfer request, starting at 1. The `data` parameter should be `None` when an upload is requested, and the function will return the data received from the ECU. The `data` parameter should be `Some` when a download is requested, and the function will return `None`.
-    pub async fn transfer_data(
-        &self,
-        block_sequence_counter: u8,
-        data: Option<&[u8]>,
-    ) -> Result<Option<Vec<u8>>> {
+    pub async fn transfer_data(&self, block_sequence_counter: u8, data: Option<&[u8]>) -> Result<Option<Vec<u8>>> {
         let mut buf: Vec<u8> = vec![block_sequence_counter];
         if let Some(data) = data {
             buf.extend(data);
@@ -412,11 +359,7 @@ impl<'a> UDSClient<'a> {
             return Err(Error::InvalidBlockSequenceCounter(resp[0]).into());
         }
 
-        Ok(if resp.len() > 1 {
-            Some(resp[1..].to_vec())
-        } else {
-            None
-        })
+        Ok(if resp.len() > 1 { Some(resp[1..].to_vec()) } else { None })
     }
 
     /// 0x37 - Request Transfer Exit. Used to terminate an upload or download. Has optional `data` parameter for additional information, and can optionally return additional information from the ECU. For example, this can be used to contain a checksum.
