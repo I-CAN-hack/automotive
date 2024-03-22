@@ -121,7 +121,6 @@ pub struct BitTimingFd {
     strict: bool,
 }
 
-
 impl BitTimingFd {
     pub fn new(
         f_clock: u32,
@@ -176,7 +175,6 @@ impl BitTimingFd {
             ));
         }
 
-
         if strict {
             if nbt < 8 || nbt > 80 {
                 return Err(Error::BitTimingError("NBT must be between 8 and 80".to_string()));
@@ -208,7 +206,11 @@ impl BitTimingFd {
     }
 
     pub fn data_bitrate(&self) -> u32 {
-        Self::_data_bitrate(self.f_clock, self.data_brp, Self::_dbt(self.data_tseg1, self.data_tseg2))
+        Self::_data_bitrate(
+            self.f_clock,
+            self.data_brp,
+            Self::_dbt(self.data_tseg1, self.data_tseg2),
+        )
     }
 
     fn _nom_bitrate(f_clock: u32, nom_brp: u8, nom_nbt: u8) -> u32 {
@@ -227,8 +229,6 @@ impl BitTimingFd {
         1 + data_tseg1 + data_tseg2
     }
 }
-
-
 
 /// Calculate the sample point in percent
 fn _sample_point(tseg1: u8, tseg2: u8) -> f32 {

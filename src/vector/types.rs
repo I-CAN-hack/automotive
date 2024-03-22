@@ -1,4 +1,4 @@
-use crate::{XLportHandle, XLaccess};
+use crate::{XLaccess, XLportHandle};
 
 pub struct ApplicationConfig {
     pub hw_type: i32,

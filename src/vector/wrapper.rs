@@ -1,6 +1,8 @@
 use crate::{
-    xlCanSetChannelParamsC200, xlCloseDriver, xlGetApplConfig, xlGetChannelIndex, xlGetDriverConfig, xlOpenDriver,
-    xlOpenPort, xlCanFdSetConfiguration, XLcanFdConf, XLaccess, XLchannelConfig, XLdriverConfig, XLportHandle, XL_BUS_TYPE_CAN, XL_SUCCESS,
+    xlActivateChannel, xlCanFdSetConfiguration, xlCanSetChannelBitrate, xlCanSetChannelMode, xlCanSetChannelParamsC200,
+    xlCloseDriver, xlClosePort, xlDeactivateChannel, xlGetApplConfig, xlGetChannelIndex, xlGetDriverConfig,
+    xlOpenDriver, xlOpenPort, xlSetNotification, XLaccess, XLcanFdConf, XLchannelConfig, XLdriverConfig, XLhandle,
+    XLportHandle, XL_BUS_TYPE_CAN, XL_SUCCESS,
 };
 
 use crate::vector::types::{ApplicationConfig, PortConfig};
@@ -74,6 +76,18 @@ pub fn open_port(
     }
 }
 
+pub fn close_port(port_handle: XLportHandle) -> Result<(), Error> {
+    let status = unsafe { xlClosePort(port_handle) };
+
+    match status as u32 {
+        XL_SUCCESS => Ok(()),
+        _ => Err(Error::DriverError(format!(
+            "Failed to close port with error code: {}",
+            status
+        ))),
+    }
+}
+
 pub fn set_bit_timing(
     port_handle: XLportHandle,
     mut channel_mask: u64,
@@ -124,29 +138,101 @@ pub fn set_bit_timing_fd(
         conf.tseg1Dbr = timing.data_tseg1;
         conf.tseg2Dbr = timing.data_tseg2;
 
-        let status = xlCanFdSetConfiguration(
-            port_handle,
-            channel_mask,
-            &mut conf as *mut XLcanFdConf,
-        );
+        let status = xlCanFdSetConfiguration(port_handle, channel_mask, &mut conf as *mut XLcanFdConf);
 
+        match status as u32 {
+            XL_SUCCESS => (),
+            _ => {
+                return Err(Error::DriverError(format!(
+                    "Failed to set bit timing with error code: {}",
+                    status
+                )))
+            }
+        };
     };
 
-    // let status = unsafe { 
-    //     xlCanSetChannelParamsC200(port_handle, channel_mask, timing.btr0(), timing.btr1()) 
-    // };
-
-    // match status as u32 {
-    //     XL_SUCCESS => (),
-    //     _ => {
-    //         return Err(Error::DriverError(format!(
-    //             "Failed to set bit timing with error code: {}",
-    //             status
-    //         )))
-    //     }
-    // };
-
     Ok(())
+}
+
+pub fn set_bit_rate(
+    port_handle: XLportHandle,
+    mut channel_mask: u64,
+    permission_mask: u64,
+    bit_rate: u32,
+) -> Result<(), Error> {
+    channel_mask = channel_mask & permission_mask;
+    if channel_mask == 0 {
+        return Ok(());
+    }
+
+    let status = unsafe { xlCanSetChannelBitrate(port_handle, channel_mask, bit_rate) };
+    match status as u32 {
+        XL_SUCCESS => (),
+        _ => {
+            return Err(Error::DriverError(format!(
+                "Failed to set bit rate with error code: {}",
+                status
+            )))
+        }
+    };
+
+    // let mut timing = BitTiming::new(bit_rate)?;
+
+    // set_bit_timing(port_handle, channel_mask, permission_mask, &timing)
+    todo!()
+}
+
+pub fn set_channel_mode(port_handle: XLportHandle, channel_mask: XLaccess, tx: i32, txrq: i32) -> Result<(), Error> {
+    let status = unsafe { xlCanSetChannelMode(port_handle, channel_mask, tx, txrq) };
+
+    match status as u32 {
+        XL_SUCCESS => Ok(()),
+        _ => Err(Error::DriverError(format!(
+            "Failed to set channel mode with error code: {}",
+            status
+        ))),
+    }
+}
+
+pub fn set_notification(port_handle: XLportHandle, event_handle: &mut XLhandle, queue_level: i32) -> Result<(), Error> {
+    let status = unsafe { xlSetNotification(port_handle, event_handle, queue_level) };
+
+    match status as u32 {
+        XL_SUCCESS => Ok(()),
+        _ => Err(Error::DriverError(format!(
+            "Failed to set notification with error code: {}",
+            status
+        ))),
+    }
+}
+
+pub fn activate_channel(
+    port_handle: XLportHandle,
+    channel_mask: XLaccess,
+    bus_type: u32,
+    flags: u32,
+) -> Result<(), Error> {
+    let status = unsafe { xlActivateChannel(port_handle, channel_mask, bus_type, flags) };
+
+    match status as u32 {
+        XL_SUCCESS => Ok(()),
+        _ => Err(Error::DriverError(format!(
+            "Failed to activate channel with error code: {}",
+            status
+        ))),
+    }
+}
+
+pub fn deactivate_channel(port_handle: XLportHandle, channel_mask: XLaccess) -> Result<(), Error> {
+    let status = unsafe { xlDeactivateChannel(port_handle, channel_mask) };
+
+    match status as u32 {
+        XL_SUCCESS => Ok(()),
+        _ => Err(Error::DriverError(format!(
+            "Failed to deactivate channel with error code: {}",
+            status
+        ))),
+    }
 }
 
 pub fn find_global_channel_idx(
