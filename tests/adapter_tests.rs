@@ -4,8 +4,7 @@ use automotive::can::{CanAdapter, Frame};
 use automotive::panda::Panda;
 use std::time::Duration;
 
-// static BULK_NUM_FRAMES: u64 = 0x400;
-static BULK_NUM_FRAMES: u64 = 0x10;
+static BULK_NUM_FRAMES: u64 = 0x100;
 static BULK_TIMEOUT_MS: u64 = 1000;
 
 /// Sends a large number of frames to a "blocking" adapter, and then reads back all sent messages.
