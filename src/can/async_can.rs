@@ -45,7 +45,9 @@ fn process<T: CanAdapter>(
                         // Ensure the frame we received matches the frame belonging to the callback.
                         // If not, we have a bug in the adapter implementation and frames are sent/received out of order.
                         assert_eq!(tx_frame, frame);
-                        callback.send(()).unwrap();
+
+                        // Callback might be dropped if the sender is not waiting for the response
+                        callback.send(()).ok();
                     }
                     None => panic!("Received loopback frame with no pending callback"),
                 };
