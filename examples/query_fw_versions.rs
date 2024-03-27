@@ -1,7 +1,6 @@
 use automotive::can::AsyncCanAdapter;
-use automotive::can::Identifier;
-use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
-use automotive::Error;
+use automotive::isotp::IsoTPAdapter;
+use automotive::Result;
 
 use automotive::uds::DataIdentifier;
 use automotive::uds::UDSClient;
@@ -9,17 +8,8 @@ use automotive::uds::UDSClient;
 use bstr::ByteSlice;
 use strum::IntoEnumIterator;
 
-static BUS: u8 = 0;
-static ADDRS_IN_PARALLEL: usize = 128;
-
-async fn get_version(adapter: &AsyncCanAdapter, identifier: u32) -> Result<(), Error> {
-    let config = if identifier < 0x800 {
-        IsoTPConfig::new(BUS, Identifier::Standard(identifier))
-    } else {
-        IsoTPConfig::new(BUS, Identifier::Extended(identifier))
-    };
-
-    let isotp = IsoTPAdapter::new(adapter, config);
+async fn get_version(adapter: &AsyncCanAdapter, identifier: u32) -> Result<()> {
+    let isotp = IsoTPAdapter::from_id(adapter, identifier);
     let uds = UDSClient::new(&isotp);
 
     uds.tester_present().await?;
@@ -50,8 +40,6 @@ async fn main() {
 
     let ids: Vec<u32> = standard_ids.chain(extended_ids).collect();
 
-    for ids in ids.chunks(ADDRS_IN_PARALLEL) {
-        let r = ids.iter().map(|id| get_version(&adapter, *id));
-        futures::future::join_all(r).await;
-    }
+    let r = ids.iter().map(|id| get_version(&adapter, *id));
+    futures::future::join_all(r).await;
 }
