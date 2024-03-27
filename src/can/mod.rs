@@ -4,6 +4,7 @@ pub mod adapter;
 pub mod async_can;
 
 use std::fmt;
+use std::collections::VecDeque;
 
 pub use adapter::get_adapter;
 pub use async_can::AsyncCanAdapter;
@@ -118,8 +119,8 @@ impl fmt::Debug for Frame {
 
 /// Trait for a Blocking CAN Adapter
 pub trait CanAdapter {
-    fn send(&mut self, frames: &[Frame]) -> Result<(), crate::error::Error>;
-    fn recv(&mut self) -> Result<Vec<Frame>, crate::error::Error>;
+    fn send(&mut self, frames: &mut VecDeque<crate::can::Frame>) -> crate::Result<()>;
+    fn recv(&mut self) -> crate::Result<Vec<Frame>>;
 }
 
 #[cfg(test)]

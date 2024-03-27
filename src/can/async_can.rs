@@ -23,7 +23,7 @@ fn process<T: CanAdapter>(
     rx_sender: broadcast::Sender<Frame>,
     mut tx_receiver: mpsc::Receiver<(Frame, oneshot::Sender<()>)>,
 ) {
-    let mut buffer: Vec<Frame> = Vec::new();
+    let mut buffer: VecDeque<Frame> = VecDeque::new();
     let mut callbacks: HashMap<BusIdentifier, VecDeque<FrameCallback>> = HashMap::new();
 
     while shutdown_receiver.try_recv().is_err() {
@@ -72,10 +72,10 @@ fn process<T: CanAdapter>(
                 debug! {"TX {:?}", frame};
             }
 
-            buffer.push(frame);
+            buffer.push_back(frame);
         }
         if !buffer.is_empty() {
-            adapter.send(&buffer).unwrap();
+            adapter.send(&mut buffer).unwrap();
         }
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
