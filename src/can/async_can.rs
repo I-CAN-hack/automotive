@@ -5,8 +5,8 @@ use std::collections::{HashMap, VecDeque};
 use crate::can::CanAdapter;
 use crate::can::Frame;
 use crate::can::Identifier;
+use crate::Stream;
 use async_stream::stream;
-use futures_core::stream::Stream;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::debug;
 

@@ -6,7 +6,7 @@
 //! The following adapter opens the first available adapter on the system, and then receives all frames.
 //!
 //! ```rust
-//! use futures_util::stream::StreamExt;
+//! use automotive::StreamExt;
 //! async fn can_example() {
 //!     let adapter = automotive::can::get_adapter().unwrap();
 //!     let mut stream = adapter.recv();
@@ -45,6 +45,9 @@ mod error;
 pub mod isotp;
 pub mod panda;
 pub mod uds;
+
+/// Re-export of relevant stream traits from `tokio_stream`.
+pub use tokio_stream::{Stream, StreamExt, Timeout};
 
 pub use error::Error;
 pub type Result<T> = std::result::Result<T, Error>;

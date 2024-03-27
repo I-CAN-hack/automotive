@@ -1,7 +1,7 @@
 //! ISO Transport Protocol (ISO-TP) implementation, implements ISO 15765-2
 //! ## Example:
 //! ```rust
-//! use futures_util::stream::StreamExt;
+//! use automotive::StreamExt;
 //! async fn isotp_example() {
 //!    let adapter = automotive::can::get_adapter().unwrap();
 //!    let config = automotive::isotp::IsoTPConfig::new(0, automotive::can::Identifier::Standard(0x7a1));
@@ -23,9 +23,8 @@ pub use error::Error;
 use crate::can::AsyncCanAdapter;
 use crate::can::{Frame, Identifier, DLC_TO_LEN};
 use crate::Result;
+use crate::{Stream, StreamExt, Timeout};
 use async_stream::stream;
-use futures_core::stream::Stream;
-use tokio_stream::{StreamExt, Timeout};
 use tracing::debug;
 
 use self::types::FlowControlConfig;

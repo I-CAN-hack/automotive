@@ -1,4 +1,4 @@
-use futures_util::stream::StreamExt;
+use automotive::StreamExt;
 use tracing_subscriber;
 
 #[tokio::main]

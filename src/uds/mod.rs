@@ -18,10 +18,10 @@ mod types;
 
 use crate::isotp::IsoTPAdapter;
 use crate::Result;
+use crate::StreamExt;
 pub use constants::*;
 pub use error::{Error, NegativeResponseCode};
 
-use tokio_stream::StreamExt;
 use tracing::info;
 
 /// UDS Client. Wraps an IsoTPAdapter to provide a simple interface for making UDS calls.

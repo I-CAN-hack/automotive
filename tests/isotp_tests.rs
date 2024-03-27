@@ -2,8 +2,8 @@
 use automotive::can::AsyncCanAdapter;
 use automotive::can::Identifier;
 use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
+use automotive::StreamExt;
 use std::process::{Child, Command};
-use tokio_stream::StreamExt;
 
 static VECU_STARTUP_TIMEOUT_MS: u64 = 10000;
 

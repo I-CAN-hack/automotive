@@ -1,6 +1,6 @@
 use automotive::can::Identifier;
 use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
-use futures_util::stream::StreamExt;
+use automotive::StreamExt;
 use tracing_subscriber;
 
 #[tokio::main]
