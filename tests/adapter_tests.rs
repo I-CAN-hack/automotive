@@ -2,6 +2,7 @@
 use automotive::can::AsyncCanAdapter;
 use automotive::can::{CanAdapter, Frame};
 use automotive::panda::Panda;
+use std::collections::VecDeque;
 use std::time::Duration;
 
 static BULK_NUM_FRAMES: u64 = 0x100;
@@ -17,7 +18,10 @@ fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
         frames.push(Frame::new(0, 0x123.into(), &i.to_be_bytes()).unwrap());
     }
 
-    adapter.send(&frames).unwrap();
+    let mut to_send: VecDeque<Frame> = frames.clone().into();
+    while !to_send.is_empty() {
+        adapter.send(&mut to_send).unwrap();
+    }
 
     let start = std::time::Instant::now();
 
