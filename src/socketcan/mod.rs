@@ -5,8 +5,8 @@ use crate::Result;
 
 use socketcan::socket::Socket;
 use socketcan::SocketOptions;
-use tracing::info;
 use std::collections::VecDeque;
+use tracing::info;
 
 mod frame;
 

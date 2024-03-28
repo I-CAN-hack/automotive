@@ -3,8 +3,8 @@
 pub mod adapter;
 pub mod async_can;
 
-use std::fmt;
 use std::collections::VecDeque;
+use std::fmt;
 
 pub use adapter::get_adapter;
 pub use async_can::AsyncCanAdapter;

@@ -78,8 +78,10 @@ fn process<T: CanAdapter>(
             adapter.send(&mut buffer).unwrap();
 
             if !buffer.is_empty() {
-                debug!("Failed to send all frames, requeueing {} frames", buffer.len());
-
+                debug!(
+                    "Failed to send all frames, requeueing {} frames",
+                    buffer.len()
+                );
             }
         }
         std::thread::sleep(std::time::Duration::from_millis(1));
