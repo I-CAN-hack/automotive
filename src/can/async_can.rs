@@ -28,6 +28,7 @@ fn process<T: CanAdapter>(
 
     while shutdown_receiver.try_recv().is_err() {
         let frames: Vec<Frame> = adapter.recv().unwrap();
+
         for frame in frames {
             if DEBUG {
                 debug! {"RX {:?}", frame};
@@ -57,7 +58,6 @@ fn process<T: CanAdapter>(
         }
 
         // TODO: use poll_recv_many?
-        buffer.clear();
         while let Ok((frame, callback)) = tx_receiver.try_recv() {
             let mut loopback_frame = frame.clone();
             loopback_frame.loopback = true;
