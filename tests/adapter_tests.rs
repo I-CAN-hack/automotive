@@ -39,6 +39,7 @@ fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
         std::thread::sleep(Duration::from_millis(1));
     }
 
+    assert_eq!(frames.len(), received.len());
     assert_eq!(frames, received);
 }
 
