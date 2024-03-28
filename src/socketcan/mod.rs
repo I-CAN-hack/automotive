@@ -44,8 +44,8 @@ impl CanAdapter for SocketCan {
         while let Some(frame) = frames.pop_front() {
             let to_send: socketcan::frame::CanAnyFrame = frame.clone().into();
 
-            if let Err(e) = self.socket.write_frame(&to_send) {
-                tracing::warn!("Failed to send frame {:?}", e);
+            if let Err(_) = self.socket.write_frame(&to_send) {
+                // Failed to send frame, push it back to the front of the queue for next iteration
                 frames.push_front(frame);
                 break;
             }
