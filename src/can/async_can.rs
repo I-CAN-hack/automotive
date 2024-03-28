@@ -23,11 +23,12 @@ fn process<T: CanAdapter>(
     rx_sender: broadcast::Sender<Frame>,
     mut tx_receiver: mpsc::Receiver<(Frame, oneshot::Sender<()>)>,
 ) {
-    let mut buffer: Vec<Frame> = Vec::new();
+    let mut buffer: VecDeque<Frame> = VecDeque::new();
     let mut callbacks: HashMap<BusIdentifier, VecDeque<FrameCallback>> = HashMap::new();
 
     while shutdown_receiver.try_recv().is_err() {
         let frames: Vec<Frame> = adapter.recv().unwrap();
+
         for frame in frames {
             if DEBUG {
                 debug! {"RX {:?}", frame};
@@ -57,7 +58,6 @@ fn process<T: CanAdapter>(
         }
 
         // TODO: use poll_recv_many?
-        buffer.clear();
         while let Ok((frame, callback)) = tx_receiver.try_recv() {
             let mut loopback_frame = frame.clone();
             loopback_frame.loopback = true;
@@ -72,10 +72,17 @@ fn process<T: CanAdapter>(
                 debug! {"TX {:?}", frame};
             }
 
-            buffer.push(frame);
+            buffer.push_back(frame);
         }
         if !buffer.is_empty() {
-            adapter.send(&buffer).unwrap();
+            adapter.send(&mut buffer).unwrap();
+
+            if !buffer.is_empty() {
+                debug!(
+                    "Failed to send all frames, requeueing {} frames",
+                    buffer.len()
+                );
+            }
         }
         std::thread::sleep(std::time::Duration::from_millis(1));
     }

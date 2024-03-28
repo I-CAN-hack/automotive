@@ -5,10 +5,11 @@ mod error;
 mod usb_protocol;
 
 pub use error::Error;
-use std::vec;
+use std::collections::VecDeque;
 
 use crate::can::AsyncCanAdapter;
 use crate::can::CanAdapter;
+use crate::can::Frame;
 use crate::panda::constants::{Endpoint, HwType, SafetyModel};
 use crate::Result;
 use tracing::{info, warn};
@@ -168,12 +169,13 @@ impl Panda {
 
 impl CanAdapter for Panda {
     /// Sends a buffer of CAN messages to the panda.
-    fn send(&mut self, frames: &[crate::can::Frame]) -> Result<()> {
+    fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
         if frames.is_empty() {
             return Ok(());
         }
 
-        let buf = usb_protocol::pack_can_buffer(frames)?;
+        let frames: Vec<Frame> = frames.drain(..).collect();
+        let buf = usb_protocol::pack_can_buffer(&frames)?;
 
         for chunk in buf {
             self.handle
@@ -183,7 +185,7 @@ impl CanAdapter for Panda {
     }
 
     /// Reads the current buffer of available CAN messages from the panda. This function will return an empty vector if no messages are available. In case of a recoverable error (e.g. unpacking error), the buffer will be cleared and an empty vector will be returned.
-    fn recv(&mut self) -> Result<Vec<crate::can::Frame>> {
+    fn recv(&mut self) -> Result<Vec<Frame>> {
         let mut buf: [u8; MAX_BULK_SIZE] = [0; MAX_BULK_SIZE];
 
         let recv: usize = self
