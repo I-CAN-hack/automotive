@@ -20,6 +20,14 @@ impl SocketCan {
         socket.set_nonblocking(true).unwrap();
         socket.set_loopback(true).unwrap();
         socket.set_recv_own_msgs(true).unwrap();
+
+        // Attempt to increase the buffer receive size to 1MB
+        socket.as_raw_socket().set_recv_buffer_size(1_000_000).ok();
+
+        if let Ok(sz) = socket.as_raw_socket().recv_buffer_size() {
+            info!("SocketCAN receive buffer size {}", sz);
+        }
+
         Self { socket }
     }
 
