@@ -53,6 +53,7 @@ dependencies = [
  "bstr",
  "futures",
  "hex",
+ "libc",
  "rusb",
  "serde",
  "serial_test",

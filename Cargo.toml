@@ -33,6 +33,7 @@ tracing = "^0.1"
 # socketcan = {path = "../socketcan-rs"}
 # socketcan = "^3.3.0"
 socketcan = {git = "https://github.com/socketcan-rs/socketcan-rs.git", rev = "3ebef4e3f54bc21e3d993d40fa160ebb7f3047b0" }
+libc = "^0.2.153"
 
 [dev-dependencies]
 futures = "^0.3.30"
