@@ -100,10 +100,21 @@ impl CanAdapter for SocketCan {
     fn recv(&mut self) -> Result<Vec<Frame>> {
         let mut frames = vec![];
 
-        while let Ok((frame, meta)) = self.socket.read_frame_with_meta() {
-            let mut frame: crate::can::Frame = frame.into();
-            frame.loopback = meta.loopback;
-            frames.push(frame);
+        loop {
+            match self.socket.read_frame_with_meta() {
+                Ok((frame, meta)) => {
+                    let mut frame: crate::can::Frame = frame.into();
+                    frame.loopback = meta.loopback;
+                    frames.push(frame);
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    break;
+                }
+                Err(e) => {
+                    tracing::error!("Error reading frame: {}", e);
+                    return Err(crate::error::Error::Disconnected);
+                }
+            }
         }
 
         // Add fake loopback frames to the receive queue

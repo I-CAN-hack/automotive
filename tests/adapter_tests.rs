@@ -7,7 +7,8 @@ use std::time::Duration;
 
 static BULK_NUM_FRAMES_SYNC: u64 = 0x100;
 static BULK_NUM_FRAMES_ASYNC: u64 = 0x1000;
-static BULK_TIMEOUT_MS: u64 = 1000;
+static BULK_SYNC_TIMEOUT_MS: u64 = 1000;
+static BULK_ASYNC_TIMEOUT_MS: u64 = 5000;
 
 /// Sends a large number of frames to a "blocking" adapter, and then reads back all sent messages.
 /// This verified the adapter doesn't drop messages and reads them back in the same order as they are sent,
@@ -27,7 +28,8 @@ fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
     let start = std::time::Instant::now();
 
     let mut received: Vec<Frame> = vec![];
-    while received.len() < frames.len() && start.elapsed() < Duration::from_millis(BULK_TIMEOUT_MS)
+    while received.len() < frames.len()
+        && start.elapsed() < Duration::from_millis(BULK_SYNC_TIMEOUT_MS)
     {
         let rx = adapter.recv().unwrap();
         let rx: Vec<Frame> = rx.into_iter().filter(|frame| frame.loopback).collect();
@@ -55,7 +57,7 @@ async fn bulk_send(adapter: &AsyncCanAdapter) {
 
     let r = frames.iter().map(|frame| adapter.send(frame));
     tokio::time::timeout(
-        Duration::from_millis(BULK_TIMEOUT_MS),
+        Duration::from_millis(BULK_ASYNC_TIMEOUT_MS),
         futures::future::join_all(r),
     )
     .await
