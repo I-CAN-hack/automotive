@@ -82,8 +82,7 @@ async fn panda_bulk_send_async() {
 #[serial_test::serial]
 fn socketcan_bulk_send_sync() {
     use socketcan::Socket;
-    let socket = socketcan::CanFdSocket::open("can0").unwrap();
-    let mut adapter = automotive::socketcan::SocketCan::new(socket);
+    let mut adapter = automotive::socketcan::SocketCan::new("can0").unwrap();
     bulk_send_sync(&mut adapter);
 }
 
@@ -91,7 +90,7 @@ fn socketcan_bulk_send_sync() {
 #[tokio::test]
 #[serial_test::serial]
 async fn socketcan_bulk_send_async() {
-    let adapter = automotive::socketcan::SocketCan::new_async_from_name("can0").unwrap();
+    let adapter = automotive::socketcan::SocketCan::new_async("can0").unwrap();
     bulk_send(&adapter).await;
 }
 
@@ -99,7 +98,7 @@ async fn socketcan_bulk_send_async() {
 // #[tokio::test]
 // #[serial_test::serial]
 // async fn vcan_bulk_send_fd() {
-//     let adapter = automotive::socketcan::SocketCan::new_async_from_name("can0").unwrap();
+//     let adapter = automotive::socketcan::SocketCan::new_async("can0").unwrap();
 //     adapter.send(&Frame::new(0, 0x123.into(), &[0u8; 64])).await;
 // }
 
@@ -108,8 +107,7 @@ async fn socketcan_bulk_send_async() {
 #[serial_test::serial]
 fn vcan_bulk_send_sync() {
     use socketcan::Socket;
-    let socket = socketcan::CanFdSocket::open("vcan0").unwrap();
-    let mut adapter = automotive::socketcan::SocketCan::new(socket);
+    let mut adapter = automotive::socketcan::SocketCan::new("vcan0").unwrap();
     bulk_send_sync(&mut adapter);
 }
 
@@ -117,7 +115,7 @@ fn vcan_bulk_send_sync() {
 #[tokio::test]
 #[serial_test::serial]
 async fn vcan_bulk_send_async() {
-    let adapter = automotive::socketcan::SocketCan::new_async_from_name("vcan0").unwrap();
+    let adapter = automotive::socketcan::SocketCan::new_async("vcan0").unwrap();
     bulk_send(&adapter).await;
 }
 
@@ -125,7 +123,7 @@ async fn vcan_bulk_send_async() {
 #[tokio::test]
 #[serial_test::serial]
 async fn vcan_bulk_send_fd() {
-    let adapter = automotive::socketcan::SocketCan::new_async_from_name("vcan0").unwrap();
+    let adapter = automotive::socketcan::SocketCan::new_async("vcan0").unwrap();
     adapter
         .send(&Frame::new(0, 0x123.into(), &[0u8; 64]).unwrap())
         .await;

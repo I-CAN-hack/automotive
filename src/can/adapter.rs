@@ -9,7 +9,7 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
     #[cfg(target_os = "linux")]
     {
         // TODO: iterate over all available SocketCAN adapters to also find things like vcan0
-        if let Ok(socket) = crate::socketcan::SocketCan::new_async_from_name("can0") {
+        if let Ok(socket) = crate::socketcan::SocketCan::new_async("can0") {
             return Ok(socket);
         }
     }
