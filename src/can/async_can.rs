@@ -28,7 +28,7 @@ fn process<T: CanAdapter>(
     let mut callbacks: HashMap<BusIdentifier, VecDeque<FrameCallback>> = HashMap::new();
 
     while shutdown_receiver.try_recv().is_err() {
-        let frames: Vec<Frame> = adapter.recv().unwrap();
+        let frames: Vec<Frame> = adapter.recv().expect("Failed to Receive CAN Frames");
 
         for frame in frames {
             if DEBUG {

@@ -12,6 +12,8 @@ pub enum Error {
     MalformedFrame,
     #[error("Timeout")]
     Timeout,
+    #[error("Disconnected")]
+    Disconnected,
     #[error(transparent)]
     IsoTPError(#[from] crate::isotp::Error),
     #[error(transparent)]
