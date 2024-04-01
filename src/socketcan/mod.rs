@@ -1,6 +1,5 @@
 //! This module provides a [`CanAdapter`] implementation for the [`socketcan`] crate.
-use crate::can::AsyncCanAdapter;
-use crate::can::CanAdapter;
+use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
 use crate::Result;
 
 use socketcan::socket::Socket;
@@ -16,8 +15,9 @@ pub struct SocketCan {
     socket: socketcan::CanFdSocket,
 
     /// If the IFF_ECHO flag is set on the interface, it will implement proper ACK logic. If the flag is not set, the kernel will emulate this.
-    #[allow(dead_code)]
     iff_echo: bool,
+
+    loopback_queue: VecDeque<Frame>,
 }
 
 fn read_iff_echo(if_name: &str) -> Option<bool> {
@@ -47,7 +47,6 @@ impl SocketCan {
 
         socket.set_nonblocking(true).unwrap();
         socket.set_loopback(true).unwrap();
-        socket.set_recv_own_msgs(true).unwrap();
 
         // Attempt to increase the buffer receive size to 1MB
         socket.as_raw_socket().set_recv_buffer_size(1_000_000).ok();
@@ -65,16 +64,22 @@ impl SocketCan {
             }
         };
 
-        if !iff_echo {
-            tracing::warn!("IFF_ECHO is not set on the interface. ACK support is emulated by the Linux Kernel.");
+        if iff_echo {
+            socket.set_recv_own_msgs(true).unwrap();
+        } else {
+            tracing::warn!("IFF_ECHO is not set on the interface. ACK support is emulated.");
         }
 
-        Ok(SocketCan { socket, iff_echo })
+        Ok(SocketCan {
+            socket,
+            iff_echo,
+            loopback_queue: VecDeque::new(),
+        })
     }
 }
 
 impl CanAdapter for SocketCan {
-    fn send(&mut self, frames: &mut VecDeque<crate::can::Frame>) -> Result<()> {
+    fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
         while let Some(frame) = frames.pop_front() {
             let to_send: socketcan::frame::CanAnyFrame = frame.clone().into();
 
@@ -82,19 +87,33 @@ impl CanAdapter for SocketCan {
                 // Failed to send frame, push it back to the front of the queue for next send call
                 frames.push_front(frame);
                 break;
+            } else if !self.iff_echo {
+                // If IFF_ECHO is not set, we need to emulate the ACK logic.
+                let mut frame = frame.clone();
+                frame.loopback = true;
+                self.loopback_queue.push_back(frame);
             }
         }
 
         Ok(())
     }
 
-    fn recv(&mut self) -> Result<Vec<crate::can::Frame>> {
+    fn recv(&mut self) -> Result<Vec<Frame>> {
         let mut frames = vec![];
+
         while let Ok((frame, meta)) = self.socket.read_frame_with_meta() {
             let mut frame: crate::can::Frame = frame.into();
             frame.loopback = meta.loopback;
+
+            // If IFF_ECHO is not set, we emulate the ACK logic ourself.
+            if frame.loopback {
+                assert!(self.iff_echo);
+            }
+
             frames.push(frame);
         }
+
+        frames.extend(self.loopback_queue.drain(..));
 
         Ok(frames)
     }

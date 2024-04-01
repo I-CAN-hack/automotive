@@ -5,7 +5,8 @@ use automotive::panda::Panda;
 use std::collections::VecDeque;
 use std::time::Duration;
 
-static BULK_NUM_FRAMES: u64 = 0x100;
+static BULK_NUM_FRAMES_SYNC: u64 = 0x100;
+static BULK_NUM_FRAMES_ASYNC: u64 = 0x1000;
 static BULK_TIMEOUT_MS: u64 = 1000;
 
 /// Sends a large number of frames to a "blocking" adapter, and then reads back all sent messages.
@@ -14,7 +15,7 @@ static BULK_TIMEOUT_MS: u64 = 1000;
 fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
     let mut frames = vec![];
 
-    for i in 0..BULK_NUM_FRAMES {
+    for i in 0..BULK_NUM_FRAMES_SYNC {
         frames.push(Frame::new(0, 0x123.into(), &i.to_be_bytes()).unwrap());
     }
 
@@ -48,7 +49,7 @@ fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
 async fn bulk_send(adapter: &AsyncCanAdapter) {
     let mut frames = vec![];
 
-    for i in 0..BULK_NUM_FRAMES {
+    for i in 0..BULK_NUM_FRAMES_ASYNC {
         frames.push(Frame::new(0, 0x123.into(), &i.to_be_bytes()).unwrap());
     }
 
