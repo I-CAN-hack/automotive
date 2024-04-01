@@ -7,6 +7,7 @@ use crate::can::Frame;
 use crate::can::Identifier;
 use crate::Stream;
 use async_stream::stream;
+use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::debug;
 
@@ -142,11 +143,12 @@ impl AsyncCanAdapter {
                     Ok(frame) => {
                         if filter(&frame) {
                             yield frame
-                        } else {
-                            continue
                         }
-                    }
-                    Err(_) => continue,
+                    },
+                    Err(RecvError::Closed) => panic!("Adapter thread has exited"),
+                    Err(RecvError::Lagged(n)) => {
+                        tracing::warn!("Receive too slow, dropping {} frame(s).", n)
+                    },
                 }
             }
         })
