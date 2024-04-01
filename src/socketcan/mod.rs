@@ -13,10 +13,9 @@ const IFF_ECHO: u64 = 1 << 18; // include/uapi/linux/if.h
 /// Aadapter for a [`socketcan::CanFdSocket`].
 pub struct SocketCan {
     socket: socketcan::CanFdSocket,
-
-    /// If the IFF_ECHO flag is set on the interface, it will implement proper ACK logic. If the flag is not set, the kernel will emulate this.
+    /// If the IFF_ECHO flag is set on the interface, it will implement proper ACK logic.
     iff_echo: bool,
-
+    /// Queue used for fake loopback frames if IFF_ECHO is not set.
     loopback_queue: VecDeque<Frame>,
 }
 
@@ -104,15 +103,10 @@ impl CanAdapter for SocketCan {
         while let Ok((frame, meta)) = self.socket.read_frame_with_meta() {
             let mut frame: crate::can::Frame = frame.into();
             frame.loopback = meta.loopback;
-
-            // If IFF_ECHO is not set, we emulate the ACK logic ourself.
-            if frame.loopback {
-                assert!(self.iff_echo);
-            }
-
             frames.push(frame);
         }
 
+        // Add fake loopback frames to the receive queue
         frames.extend(self.loopback_queue.drain(..));
 
         Ok(frames)
