@@ -343,7 +343,7 @@ impl<'a> IsoTPAdapter<'a> {
         Ok(())
     }
 
-    /// Asynchronously send an ISO-TP frame of up to 4095 bytes. Returns [`Error::Timeout`] if the ECU is not responding in time with flow control messages.
+    /// Asynchronously send an ISO-TP frame of up to 4095 bytes. Returns Timeout if the ECU is not responding in time with flow control messages.
     pub async fn send(&self, data: &[u8]) -> Result<()> {
         debug!("TX {}", hex::encode(data));
 
@@ -501,7 +501,7 @@ impl<'a> IsoTPAdapter<'a> {
         unreachable!();
     }
 
-    /// Stream of ISO-TP packets. Can be used if multiple responses are expected from a single request. Returns [`Error::Timeout`] if the timeout is exceeded between individual ISO-TP frames. Note the total time to receive a packet may be longer than the timeout.
+    /// Stream of ISO-TP packets. Can be used if multiple responses are expected from a single request. Returns Timeout if the timeout is exceeded between individual ISO-TP frames. Note the total time to receive a packet may be longer than the timeout.
     pub fn recv(&self) -> impl Stream<Item = Result<Vec<u8>>> + '_ {
         let stream = self
             .adapter
