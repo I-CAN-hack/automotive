@@ -122,7 +122,7 @@ pub enum SecurityAccessType {
     SendKey = 0x02,
 }
 
-/// ROutine Control Sub-Function ID as defined in ISO 14229
+/// Routine Control Sub-Function ID as defined in ISO 14229
 #[derive(Debug, PartialEq, Copy, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
@@ -130,4 +130,12 @@ pub enum RoutineControlType {
     Start = 0x01,
     Stop = 0x02,
     RequestResults = 0x03,
+}
+
+/// Read DTC Information Sub-Function ID as defined in ISO 14229
+#[derive(Debug, PartialEq, Copy, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(u8)]
+pub enum ReportType {
+    ReportNumberOfDTCByStatusMask = 0x01,
 }
