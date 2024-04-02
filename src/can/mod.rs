@@ -105,7 +105,7 @@ impl Frame {
     }
 }
 
-impl fmt::Debug for Frame {
+impl fmt::Display for Frame {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Frame")
             .field("bus", &self.bus)
@@ -114,6 +114,12 @@ impl fmt::Debug for Frame {
             .field("loopback", &self.loopback)
             .field("fd", &self.fd)
             .finish()
+    }
+}
+
+impl fmt::Debug for Frame {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self, f)
     }
 }
 
