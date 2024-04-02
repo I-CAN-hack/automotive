@@ -28,9 +28,8 @@ pub enum DTCFormatIdentifier {
 /// Struct returned by ReadDTCInformation (0x19)
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[allow(non_snake_case)]
 pub struct DTCReportNumberByStatusMask {
-    pub DTCStatusAvailabilityMask: u8,
-    pub DTCFormatIdentifier: DTCFormatIdentifier,
-    pub DTCCount: u16,
+    pub dtc_status_availability_mask: u8,
+    pub dtc_format_identifier: DTCFormatIdentifier,
+    pub dtc_count: u16,
 }

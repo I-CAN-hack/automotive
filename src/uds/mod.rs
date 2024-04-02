@@ -293,9 +293,9 @@ impl<'a> UDSClient<'a> {
         let count = u16::from_be_bytes([resp[2], resp[3]]);
 
         Ok(DTCReportNumberByStatusMask {
-            DTCStatusAvailabilityMask: mask,
-            DTCFormatIdentifier: format,
-            DTCCount: count,
+            dtc_status_availability_mask: mask,
+            dtc_format_identifier: format,
+            dtc_count: count,
         })
     }
 
