@@ -271,7 +271,7 @@ impl<'a> UDSClient<'a> {
         Ok(())
     }
 
-    pub async fn read_dtc_information_report_number_of_dtc(
+    pub async fn read_dtc_information_number_of_dtc_by_status_mask(
         &self,
         mask: u8,
     ) -> Result<DTCReportNumberByStatusMask> {
