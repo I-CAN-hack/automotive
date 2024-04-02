@@ -122,7 +122,7 @@ pub enum SecurityAccessType {
     SendKey = 0x02,
 }
 
-/// ROutine Control Sub-Function ID as defined in ISO 14229
+/// Routine Control Sub-Function ID as defined in ISO 14229
 #[derive(Debug, PartialEq, Copy, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
@@ -130,4 +130,37 @@ pub enum RoutineControlType {
     Start = 0x01,
     Stop = 0x02,
     RequestResults = 0x03,
+}
+
+/// Read DTC Information Sub-Function ID as defined in ISO 14229
+#[derive(Debug, PartialEq, Copy, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(u8)]
+pub enum ReportType {
+    ReportNumberOfDTCByStatusMask = 0x01,
+    ReportDTCByStatusMask = 0x02,
+    ReportDTCSnapshotIdentification = 0x03,
+    ReportDTCSnapshotRecordByDTCNumber = 0x04,
+    ReportDTCStoredDataByRecordNumber = 0x05,
+    ReportDTCExtDataRecordByDTCNumber = 0x06,
+    ReportNumberOfDTCBySeverityMaskRecord = 0x07,
+    ReportDTCBySeverityMaskRecord = 0x08,
+    ReportSeverityInformationOfDTC = 0x09,
+    ReportSupportedDTC = 0x0A,
+    ReportFirstTestFailedDTC = 0x0B,
+    ReportFirstConfirmedDTC = 0x0C,
+    ReportMostRecentTestFailedDTC = 0x0D,
+    ReportMostRecentConfirmedDTC = 0x0F,
+    ReportMirrorMemoryDTCByStatusMask = 0x10,
+    ReportMirrorMemoryDTCExtDataRecordByDTCNumber = 0x11,
+    ReportNumberOfMirrorMemoryDTCByStatusMask = 0x12,
+    ReportNumberOfEmissionsOBDDTCByStatusMask = 0x13,
+    ReportEmissionsOBDDTCByStatusMask = 0x14,
+    ReportDTCFaultDetectionCounter = 0x15,
+    ReportDTCWithPermanentStatus = 0x16,
+    ReportDTCExtDataRecordByRecordNumber = 0x17,
+    ReportUserDefMemoryDTCByStatusMask = 0x18,
+    ReportUserDefMemoryDTCSnapshotRecordByDTCNumber = 0x19,
+    ReportUserDefMemoryDTCExtDataRecordByDTCNumber = 0x42,
+    ReportWWHOBDDTCWithPermanentStatus = 0x55,
 }
