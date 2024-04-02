@@ -12,7 +12,7 @@ pub use async_can::AsyncCanAdapter;
 pub static DLC_TO_LEN: &[usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64];
 
 /// Identifier for a CAN frame
-#[derive(Copy, Clone, PartialOrd, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, PartialOrd, Ord, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Identifier {
     Standard(u32),
