@@ -39,7 +39,7 @@ fn process<T: CanAdapter>(
             if frame.loopback {
                 let callback = callbacks
                     .entry((frame.bus, frame.id))
-                    .or_insert_with(VecDeque::new)
+                    .or_default()
                     .pop_front();
 
                 match callback {
@@ -66,7 +66,7 @@ fn process<T: CanAdapter>(
             // Insert callback into hashmap
             callbacks
                 .entry((frame.bus, frame.id))
-                .or_insert_with(VecDeque::new)
+                .or_default()
                 .push_back((loopback_frame, callback));
 
             if DEBUG {
