@@ -8,6 +8,7 @@ pub use error::Error;
 use bit_timing::BitTimingKind;
 use types::CanFilter;
 
+use crate::can::{CanAdapter, Frame};
 use crate::{XLaccess, XLhandle, XLportHandle, XL_BUS_TYPE_CAN, XL_INTERFACE_VERSION, XL_INTERFACE_VERSION_V4};
 use std::collections::HashMap;
 
@@ -67,13 +68,13 @@ impl VectorCan {
         let mut channel_masks: HashMap<u32, u64> = HashMap::new();
         let mut index_to_channel: HashMap<u32, u32> = HashMap::new();
 
-        for channel in channels {
+        for channel in &channels {
             let channel_index =
-                wrapper::find_global_channel_idx(channel as u8, serial, Some(&app_name), channel_configs.clone())
+                wrapper::find_global_channel_idx(*channel as u8, serial, Some(&app_name), channel_configs.clone())
                     .unwrap();
             let channel_mask: u64 = 1 << channel_index;
-            channel_masks.insert(channel, channel_mask);
-            index_to_channel.insert(channel_index as u32, channel);
+            channel_masks.insert(*channel, channel_mask);
+            index_to_channel.insert(channel_index as u32, *channel);
             mask |= channel_mask;
         }
 
@@ -100,7 +101,7 @@ impl VectorCan {
         // TODO: Implement check_can_settings
         let assert_timing = bit_rate.is_some() || timing.is_some();
 
-        if let Some(timing) = timing {
+        if let Some(timing) = &timing {
             match timing {
                 BitTimingKind::Standard(timing) => {
                     wrapper::set_bit_timing(port_config.port_handle, mask, port_config.permission_mask, &timing)
@@ -155,5 +156,16 @@ impl VectorCan {
         wrapper::deactivate_channel(self.port_handle, self.mask).unwrap();
         wrapper::close_port(self.port_handle).unwrap();
         wrapper::close_driver().unwrap();
+    }
+}
+
+
+impl CanAdapter for VectorCan {
+    fn send(&mut self, frames: &[Frame]) -> Result<(), crate::error::Error> {
+        todo!()
+    }
+
+    fn recv(&mut self) -> Result<Vec<Frame>, crate::error::Error> {
+        todo!()
     }
 }

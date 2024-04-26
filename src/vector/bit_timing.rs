@@ -124,7 +124,7 @@ pub struct BitTimingFd {
 impl BitTimingFd {
     pub fn new(
         f_clock: u32,
-        nom_brp: u8,
+        nom_brp: u32,
         nom_tseg1: u32,
         nom_tseg2: u32,
         nom_sjw: u32,
@@ -142,7 +142,7 @@ impl BitTimingFd {
             return Err(Error::BitTimingError("Data BRP must be at least 1".to_string()));
         }
 
-        let nbt = _nbt(nom_tseg1, nom_tseg2);
+        let nbt = _nbt_fd(nom_tseg1, nom_tseg2);
         let dbt = Self::_dbt(data_tseg1, data_tseg2);
 
         if Self::_data_bitrate(f_clock, data_brp, dbt) < Self::_nom_bitrate(f_clock, nom_brp, nbt) {
@@ -163,7 +163,7 @@ impl BitTimingFd {
             ));
         }
 
-        if _sample_point(nom_tseg1, nom_tseg2) < 50.0 {
+        if _sample_point_fd(nom_tseg1, nom_tseg2) < 50.0 {
             return Err(Error::BitTimingError(
                 "Nominal sample point must be greater than or equal to 50%".to_string(),
             ));
@@ -202,7 +202,7 @@ impl BitTimingFd {
     }
 
     pub fn nom_bitrate(&self) -> u32 {
-        Self::_nom_bitrate(self.f_clock, self.nom_brp, _nbt(self.nom_tseg1, self.nom_tseg2))
+        Self::_nom_bitrate(self.f_clock, self.nom_brp, _nbt_fd(self.nom_tseg1, self.nom_tseg2))
     }
 
     pub fn data_bitrate(&self) -> u32 {
@@ -213,8 +213,8 @@ impl BitTimingFd {
         )
     }
 
-    fn _nom_bitrate(f_clock: u32, nom_brp: u8, nom_nbt: u8) -> u32 {
-        _bitrate(f_clock, nom_brp as u8, nom_nbt)
+    fn _nom_bitrate(f_clock: u32, nom_brp: u32, nom_nbt: u32) -> u32 {
+        _bitrate_fd(f_clock, nom_brp, nom_nbt)
     }
 
     fn _data_bitrate(f_clock: u32, data_brp: u32, dbt: u32) -> u32 {
@@ -235,9 +235,22 @@ fn _sample_point(tseg1: u8, tseg2: u8) -> f32 {
     return 100.0 * (1 + tseg1) as f32 / (1 + tseg1 + tseg2) as f32;
 }
 
+/// Calculate the sample point in percent
+fn _sample_point_fd(tseg1: u32, tseg2: u32) -> f32 {
+    return 100.0 * (1 + tseg1) as f32 / (1 + tseg1 + tseg2) as f32;
+}
+
+fn _nbt_fd(tseg1: u32, tseg2: u32) -> u32 {
+    return 1 + tseg1 + tseg2;
+}
+
 /// Normal Bit Time
 fn _nbt(tseg1: u8, tseg2: u8) -> u8 {
     return 1 + tseg1 + tseg2;
+}
+
+fn _bitrate_fd(f_clock: u32, brp: u32, nbt: u32) -> u32 {
+    return f_clock / (brp * nbt) as u32;
 }
 
 fn _bitrate(f_clock: u32, brp: u8, nbt: u8) -> u32 {
