@@ -1,10 +1,11 @@
 //! Low Level SocketCAN code
 //! Code based on https://github.com/socketcan-rs/socketcan-rs
 use libc::{
-    c_int, c_void, sa_family_t, sockaddr_can, socklen_t, AF_CAN, CANFD_MTU, CAN_MTU, CAN_RAW,
-    CAN_RAW_LOOPBACK, SOL_CAN_RAW,
+    c_int, c_void, can_frame, canfd_frame, sa_family_t, sockaddr_can, socklen_t, AF_CAN, CANFD_MTU,
+    CAN_MTU, CAN_RAW, CAN_RAW_FD_FRAMES, CAN_RAW_LOOPBACK, SOL_CAN_RAW,
 };
 use nix::net::if_::if_nametoindex;
+use std::io::Write;
 use std::os::fd::AsRawFd;
 
 use crate::can::Frame;
@@ -41,6 +42,21 @@ impl CanFdSocket {
         let sock = socket2::Socket::new_raw(af_can, socket2::Type::RAW, Some(can_raw))?;
         sock.bind(&sock_addr)?;
         Ok(Self(sock))
+    }
+
+    pub fn write_frame(&self, frame: Frame) -> std::io::Result<()> {
+        match frame.fd {
+            true => {
+                let frame = canfd_frame::from(frame);
+                let bytes = as_bytes(&frame);
+                self.as_raw_socket().write_all(&bytes)
+            }
+            false => {
+                let frame = can_frame::from(frame);
+                let bytes = as_bytes(&frame);
+                self.as_raw_socket().write_all(&bytes)
+            }
+        }
     }
 
     pub fn read_frame(&self) -> std::io::Result<Frame> {
@@ -88,6 +104,11 @@ impl CanFdSocket {
             }
             _ => Err(std::io::Error::last_os_error()),
         }
+    }
+
+    pub fn set_fd_mode(&self, enabled: bool) -> std::io::Result<()> {
+        let enable = c_int::from(enabled);
+        self.set_socket_option(SOL_CAN_RAW, CAN_RAW_FD_FRAMES, &enable)
     }
 
     pub fn set_nonblocking(&self, nonblocking: bool) -> std::io::Result<()> {

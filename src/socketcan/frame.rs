@@ -1,6 +1,7 @@
 use bitflags::bitflags;
 use libc::{
-    can_frame, canfd_frame, canid_t, CANFD_BRS, CANFD_ESI, CAN_EFF_FLAG, CAN_ERR_FLAG, CAN_RTR_FLAG,
+    can_frame, canfd_frame, canid_t, CANFD_BRS, CANFD_ESI, CANFD_MAX_DLEN, CAN_EFF_FLAG,
+    CAN_ERR_FLAG, CAN_MAX_DLC, CAN_RTR_FLAG,
 };
 
 use crate::can::{Frame, Identifier};
@@ -35,10 +36,9 @@ bitflags! {
     }
 }
 
-fn id_to_canid_t(id: impl Into<Identifier>) -> canid_t {
-    let id = id.into();
+fn id_to_canid_t(id: Identifier) -> canid_t {
     match id {
-        Identifier::Standard(id) => id as canid_t,
+        Identifier::Standard(id) => id,
         Identifier::Extended(id) => id | CAN_EFF_FLAG,
     }
 }
@@ -69,5 +69,34 @@ impl From<canfd_frame> for Frame {
             &frame.data[..frame.len as usize],
         )
         .unwrap()
+    }
+}
+
+impl From<Frame> for can_frame {
+    fn from(frame: Frame) -> can_frame {
+        assert!(!frame.fd);
+        assert!(frame.data.len() <= CAN_MAX_DLC as usize);
+
+        let mut raw_frame = can_frame_default();
+        raw_frame.can_id = id_to_canid_t(frame.id);
+        raw_frame.can_dlc = frame.data.len() as u8;
+        raw_frame.data[..frame.data.len()].copy_from_slice(&frame.data);
+
+        raw_frame
+    }
+}
+
+impl From<Frame> for canfd_frame {
+    fn from(frame: Frame) -> canfd_frame {
+        assert!(frame.fd);
+        assert!(frame.data.len() <= CANFD_MAX_DLEN);
+
+        let mut raw_frame = canfd_frame_default();
+        raw_frame.can_id = id_to_canid_t(frame.id);
+        raw_frame.len = frame.data.len() as u8;
+        // TODO: Set flags like BRS
+        raw_frame.data[..frame.data.len()].copy_from_slice(&frame.data);
+
+        raw_frame
     }
 }

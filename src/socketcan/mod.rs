@@ -44,6 +44,7 @@ impl SocketCan {
             Err(_) => return Err(crate::error::Error::NotFound),
         };
 
+        socket.set_fd_mode(true).unwrap();
         socket.set_nonblocking(true).unwrap();
         socket.set_loopback(true).unwrap();
 
@@ -79,23 +80,20 @@ impl SocketCan {
 
 impl CanAdapter for SocketCan {
     fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
-        unimplemented!();
-        // while let Some(frame) = frames.pop_front() {
-        //     let to_send: socketcan::frame::CanAnyFrame = frame.clone().into();
+        while let Some(frame) = frames.pop_front() {
+            if self.socket.write_frame(frame.clone()).is_err() {
+                // Failed to send frame, push it back to the front of the queue for next send call
+                frames.push_front(frame);
+                break;
+            } else if !self.iff_echo {
+                // If IFF_ECHO is not set, we need to emulate the ACK logic.
+                let mut frame = frame.clone();
+                frame.loopback = true;
+                self.loopback_queue.push_back(frame);
+            }
+        }
 
-        //     if self.socket.write_frame(&to_send).is_err() {
-        //         // Failed to send frame, push it back to the front of the queue for next send call
-        //         frames.push_front(frame);
-        //         break;
-        //     } else if !self.iff_echo {
-        //         // If IFF_ECHO is not set, we need to emulate the ACK logic.
-        //         let mut frame = frame.clone();
-        //         frame.loopback = true;
-        //         self.loopback_queue.push_back(frame);
-        //     }
-        // }
-
-        // Ok(())
+        Ok(())
     }
 
     fn recv(&mut self) -> Result<Vec<Frame>> {

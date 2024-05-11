@@ -109,7 +109,6 @@ async fn socketcan_bulk_send_async() {
 #[test]
 #[serial_test::serial]
 fn vcan_bulk_send_sync() {
-    use socketcan::Socket;
     let mut adapter = automotive::socketcan::SocketCan::new("vcan0").unwrap();
     bulk_send_sync(&mut adapter);
 }
