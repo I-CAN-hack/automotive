@@ -2,12 +2,10 @@ use libc::{can_frame, canfd_frame, canid_t, CANFD_MAX_DLEN, CAN_EFF_FLAG, CAN_MA
 
 use crate::can::{Frame, Identifier};
 
-#[inline(always)]
 pub fn can_frame_default() -> can_frame {
     unsafe { std::mem::zeroed() }
 }
 
-#[inline(always)]
 pub fn canfd_frame_default() -> canfd_frame {
     unsafe { std::mem::zeroed() }
 }

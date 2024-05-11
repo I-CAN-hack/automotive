@@ -49,12 +49,12 @@ impl CanFdSocket {
             true => {
                 let frame = canfd_frame::from(frame);
                 let bytes = as_bytes(&frame);
-                self.as_raw_socket().write_all(&bytes)
+                self.as_raw_socket().write_all(bytes)
             }
             false => {
                 let frame = can_frame::from(frame);
                 let bytes = as_bytes(&frame);
-                self.as_raw_socket().write_all(&bytes)
+                self.as_raw_socket().write_all(bytes)
             }
         }
     }
