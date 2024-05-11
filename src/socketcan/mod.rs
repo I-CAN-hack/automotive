@@ -1,4 +1,4 @@
-//! This module provides a [`CanAdapter`] implementation for the [`socketcan`] crate.
+//! This module provides a [`CanAdapter`] implementation for SocketCAN interfaces
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
 use crate::socketcan::socket::CanFdSocket;
 use crate::Result;
@@ -10,7 +10,7 @@ mod socket;
 
 const IFF_ECHO: u64 = 1 << 18; // include/uapi/linux/if.h
 
-/// Aadapter for a [`socketcan::CanFdSocket`].
+/// SocketCAN Adapter
 pub struct SocketCan {
     socket: CanFdSocket,
     /// If the IFF_ECHO flag is set on the interface, it will implement proper ACK logic.
@@ -33,11 +33,13 @@ fn read_iff_echo(if_name: &str) -> Option<bool> {
 }
 
 impl SocketCan {
+    /// Creates a new [`AsyncCanAdapter`] from a SocketCAN iface name (e.g. `can0`)
     pub fn new_async(name: &str) -> Result<AsyncCanAdapter> {
         let socket = SocketCan::new(name)?;
         Ok(AsyncCanAdapter::new(socket))
     }
 
+    /// Creates a new blocking [`SocketCan`] from a SocketCAN iface name (e.g. `can0`)
     pub fn new(name: &str) -> Result<SocketCan> {
         let socket = match CanFdSocket::open(name) {
             Ok(socket) => socket,
@@ -65,7 +67,7 @@ impl SocketCan {
         };
 
         if iff_echo {
-            // socket.set_recv_own_msgs(true).unwrap();
+            socket.set_recv_own_msgs(true).unwrap();
         } else {
             tracing::warn!("IFF_ECHO is not set on the interface. ACK support is emulated.");
         }

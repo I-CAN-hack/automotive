@@ -1,8 +1,8 @@
 //! Low Level SocketCAN code
-//! Code based on https://github.com/socketcan-rs/socketcan-rs
+//! Code based on socketcan-rs
 use libc::{
     c_int, c_void, can_frame, canfd_frame, sa_family_t, sockaddr_can, socklen_t, AF_CAN, CANFD_MTU,
-    CAN_MTU, CAN_RAW, CAN_RAW_FD_FRAMES, CAN_RAW_LOOPBACK, SOL_CAN_RAW,
+    CAN_MTU, CAN_RAW, CAN_RAW_FD_FRAMES, CAN_RAW_LOOPBACK, CAN_RAW_RECV_OWN_MSGS, SOL_CAN_RAW,
 };
 use nix::net::if_::if_nametoindex;
 use std::io::Write;
@@ -106,15 +106,22 @@ impl CanFdSocket {
         }
     }
 
+    /// Enable or disable FD mode on a socket.
     pub fn set_fd_mode(&self, enabled: bool) -> std::io::Result<()> {
         let enable = c_int::from(enabled);
         self.set_socket_option(SOL_CAN_RAW, CAN_RAW_FD_FRAMES, &enable)
     }
 
+    /// Change socket to non-blocking mode or back to blocking mode.
     pub fn set_nonblocking(&self, nonblocking: bool) -> std::io::Result<()> {
         self.as_raw_socket().set_nonblocking(nonblocking)
     }
 
+    /// Enable or disable loopback.
+    ///
+    /// By default, loopback is enabled, causing other applications that open
+    /// the same CAN bus to see frames emitted by different applications on
+    /// the same system.
     pub fn set_loopback(&self, enabled: bool) -> std::io::Result<()> {
         let loopback = c_int::from(enabled);
         self.set_socket_option(SOL_CAN_RAW, CAN_RAW_LOOPBACK, &loopback)
@@ -126,6 +133,15 @@ impl CanFdSocket {
 
     pub fn recv_buffer_size(&self) -> std::io::Result<usize> {
         self.as_raw_socket().recv_buffer_size()
+    }
+
+    /// Enable or disable receiving of own frames.
+    ///
+    /// When enabled, this settings controls if CAN frames sent
+    /// are received back by sender when ACKed. Default is off.
+    pub fn set_recv_own_msgs(&self, enabled: bool) -> std::io::Result<()> {
+        let recv_own_msgs = c_int::from(enabled);
+        self.set_socket_option(SOL_CAN_RAW, CAN_RAW_RECV_OWN_MSGS, &recv_own_msgs)
     }
 
     fn as_raw_socket(&self) -> &socket2::Socket {
