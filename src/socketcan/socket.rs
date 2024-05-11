@@ -106,13 +106,11 @@ impl CanFdSocket {
         }
     }
 
-    /// Enable or disable FD mode on a socket.
     pub fn set_fd_mode(&self, enabled: bool) -> std::io::Result<()> {
         let enable = c_int::from(enabled);
         self.set_socket_option(SOL_CAN_RAW, CAN_RAW_FD_FRAMES, &enable)
     }
 
-    /// Change socket to non-blocking mode or back to blocking mode.
     pub fn set_nonblocking(&self, nonblocking: bool) -> std::io::Result<()> {
         self.as_raw_socket().set_nonblocking(nonblocking)
     }
