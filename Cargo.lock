@@ -50,6 +50,7 @@ name = "automotive"
 version = "0.1.4"
 dependencies = [
  "async-stream",
+ "bitflags",
  "bstr",
  "futures",
  "hex",

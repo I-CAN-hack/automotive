@@ -1,12 +1,14 @@
 //! Low Level SocketCAN code
 //! Code based on https://github.com/socketcan-rs/socketcan-rs
 use libc::{
-    c_int, c_void, sa_family_t, sockaddr_can, socklen_t, AF_CAN, CAN_RAW, CAN_RAW_LOOPBACK, PF_CAN,
-    SOL_CAN_RAW,
+    c_int, c_void, sa_family_t, sockaddr_can, socklen_t, AF_CAN, CANFD_MTU, CAN_MTU, CAN_RAW,
+    CAN_RAW_LOOPBACK, SOL_CAN_RAW,
 };
 use nix::net::if_::if_nametoindex;
 use std::os::fd::AsRawFd;
-use tokio::io;
+
+use crate::can::Frame;
+use crate::socketcan::frame::{can_frame_default, canfd_frame_default};
 
 pub struct CanFdSocket(socket2::Socket);
 
@@ -39,6 +41,53 @@ impl CanFdSocket {
         let sock = socket2::Socket::new_raw(af_can, socket2::Type::RAW, Some(can_raw))?;
         sock.bind(&sock_addr)?;
         Ok(Self(sock))
+    }
+
+    pub fn read_frame(&self) -> std::io::Result<Frame> {
+        let mut frame = Vec::with_capacity(CANFD_MTU);
+
+        let buf = socket2::MaybeUninitSlice::new(frame.spare_capacity_mut());
+        let buf_slice = &mut [buf];
+
+        let mut header = socket2::MsgHdrMut::new().with_buffers(buf_slice);
+
+        match self.as_raw_socket().recvmsg(&mut header, 0)? {
+            // If we only get 'can_frame' number of bytes, then the return is,
+            // by definition, a can_frame, so we just copy the bytes into the
+            // proper type.
+            CAN_MTU => {
+                let loopback = header.flags().is_confirm();
+
+                // SAFETY: just received CAN_MTU bytes
+                unsafe {
+                    frame.set_len(CAN_MTU);
+                }
+
+                let mut ret = can_frame_default();
+                as_bytes_mut(&mut ret).copy_from_slice(&frame);
+
+                let mut frame = Frame::from(ret);
+                frame.loopback = loopback;
+                Ok(frame)
+            }
+            CANFD_MTU => {
+                let loopback = header.flags().is_confirm();
+
+                // SAFETY: just received CANFD_MTU bytes
+                unsafe {
+                    frame.set_len(CANFD_MTU);
+                }
+
+                let mut ret = canfd_frame_default();
+                as_bytes_mut(&mut ret).copy_from_slice(&frame);
+
+                let mut frame = Frame::from(ret);
+                frame.fd = true;
+                frame.loopback = loopback;
+                Ok(frame)
+            }
+            _ => Err(std::io::Error::last_os_error()),
+        }
     }
 
     pub fn set_nonblocking(&self, nonblocking: bool) -> std::io::Result<()> {
