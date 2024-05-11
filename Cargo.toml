@@ -31,7 +31,6 @@ tracing = "0.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 socket2 = "0.5.7"
-nix = { version = "0.28.0", features = ["net"] }
 libc = "0.2.154"
 
 [dev-dependencies]

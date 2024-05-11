@@ -4,7 +4,6 @@ use libc::{
     c_int, c_void, can_frame, canfd_frame, sa_family_t, sockaddr_can, socklen_t, AF_CAN, CANFD_MTU,
     CAN_MTU, CAN_RAW, CAN_RAW_FD_FRAMES, CAN_RAW_LOOPBACK, CAN_RAW_RECV_OWN_MSGS, SOL_CAN_RAW,
 };
-use nix::net::if_::if_nametoindex;
 use std::io::Write;
 use std::os::fd::AsRawFd;
 
@@ -12,6 +11,17 @@ use crate::can::Frame;
 use crate::socketcan::frame::{can_frame_default, canfd_frame_default};
 
 pub struct CanFdSocket(socket2::Socket);
+
+fn if_nametoindex(name: &str) -> std::io::Result<libc::c_uint> {
+    let c_name = std::ffi::CString::new(name).unwrap();
+    let if_index = unsafe { libc::if_nametoindex(c_name.as_ptr()) };
+
+    if if_index == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(if_index)
+    }
+}
 
 fn as_bytes<T: Sized>(val: &T) -> &[u8] {
     let sz = std::mem::size_of::<T>();
