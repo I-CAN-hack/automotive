@@ -83,6 +83,7 @@ impl CanAdapter for SocketCan {
         while let Some(frame) = frames.pop_front() {
             if self.socket.write_frame(frame.clone()).is_err() {
                 // Failed to send frame, push it back to the front of the queue for next send call
+                // FIXME: Ensure we don't processes the frame the same call
                 frames.push_front(frame);
                 break;
             } else if !self.iff_echo {

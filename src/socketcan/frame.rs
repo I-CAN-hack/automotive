@@ -1,8 +1,4 @@
-use bitflags::bitflags;
-use libc::{
-    can_frame, canfd_frame, canid_t, CANFD_BRS, CANFD_ESI, CANFD_MAX_DLEN, CAN_EFF_FLAG,
-    CAN_ERR_FLAG, CAN_MAX_DLC, CAN_RTR_FLAG,
-};
+use libc::{can_frame, canfd_frame, canid_t, CANFD_MAX_DLEN, CAN_EFF_FLAG, CAN_MAX_DLC};
 
 use crate::can::{Frame, Identifier};
 
@@ -14,26 +10,6 @@ pub fn can_frame_default() -> can_frame {
 #[inline(always)]
 pub fn canfd_frame_default() -> canfd_frame {
     unsafe { std::mem::zeroed() }
-}
-
-bitflags! {
-    /// Bit flags in the composite SocketCAN ID word.
-    pub struct IdFlags: canid_t {
-        /// Indicates frame uses a 29-bit extended ID
-        const EFF = CAN_EFF_FLAG;
-        /// Indicates a remote request frame.
-        const RTR = CAN_RTR_FLAG;
-        /// Indicates an error frame.
-        const ERR = CAN_ERR_FLAG;
-    }
-
-    /// Bit flags for the Flexible Data (FD) frames.
-    pub struct FdFlags: u8 {
-        /// Bit rate switch (second bit rate for payload data)
-        const BRS = CANFD_BRS as u8;
-        /// Error state indicator of the transmitting node
-        const ESI = CANFD_ESI as u8;
-    }
 }
 
 fn id_to_canid_t(id: Identifier) -> canid_t {

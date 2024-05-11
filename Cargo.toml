@@ -18,7 +18,6 @@ serde = ["dep:serde"]
 
 [dependencies]
 async-stream = "0.3.5"
-bitflags = "2.5.0"
 bstr = "1.9.0"
 hex = "0.4"
 rusb = "0.9"
