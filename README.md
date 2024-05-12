@@ -45,7 +45,7 @@ The automotive crate also supplies interfaces for various diagnostic protocols s
 The following CAN adapters are supported.
 
 ### Supported CAN adapters
- - SocketCAN (Linux only, supported using [socketcan-rs](https://github.com/socketcan-rs/socketcan-rs))
+ - SocketCAN (Linux only)
  - comma.ai panda (all platforms using [rusb](https://crates.io/crates/rusb))
 
 ### Known limitations / Notes

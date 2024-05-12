@@ -1,18 +1,18 @@
-//! This module provides a [`CanAdapter`] implementation for the [`socketcan`] crate.
+//! This module provides a [`CanAdapter`] implementation for SocketCAN interfaces
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
+use crate::socketcan::socket::CanFdSocket;
 use crate::Result;
 
-use socketcan::socket::Socket;
-use socketcan::SocketOptions;
 use std::collections::VecDeque;
 
 mod frame;
+mod socket;
 
 const IFF_ECHO: u64 = 1 << 18; // include/uapi/linux/if.h
 
-/// Aadapter for a [`socketcan::CanFdSocket`].
+/// SocketCAN Adapter
 pub struct SocketCan {
-    socket: socketcan::CanFdSocket,
+    socket: CanFdSocket,
     /// If the IFF_ECHO flag is set on the interface, it will implement proper ACK logic.
     iff_echo: bool,
     /// Queue used for fake loopback frames if IFF_ECHO is not set.
@@ -33,24 +33,27 @@ fn read_iff_echo(if_name: &str) -> Option<bool> {
 }
 
 impl SocketCan {
+    /// Creates a new [`AsyncCanAdapter`] from a SocketCAN iface name (e.g. `can0`)
     pub fn new_async(name: &str) -> Result<AsyncCanAdapter> {
         let socket = SocketCan::new(name)?;
         Ok(AsyncCanAdapter::new(socket))
     }
 
+    /// Creates a new blocking [`SocketCan`] from a SocketCAN iface name (e.g. `can0`)
     pub fn new(name: &str) -> Result<SocketCan> {
-        let socket = match socketcan::CanFdSocket::open(name) {
+        let socket = match CanFdSocket::open(name) {
             Ok(socket) => socket,
             Err(_) => return Err(crate::error::Error::NotFound),
         };
 
+        socket.set_fd_mode(true).unwrap();
         socket.set_nonblocking(true).unwrap();
         socket.set_loopback(true).unwrap();
 
         // Attempt to increase the buffer receive size to 1MB
-        socket.as_raw_socket().set_recv_buffer_size(1_000_000).ok();
+        socket.set_recv_buffer_size(1_000_000).ok();
 
-        if let Ok(sz) = socket.as_raw_socket().recv_buffer_size() {
+        if let Ok(sz) = socket.recv_buffer_size() {
             tracing::info!("SocketCAN receive buffer size {}", sz);
         }
 
@@ -80,9 +83,7 @@ impl SocketCan {
 impl CanAdapter for SocketCan {
     fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
         while let Some(frame) = frames.pop_front() {
-            let to_send: socketcan::frame::CanAnyFrame = frame.clone().into();
-
-            if self.socket.write_frame(&to_send).is_err() {
+            if self.socket.write_frame(&frame).is_err() {
                 // Failed to send frame, push it back to the front of the queue for next send call
                 frames.push_front(frame);
                 break;
@@ -101,10 +102,8 @@ impl CanAdapter for SocketCan {
         let mut frames = vec![];
 
         loop {
-            match self.socket.read_frame_with_meta() {
-                Ok((frame, meta)) => {
-                    let mut frame: crate::can::Frame = frame.into();
-                    frame.loopback = meta.loopback;
+            match self.socket.read_frame() {
+                Ok(frame) => {
                     frames.push(frame);
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {

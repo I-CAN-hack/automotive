@@ -109,7 +109,6 @@ async fn socketcan_bulk_send_async() {
 #[test]
 #[serial_test::serial]
 fn vcan_bulk_send_sync() {
-    use socketcan::Socket;
     let mut adapter = automotive::socketcan::SocketCan::new("vcan0").unwrap();
     bulk_send_sync(&mut adapter);
 }
@@ -130,4 +129,15 @@ async fn vcan_bulk_send_fd() {
     adapter
         .send(&Frame::new(0, 0x123.into(), &[0u8; 64]).unwrap())
         .await;
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn socketcan_open_nonexistent() {
+    let e = automotive::socketcan::SocketCan::new("doestnotexist");
+
+    match e {
+        Err(automotive::Error::NotFound) => {}
+        _ => panic!("Expected NotFound error"),
+    }
 }
