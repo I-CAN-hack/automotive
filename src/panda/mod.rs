@@ -54,7 +54,7 @@ impl Panda {
                 continue;
             }
 
-            let mut panda = Panda {
+            let panda = Panda {
                 dat: vec![],
                 handle: device.open()?,
                 timeout: std::time::Duration::from_millis(100),
