@@ -46,8 +46,8 @@ impl From<canfd_frame> for Frame {
     }
 }
 
-impl From<Frame> for can_frame {
-    fn from(frame: Frame) -> can_frame {
+impl From<&Frame> for can_frame {
+    fn from(frame: &Frame) -> can_frame {
         assert!(!frame.fd);
         assert!(frame.data.len() <= CAN_MAX_DLC as usize);
 
@@ -60,8 +60,8 @@ impl From<Frame> for can_frame {
     }
 }
 
-impl From<Frame> for canfd_frame {
-    fn from(frame: Frame) -> canfd_frame {
+impl From<&Frame> for canfd_frame {
+    fn from(frame: &Frame) -> canfd_frame {
         assert!(frame.fd);
         assert!(frame.data.len() <= CANFD_MAX_DLEN);
 

@@ -54,7 +54,7 @@ impl CanFdSocket {
         Ok(Self(sock))
     }
 
-    pub fn write_frame(&self, frame: Frame) -> std::io::Result<()> {
+    pub fn write_frame(&self, frame: &Frame) -> std::io::Result<()> {
         match frame.fd {
             true => {
                 let frame = canfd_frame::from(frame);

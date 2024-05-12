@@ -83,7 +83,7 @@ impl SocketCan {
 impl CanAdapter for SocketCan {
     fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
         while let Some(frame) = frames.pop_front() {
-            if self.socket.write_frame(frame.clone()).is_err() {
+            if self.socket.write_frame(&frame).is_err() {
                 // Failed to send frame, push it back to the front of the queue for next send call
                 frames.push_front(frame);
                 break;
