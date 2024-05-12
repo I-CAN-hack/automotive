@@ -131,6 +131,7 @@ async fn vcan_bulk_send_fd() {
         .await;
 }
 
+#[cfg(target_os = "linux")]
 #[tokio::test]
 #[serial_test::serial]
 async fn socketcan_open_nonexistent() {
