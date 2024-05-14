@@ -14,12 +14,12 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
         }
     }
 
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(socket) = crate::vector::VectorCan::new_async_from_name("can0") {
-            return Ok(socket);
-        }
-    }
+    // #[cfg(target_os = "windows")]
+    // {
+    //     if let Ok(socket) = crate::vector::VectorCan::new_async_from_name("can0") {
+    //         return Ok(socket);
+    //     }
+    // }
 
     Err(crate::error::Error::NotFound)
 }

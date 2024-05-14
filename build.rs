@@ -7,7 +7,7 @@ fn main() {
 
     // Tell cargo to tell rustc to link the system bzip2
     // shared library.
-    println!("cargo:rustc-link-lib=static=vxlapi");
+    println!("cargo:rustc-link-lib=vxlapi");
 
     let bindings = bindgen::Builder::default()
         .header("windows/wrapper.h")

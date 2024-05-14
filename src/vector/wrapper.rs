@@ -1,7 +1,7 @@
 use crate::{
     xlActivateChannel, xlCanFdSetConfiguration, xlCanSetChannelBitrate, xlCanSetChannelMode, xlCanSetChannelParamsC200,
     xlCloseDriver, xlClosePort, xlDeactivateChannel, xlGetApplConfig, xlGetChannelIndex, xlGetDriverConfig,
-    xlOpenDriver, xlOpenPort, xlSetNotification, XLaccess, XLcanFdConf, XLchannelConfig, XLdriverConfig, XLhandle,
+    xlOpenDriver, xlOpenPort, xlSetNotification, xlCanTransmit, xlCanTransmitEx, XLevent, XLaccess, XLcanFdConf, XLchannelConfig, XLdriverConfig, XLhandle,
     XLportHandle, XL_BUS_TYPE_CAN, XL_SUCCESS,
 };
 
@@ -87,6 +87,25 @@ pub fn close_port(port_handle: XLportHandle) -> Result<(), Error> {
         ))),
     }
 }
+
+pub fn send_can(
+    port_handle: XLportHandle,
+    access_mask: XLaccess,
+    events_count: usize,
+    events: Vec<XLevent>
+) {
+    
+}
+
+pub fn send_can_fd(
+    port_handle: XLportHandle,
+    access_mask: XLaccess,
+    events_count: usize,
+    events: Vec<XLevent>
+) {
+    
+}
+
 
 pub fn set_bit_timing(
     port_handle: XLportHandle,

@@ -1,15 +1,13 @@
-use automotive::can::Identifier;
-use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
-use automotive::vector::VectorCan;
-use futures_util::stream::StreamExt;
+use automotive::vector::wrapper::open_driver;
+//use automotive::vector::VectorCan;
 use tracing_subscriber;
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let vector = VectorCan::default();
-
+    //let vector = VectorCan::default();
+    let _ = open_driver();
     // let adapter = automotive::can::get_adapter().unwrap();
     // let config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
     // let isotp = IsoTPAdapter::new(&adapter, config);

@@ -8,12 +8,33 @@ pub use error::Error;
 use bit_timing::BitTimingKind;
 use types::CanFilter;
 
-use crate::can::{CanAdapter, Frame};
-use crate::{XLaccess, XLhandle, XLportHandle, XL_BUS_TYPE_CAN, XL_INTERFACE_VERSION, XL_INTERFACE_VERSION_V4};
+use crate::can::{CanAdapter, Frame, Identifier};
+use crate::{
+    XLevent,
+    XLaccess,
+    XLhandle,
+    XLportHandle,
+    XLcanTxEvent,
+    s_xl_tag_data,
+    s_xl_can_msg,
+    XL_CAN_EXT_MSG_ID,
+    XL_BUS_TYPE_CAN,
+    XL_INTERFACE_VERSION,
+    XL_INTERFACE_VERSION_V4,
+    e_XLevent_type_XL_TRANSMIT_MSG,
+    XL_CAN_TXMSG_FLAG_EDL,
+    XLcanTxEvent__bindgen_ty_1,
+    XL_CAN_TX_MSG
+};
 use std::collections::HashMap;
+
+use wrapper::{send_can, send_can_fd};
+
+const XL_CAN_EV_TAG_TX_MSG: u16 = 1088;
 
 pub struct VectorCan {
     pub channels: Vec<u32>,
+    pub channel_masks: HashMap<u32, u64>,
     pub can_filters: Option<Vec<CanFilter>>,
     pub poll_interval: f32,
     pub receive_own_messages: bool,
@@ -34,6 +55,7 @@ impl Default for VectorCan {
         Self {
             app_name: String::from("AutomotiveVectorAnalyzer"),
             channels: Vec::new(),
+            channel_masks: HashMap::new(),
             can_filters: None,
             poll_interval: 0.01,
             receive_own_messages: false,
@@ -136,6 +158,7 @@ impl VectorCan {
 
         Self {
             channels,
+            channel_masks,
             can_filters,
             poll_interval,
             receive_own_messages,
@@ -157,15 +180,116 @@ impl VectorCan {
         wrapper::close_port(self.port_handle).unwrap();
         wrapper::close_driver().unwrap();
     }
+
+    fn get_tx_channel_mask(&self, frames: &[Frame]) -> u64 {
+        if frames.len() == 1 {
+            self.channel_masks.get(&(frames[0].bus as u32)).unwrap_or(&self.mask).clone()
+        } else {
+            self.mask
+        }
+    }
+
+    fn send_can(&self, frames: &[Frame]) {
+        let mask = self.get_tx_channel_mask(frames);
+
+        let mut events = vec![];
+        for frame in frames {
+            events.push(build_xl_event(frame));
+        }
+
+        send_can_fd(self.port_handle, mask, events.len(), events);
+    }
+
+    fn send_can_fd(&self, frames: &[Frame]) {
+        let mask = self.get_tx_channel_mask(frames);
+
+        let mut events = vec![];
+        for frame in frames {
+            events.push(build_xl_can_tx_event(frame));
+        }
+
+        send_can(self.port_handle, mask, events.len(), events);
+    }
+
+
 }
 
 
 impl CanAdapter for VectorCan {
     fn send(&mut self, frames: &[Frame]) -> Result<(), crate::error::Error> {
-        todo!()
+        // let mask = self.get_tx_channel_mask(frames);
+        match self.fd_mode {
+            true => {
+                self.send_can_fd(frames);
+            },
+            false => {
+                self.send_can(frames);
+            }
+        };
+
+        Ok(())
     }
 
     fn recv(&mut self) -> Result<Vec<Frame>, crate::error::Error> {
         todo!()
     }
+}
+
+fn build_xl_event(frame: &Frame) -> XLevent {
+    let id = match frame.id {
+        Identifier::Standard(id) => id,
+        Identifier::Extended(id) => id | XL_CAN_EXT_MSG_ID,
+    };
+
+    let event = XLevent {
+        tag: e_XLevent_type_XL_TRANSMIT_MSG as u8,
+        chanIndex: frame.bus,
+        transId: 0,
+        portHandle: 0,
+        flags: 0,
+        reserved: 0,
+        timeStamp: 0,
+        tagData: s_xl_tag_data {
+            msg: s_xl_can_msg {
+                id,
+                flags: 0,
+                dlc: 0,
+                res1: 0,
+                data: [0, 0, 0, 0, 0, 0, 0, 0],
+                res2: 0,
+            }
+        }
+    };
+
+    event
+}
+
+fn build_xl_can_tx_event(frame: &Frame) -> XLcanTxEvent {
+    let id = match frame.id {
+        Identifier::Standard(id) => id,
+        Identifier::Extended(id) => id | XL_CAN_EXT_MSG_ID,
+    };
+
+    let mut flags = 0;
+    if frame.fd {
+        flags |= XL_CAN_TXMSG_FLAG_EDL;
+    }
+
+    let event = XLcanTxEvent {
+        tag: XL_CAN_EV_TAG_TX_MSG,
+        transId: 0xFFFF,
+        channelIndex: frame.bus as u8,
+        reserved: [0, 0, 0],
+        tagData: XLcanTxEvent__bindgen_ty_1 {
+            canMsg: XL_CAN_TX_MSG {
+                canId: id,
+                msgFlags: flags,
+                dlc: 0,
+                reserved: [0, 0, 0, 0, 0, 0, 0],
+                data: [0; 64],
+            }
+        }
+    };
+
+    event
 }
