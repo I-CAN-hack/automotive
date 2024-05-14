@@ -95,6 +95,27 @@ async fn socketcan_bulk_send_async() {
 //     adapter.send(&Frame::new(0, 0x123.into(), &[0u8; 64])).await;
 // }
 
+
+#[cfg(feature = "test_vector")]
+#[test]
+#[serial_test::serial]
+fn vector_bulk_send_sync() {
+    use automotive::vector::wrapper;
+
+    wrapper::open_driver();
+    let mut vector = automotive::vector::VectorCan::default();
+    std::thread::sleep(std::time::Duration::from_secs(10));
+    bulk_send_sync(&mut vector);
+}
+
+#[cfg(feature = "test_vector")]
+#[tokio::test]
+#[serial_test::serial]
+async fn vector_bulk_send_async() {
+    let panda = automotive::panda::Panda::new_async().unwrap();
+    bulk_send(&panda).await;
+}
+
 #[cfg(feature = "test_vcan")]
 #[test]
 #[serial_test::serial]

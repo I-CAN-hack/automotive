@@ -1,8 +1,8 @@
 use crate::{
     xlActivateChannel, xlCanFdSetConfiguration, xlCanSetChannelBitrate, xlCanSetChannelMode, xlCanSetChannelParamsC200,
     xlCloseDriver, xlClosePort, xlDeactivateChannel, xlGetApplConfig, xlGetChannelIndex, xlGetDriverConfig,
-    xlOpenDriver, xlOpenPort, xlSetNotification, xlCanTransmit, xlCanTransmitEx, XLevent, XLaccess, XLcanFdConf, XLchannelConfig, XLdriverConfig, XLhandle,
-    XLportHandle, XL_BUS_TYPE_CAN, XL_SUCCESS,
+    xlOpenDriver, xlOpenPort, xlSetNotification, xlCanTransmit, xlCanTransmitEx, xlReceive, XLevent,  XLcanTxEvent, XLaccess, XLcanFdConf, XLchannelConfig, XLdriverConfig, XLhandle,
+    XLportHandle, XL_BUS_TYPE_CAN, XL_SUCCESS, XL_ERR_QUEUE_IS_EMPTY,
 };
 
 use crate::vector::types::{ApplicationConfig, PortConfig};
@@ -91,21 +91,74 @@ pub fn close_port(port_handle: XLportHandle) -> Result<(), Error> {
 pub fn send_can(
     port_handle: XLportHandle,
     access_mask: XLaccess,
-    events_count: usize,
+    events_count: u32,
     events: Vec<XLevent>
-) {
-    
+) -> Result<u32, Error> {
+    unsafe {
+        let mut count = events_count.clone();
+        // let mut events_clone = events.clone();
+        // println!("Events address: {:p}", &events_clone);
+        // println!("Count address: {:p}", &count);
+        let mut boxed = events.clone().into_boxed_slice();
+        let mut array = boxed.as_mut_ptr();
+
+        // println!("BBBBBB: {:?}", array);
+        let status = xlCanTransmit(
+            port_handle,
+            access_mask,
+            &mut count as *mut u32,
+            array as *mut _ as *mut std::os::raw::c_void,
+        );
+
+        match status as u32 {
+            XL_SUCCESS => (),
+            _ => {
+                return Err(Error::DriverError(format!(
+                    "Failed to send data to CAN with error: {}",
+                    status
+                )))
+            }
+        };
+
+        Ok(count)
+    }
 }
 
 pub fn send_can_fd(
     port_handle: XLportHandle,
     access_mask: XLaccess,
     events_count: usize,
-    events: Vec<XLevent>
+    events: Vec<XLcanTxEvent>
 ) {
     
 }
 
+pub fn receive_can(
+    port_handle: XLportHandle,
+) -> Result<XLevent, Error> {
+    unsafe {
+        let mut event: XLevent = std::mem::zeroed(); //XLcanFdConf {
+        let mut out_count = 1u32;
+        let status = xlReceive(
+            port_handle,
+            &mut out_count as *mut u32,
+            &mut event as *mut XLevent
+        );
+
+        match status as u32 {
+            XL_SUCCESS => (),
+            XL_ERR_QUEUE_IS_EMPTY => return Err(Error::EmptyQueue),
+            _ => {
+                return Err(Error::DriverError(format!(
+                    "Failed to receive data from CAN with error: {}",
+                    status
+                )))
+            }
+        };
+
+        Ok(event)
+    }
+}
 
 pub fn set_bit_timing(
     port_handle: XLportHandle,
@@ -198,7 +251,8 @@ pub fn set_bit_rate(
     // let mut timing = BitTiming::new(bit_rate)?;
 
     // set_bit_timing(port_handle, channel_mask, permission_mask, &timing)
-    todo!()
+    //todo!()
+    Ok(())
 }
 
 pub fn set_channel_mode(port_handle: XLportHandle, channel_mask: XLaccess, tx: i32, txrq: i32) -> Result<(), Error> {

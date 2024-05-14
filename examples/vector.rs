@@ -1,13 +1,40 @@
-use automotive::vector::wrapper::open_driver;
-//use automotive::vector::VectorCan;
+use automotive::can::{CanAdapter, Frame, Identifier};
+use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
+use automotive::vector::wrapper::{open_driver, receive_can};
+use automotive::vector::VectorCan;
+use futures_util::stream::StreamExt;
 use tracing_subscriber;
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    //let vector = VectorCan::default();
-    let _ = open_driver();
+    println!("AAAAAAAAAAAAAA");
+    open_driver();
+    let mut vector = VectorCan::default();
+    let frame = Frame {
+        id: Identifier::Standard(0x123),
+        data: vec![0xC0, 0x40, 0x00, 0x00, 0x00, 0xE0, 0x00, 0x0F],
+        loopback: false,
+        fd: false,
+        bus: 3,
+    };
+
+    let frame_2 = Frame {
+        id: Identifier::Standard(0x123),
+        data: vec![0xC0, 0x40, 0x00, 0x00, 0x00, 0xE0, 0x00, 0x0F],
+        loopback: false,
+        fd: false,
+        bus: 2,
+    };
+
+    let frames = vec![frame, frame_2];
+    //recieve_can(vector.port_handle);
+    vector.send(&frames);
+    let frame3 = vector.recv();
+    println!("{:?}", frame3);
+    vector.shutdown();
+
     // let adapter = automotive::can::get_adapter().unwrap();
     // let config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
     // let isotp = IsoTPAdapter::new(&adapter, config);

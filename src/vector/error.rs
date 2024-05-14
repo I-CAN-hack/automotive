@@ -7,6 +7,8 @@ pub enum Error {
     DriverError(String),
     #[error("BitTimming error: {0}")]
     BitTimingError(String),
+    #[error("Qeue is empty")]
+    EmptyQueue,
     // #[error("Invalid Response Sub Function ID: {0}")]
     // InvalidSubFunction(u8),
     // #[error("Invalid Response Data Identifer: {0}")]
