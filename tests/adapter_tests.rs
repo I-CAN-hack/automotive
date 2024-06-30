@@ -13,16 +13,35 @@ static BULK_ASYNC_TIMEOUT_MS: u64 = 5000;
 fn get_test_frames(amount: usize) -> Vec<Frame> {
     let mut frames = vec![];
 
-    // Add some frames with special IDs
-    frames.push(Frame::new(0, 0x1234.into(), &[0xAA]).unwrap());
-    frames.push(Frame::new(0, Identifier::Extended(0x123), &[0xAA]).unwrap());
+    // Extended ID
+    frames.push(
+        Frame::new(
+            0,
+            Identifier::Extended(0x1234),
+            &[0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA],
+        )
+        .unwrap(),
+    );
 
+    // Extended ID that also fits in Standard ID
+    frames.push(
+        Frame::new(
+            0,
+            Identifier::Extended(0x123),
+            &[0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA],
+        )
+        .unwrap(),
+    );
+
+    // Zero length data
+    frames.push(Frame::new(0, 0x0.into(), &[]).unwrap());
+
+    // Add bulk
     for i in 0..amount {
         frames.push(Frame::new(0, 0x123.into(), &i.to_be_bytes()).unwrap());
     }
 
     frames
-
 }
 
 /// Sends a large number of frames to a "blocking" adapter, and then reads back all sent messages.
@@ -61,7 +80,6 @@ fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
 /// This tests the functionality in [`AsyncCanAdapter`] to resolve the future when the message is ACKed.
 async fn bulk_send(adapter: &AsyncCanAdapter) {
     let frames = get_test_frames(BULK_NUM_FRAMES_ASYNC);
-    let mut frames = vec![];
 
     let r = frames.iter().map(|frame| adapter.send(frame));
     tokio::time::timeout(
@@ -108,7 +126,7 @@ async fn socketcan_bulk_send_async() {
 // #[cfg(feature = "test_socketcan")]
 // #[tokio::test]
 // #[serial_test::serial]
-// async fn vcan_bulk_send_fd() {
+// async fn socketcan_send_fd() {
 //     let adapter = automotive::socketcan::SocketCan::new_async("can0").unwrap();
 //     adapter.send(&Frame::new(0, 0x123.into(), &[0u8; 64])).await;
 // }
@@ -132,7 +150,7 @@ async fn vcan_bulk_send_async() {
 #[cfg(feature = "test_vcan")]
 #[tokio::test]
 #[serial_test::serial]
-async fn vcan_bulk_send_fd() {
+async fn vcan_send_fd() {
     let adapter = automotive::socketcan::SocketCan::new_async("vcan0").unwrap();
     adapter
         .send(&Frame::new(0, 0x123.into(), &[0u8; 64]).unwrap())
