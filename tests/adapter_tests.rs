@@ -1,24 +1,35 @@
 #![allow(dead_code, unused_imports)]
 use automotive::can::AsyncCanAdapter;
-use automotive::can::{CanAdapter, Frame};
+use automotive::can::{CanAdapter, Frame, Identifier};
 use automotive::panda::Panda;
 use std::collections::VecDeque;
 use std::time::Duration;
 
-static BULK_NUM_FRAMES_SYNC: u64 = 0x100;
-static BULK_NUM_FRAMES_ASYNC: u64 = 0x1000;
+static BULK_NUM_FRAMES_SYNC: usize = 0x100;
+static BULK_NUM_FRAMES_ASYNC: usize = 0x1000;
 static BULK_SYNC_TIMEOUT_MS: u64 = 1000;
 static BULK_ASYNC_TIMEOUT_MS: u64 = 5000;
+
+fn get_test_frames(amount: usize) -> Vec<Frame> {
+    let mut frames = vec![];
+
+    // Add some frames with special IDs
+    frames.push(Frame::new(0, 0x1234.into(), &[0xAA]).unwrap());
+    frames.push(Frame::new(0, Identifier::Extended(0x123), &[0xAA]).unwrap());
+
+    for i in 0..amount {
+        frames.push(Frame::new(0, 0x123.into(), &i.to_be_bytes()).unwrap());
+    }
+
+    frames
+
+}
 
 /// Sends a large number of frames to a "blocking" adapter, and then reads back all sent messages.
 /// This verified the adapter doesn't drop messages and reads them back in the same order as they are sent,
 /// which is needed for the async adapter to work correctly.
 fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
-    let mut frames = vec![];
-
-    for i in 0..BULK_NUM_FRAMES_SYNC {
-        frames.push(Frame::new(0, 0x123.into(), &i.to_be_bytes()).unwrap());
-    }
+    let frames = get_test_frames(BULK_NUM_FRAMES_SYNC);
 
     let mut to_send: VecDeque<Frame> = frames.clone().into();
     while !to_send.is_empty() {
@@ -49,11 +60,8 @@ fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
 /// Sends a large number of frames to the adapter, and awaits them simultaneously.
 /// This tests the functionality in [`AsyncCanAdapter`] to resolve the future when the message is ACKed.
 async fn bulk_send(adapter: &AsyncCanAdapter) {
+    let frames = get_test_frames(BULK_NUM_FRAMES_ASYNC);
     let mut frames = vec![];
-
-    for i in 0..BULK_NUM_FRAMES_ASYNC {
-        frames.push(Frame::new(0, 0x123.into(), &i.to_be_bytes()).unwrap());
-    }
 
     let r = frames.iter().map(|frame| adapter.send(frame));
     tokio::time::timeout(
