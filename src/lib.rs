@@ -75,6 +75,7 @@ mod error;
 pub mod isotp;
 pub mod panda;
 pub mod uds;
+pub mod vector;
 
 /// Re-export of relevant stream traits from `tokio_stream`.
 pub use tokio_stream::{Stream, StreamExt, Timeout};

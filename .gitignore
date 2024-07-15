@@ -1,2 +1,7 @@
 /target
 .vscode/
+.DS_Store
+
+# TODO: Remove
+windows/
+bindings.rs
