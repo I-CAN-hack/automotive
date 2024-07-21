@@ -13,8 +13,12 @@ repository = "https://github.com/I-CAN-hack/automotive"
 all = []
 test_panda = []
 test_socketcan = []
+test_vector = []
 test_vcan = []
 serde = ["dep:serde"]
+
+[build-dependencies]
+bindgen = "0.69.4"
 
 [dependencies]
 async-stream = "0.3.5"

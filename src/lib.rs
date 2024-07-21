@@ -70,6 +70,12 @@
 //!  - The hardware or driver is free to prioritize sending frames with a lower Arbitration ID to prevent priority inversion. However frames with the same Arbitration ID need to be send out on the CAN bus in the same order as they were queued. This assumption is needed to match a received ACK to the correct frame.
 //! - Once a frame is ACKed it should be put in the receive queue with the `loopback` flag set. The `AsyncCanAdapter` wrapper will take care of matching it against the right transmit frame and resolving the Future. If this is not supported by the underlying hardware, this can be faked by looping back all transmitted frames immediately.
 
+#![allow(non_upper_case_globals)]
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+
+include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+
 pub mod can;
 mod error;
 pub mod isotp;
@@ -84,3 +90,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(target_os = "linux")]
 pub mod socketcan;
+
+// #[cfg(target_os = "windows")]
+pub mod vector;
