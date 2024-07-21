@@ -3,6 +3,7 @@
 pub mod adapter;
 pub mod async_can;
 
+use std::collections::VecDeque;
 use std::fmt;
 
 pub use adapter::get_adapter;
@@ -11,7 +12,7 @@ pub use async_can::AsyncCanAdapter;
 pub static DLC_TO_LEN: &[usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64];
 
 /// Identifier for a CAN frame
-#[derive(Copy, Clone, PartialOrd, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, PartialOrd, Ord, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Identifier {
     Standard(u32),
@@ -100,7 +101,7 @@ impl Frame {
     }
 }
 
-impl fmt::Debug for Frame {
+impl fmt::Display for Frame {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Frame")
             .field("bus", &self.bus)
@@ -112,10 +113,16 @@ impl fmt::Debug for Frame {
     }
 }
 
+impl fmt::Debug for Frame {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
+}
+
 /// Trait for a Blocking CAN Adapter
 pub trait CanAdapter {
-    fn send(&mut self, frames: &[Frame]) -> Result<(), crate::error::Error>;
-    fn recv(&mut self) -> Result<Vec<Frame>, crate::error::Error>;
+    fn send(&mut self, frames: &mut VecDeque<crate::can::Frame>) -> crate::Result<()>;
+    fn recv(&mut self) -> crate::Result<Vec<Frame>>;
 }
 
 #[cfg(test)]

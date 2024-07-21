@@ -2,8 +2,8 @@
 use automotive::can::AsyncCanAdapter;
 use automotive::can::Identifier;
 use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
+use automotive::StreamExt;
 use std::process::{Child, Command};
-use tokio_stream::StreamExt;
 
 static VECU_STARTUP_TIMEOUT_MS: u64 = 10000;
 
@@ -68,9 +68,9 @@ async fn vecu_spawn(adapter: &AsyncCanAdapter, config: VECUConfig) -> ChildGuard
     vecu
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(feature = "test_vcan")]
 async fn isotp_test_echo(msg_len: usize, config: VECUConfig) {
-    let adapter = automotive::socketcan::SocketCan::new_async_from_name("vcan0").unwrap();
+    let adapter = automotive::socketcan::SocketCan::new_async("vcan0").unwrap();
     let _vecu = vecu_spawn(&adapter, config).await;
 
     let mut isotp_config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));

@@ -5,8 +5,9 @@ use std::collections::{HashMap, VecDeque};
 use crate::can::CanAdapter;
 use crate::can::Frame;
 use crate::can::Identifier;
+use crate::Stream;
 use async_stream::stream;
-use futures_core::stream::Stream;
+use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::debug;
 
@@ -23,11 +24,12 @@ fn process<T: CanAdapter>(
     rx_sender: broadcast::Sender<Frame>,
     mut tx_receiver: mpsc::Receiver<(Frame, oneshot::Sender<()>)>,
 ) {
-    let mut buffer: Vec<Frame> = Vec::new();
+    let mut buffer: VecDeque<Frame> = VecDeque::new();
     let mut callbacks: HashMap<BusIdentifier, VecDeque<FrameCallback>> = HashMap::new();
 
     while shutdown_receiver.try_recv().is_err() {
-        let frames: Vec<Frame> = adapter.recv().unwrap();
+        let frames: Vec<Frame> = adapter.recv().expect("Failed to Receive CAN Frames");
+
         for frame in frames {
             if DEBUG {
                 debug! {"RX {:?}", frame};
@@ -37,7 +39,7 @@ fn process<T: CanAdapter>(
             if frame.loopback {
                 let callback = callbacks
                     .entry((frame.bus, frame.id))
-                    .or_insert_with(VecDeque::new)
+                    .or_default()
                     .pop_front();
 
                 match callback {
@@ -45,7 +47,9 @@ fn process<T: CanAdapter>(
                         // Ensure the frame we received matches the frame belonging to the callback.
                         // If not, we have a bug in the adapter implementation and frames are sent/received out of order.
                         assert_eq!(tx_frame, frame);
-                        callback.send(()).unwrap();
+
+                        // Callback might be dropped if the sender is not waiting for the response
+                        callback.send(()).ok();
                     }
                     None => panic!("Received loopback frame with no pending callback"),
                 };
@@ -55,7 +59,6 @@ fn process<T: CanAdapter>(
         }
 
         // TODO: use poll_recv_many?
-        buffer.clear();
         while let Ok((frame, callback)) = tx_receiver.try_recv() {
             let mut loopback_frame = frame.clone();
             loopback_frame.loopback = true;
@@ -63,17 +66,24 @@ fn process<T: CanAdapter>(
             // Insert callback into hashmap
             callbacks
                 .entry((frame.bus, frame.id))
-                .or_insert_with(VecDeque::new)
+                .or_default()
                 .push_back((loopback_frame, callback));
 
             if DEBUG {
                 debug! {"TX {:?}", frame};
             }
 
-            buffer.push(frame);
+            buffer.push_back(frame);
         }
         if !buffer.is_empty() {
-            adapter.send(&buffer).unwrap();
+            adapter.send(&mut buffer).unwrap();
+
+            if !buffer.is_empty() {
+                debug!(
+                    "Failed to send all frames, requeueing {} frames",
+                    buffer.len()
+                );
+            }
         }
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
@@ -130,11 +140,12 @@ impl AsyncCanAdapter {
                     Ok(frame) => {
                         if filter(&frame) {
                             yield frame
-                        } else {
-                            continue
                         }
-                    }
-                    Err(_) => continue,
+                    },
+                    Err(RecvError::Closed) => panic!("Adapter thread has exited"),
+                    Err(RecvError::Lagged(n)) => {
+                        tracing::warn!("Receive too slow, dropping {} frame(s).", n)
+                    },
                 }
             }
         })

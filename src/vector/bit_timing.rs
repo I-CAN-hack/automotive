@@ -1,10 +1,12 @@
 use crate::vector::error::Error;
 
+#[derive(Clone)]
 pub enum BitTimingKind {
     Standard(BitTiming),
     Extended(BitTimingFd),
 }
 
+#[derive(Clone)]
 pub struct BitTiming {
     pub f_clock: u32,
     pub brp: u8,
@@ -108,6 +110,7 @@ impl BitTiming {
     }
 }
 
+#[derive(Clone)]
 pub struct BitTimingFd {
     pub f_clock: u32,
     pub nom_brp: u32,

@@ -18,10 +18,11 @@ mod types;
 
 use crate::isotp::IsoTPAdapter;
 use crate::Result;
+use crate::StreamExt;
 pub use constants::*;
 pub use error::{Error, NegativeResponseCode};
+pub use types::*;
 
-use tokio_stream::StreamExt;
 use tracing::info;
 
 /// UDS Client. Wraps an IsoTPAdapter to provide a simple interface for making UDS calls.
@@ -226,6 +227,34 @@ impl<'a> UDSClient<'a> {
         )
         .await?;
         Ok(())
+    }
+
+    pub async fn read_dtc_information_number_of_dtc_by_status_mask(
+        &self,
+        mask: u8,
+    ) -> Result<DTCReportNumberByStatusMask> {
+        let resp = self
+            .request(
+                ServiceIdentifier::ReadDTCInformation as u8,
+                Some(ReportType::ReportNumberOfDTCByStatusMask as u8),
+                Some(&[mask]),
+            )
+            .await?;
+
+        if resp.len() != 4 {
+            return Err(Error::InvalidResponseLength.into());
+        }
+
+        let mask = resp[0];
+        let format =
+            DTCFormatIdentifier::from_repr(resp[1]).expect("Unknown DTC Format Identifier");
+        let count = u16::from_be_bytes([resp[2], resp[3]]);
+
+        Ok(DTCReportNumberByStatusMask {
+            dtc_status_availability_mask: mask,
+            dtc_format_identifier: format,
+            dtc_count: count,
+        })
     }
 
     /// 0x31 - Routine Control. The `routine_control_type` selects the operation such as Start and Stop, see [`constants::RoutineControlType`]. The `routine_identifier` is a 16-bit identifier for the routine. The `data` parameter is optional and can be used when starting or stopping a routine. The ECU can optionally return data for all routine operations.

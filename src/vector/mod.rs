@@ -8,7 +8,7 @@ pub use error::Error;
 use bit_timing::BitTimingKind;
 use types::CanFilter;
 
-use crate::can::{CanAdapter, Frame, Identifier};
+use crate::can::{CanAdapter, Frame, Identifier, AsyncCanAdapter};
 use crate::{
     XLevent,
     XLaccess,
@@ -29,12 +29,14 @@ use crate::{
     xlCanSetChannelMode,
 };
 use std::collections::HashMap;
+use std::collections::VecDeque;
 
 const XL_CAN_EV_TAG_TX_MSG: u16 = 1088;
 
 const CAN_FRAME_DATA_LENGTH: usize = 8;
 
 
+#[derive(Clone)]
 pub struct VectorCan {
     pub channels: Vec<u32>,
     pub can_filters: Option<Vec<CanFilter>>,
@@ -47,9 +49,10 @@ pub struct VectorCan {
     pub fd_mode: bool,
     pub bit_rate: Option<u32>,
     pub port_handle: XLportHandle,
-    event_handle: XLhandle,
+    // event_handle: XLhandle,
     mask: XLaccess,
     permission_mask: XLaccess,
+    loopback_queue: VecDeque<Frame>,
 }
 
 impl Default for VectorCan {
@@ -162,7 +165,7 @@ impl VectorCan {
             let status = xlCanSetChannelMode(
                 port_config.port_handle,
                 mask,
-                0x1,
+                0x0,
                 0x0
             );
 
@@ -194,9 +197,10 @@ impl VectorCan {
             fd_mode,
             bit_rate,
             port_handle: port_config.port_handle,
-            event_handle: event_handle,
+            // event_handle: event_handle,
             mask,
             permission_mask: port_config.permission_mask,
+            loopback_queue: VecDeque::new(),
         }
     }
 
@@ -207,7 +211,13 @@ impl VectorCan {
 
     }
 
-    fn get_tx_channel_mask(&self, frames: &[Frame]) -> u64 {
+    pub fn new_async(&self) -> AsyncCanAdapter {
+        // let socket = SocketCan::new(socket);
+
+        AsyncCanAdapter::new(self.clone())
+    }
+
+    fn get_tx_channel_mask(&self, frames: &VecDeque<Frame>) -> u64 {
         //if frames.len() == 1 {
           //  self.channel_masks.get(&(frames[0].bus as u32)).unwrap_or(&self.mask).clone()
         //} else {
@@ -216,9 +226,10 @@ impl VectorCan {
         self.mask
     }
 
-    fn send_can(&self, frames: &[Frame]) -> Result<u32, Error> {
+    fn send_can(&self, frames: &VecDeque<Frame>) -> Result<u32, Error> {
         let mask = self.get_tx_channel_mask(frames);
 
+        // Change to send the frames one at a time so we can retry them
         let mut events = vec![];
         for frame in frames {
             events.push(build_xl_event(frame));
@@ -237,7 +248,7 @@ impl VectorCan {
         Ok(event.into())
     }
 
-    fn send_can_fd(&self, frames: &[Frame]) {
+    fn send_can_fd(&self, frames: &VecDeque<Frame>) {
         let mask = self.get_tx_channel_mask(frames);
 
         let mut events = vec![];
@@ -253,7 +264,7 @@ impl VectorCan {
 
 
 impl CanAdapter for VectorCan {
-    fn send(&mut self, frames: &[Frame]) -> Result<(), crate::error::Error> {
+    fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<(), crate::error::Error> {
         // let mask = self.get_tx_channel_mask(frames);
         match self.fd_mode {
             true => {
@@ -264,13 +275,30 @@ impl CanAdapter for VectorCan {
             }
         };
 
+        for frame in frames {
+            let mut frame = frame.clone();
+            frame.loopback = true;
+            self.loopback_queue.push_back(frame);
+        }
+
         Ok(())
     }
 
     fn recv(&mut self) -> Result<Vec<Frame>, crate::error::Error> {
-        let frame = self.receive_can()?;
+        let frame = match self.receive_can() {
+            Ok(frame) => frame,
+            Err(err) => match err {
+                Error::EmptyQueue => return Ok(vec![]),
+                _ => return Err(crate::error::Error::VectorError(err)),
+            }
+        };
 
-        Ok(vec![frame])
+        let mut frames = vec![frame];
+
+        // Add fake loopback frames to the receive queue
+        frames.extend(self.loopback_queue.drain(..));
+
+        Ok(frames)
     }
 }
 

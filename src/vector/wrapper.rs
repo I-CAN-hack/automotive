@@ -2,7 +2,7 @@ use crate::{
     xlActivateChannel, xlCanFdSetConfiguration, xlCanSetChannelBitrate, xlCanSetChannelMode, xlCanSetChannelParamsC200,
     xlCloseDriver, xlClosePort, xlDeactivateChannel, xlGetApplConfig, xlGetChannelIndex, xlGetDriverConfig,
     xlOpenDriver, xlOpenPort, xlSetNotification, xlCanTransmit, xlCanTransmitEx, xlReceive, XLevent,  XLcanTxEvent, XLaccess, XLcanFdConf, XLchannelConfig, XLdriverConfig, XLhandle,
-    XLportHandle, XL_BUS_TYPE_CAN, XL_SUCCESS, XL_ERR_QUEUE_IS_EMPTY,
+    XLportHandle, XL_BUS_TYPE_CAN, XL_SUCCESS, XL_ERR_QUEUE_IS_EMPTY, XL_ERR_QUEUE_IS_FULL,
 };
 
 use crate::vector::types::{ApplicationConfig, PortConfig};
@@ -112,6 +112,7 @@ pub fn send_can(
 
         match status as u32 {
             XL_SUCCESS => (),
+            XL_ERR_QUEUE_IS_FULL => return Err(Error::FullQueue),
             _ => {
                 return Err(Error::DriverError(format!(
                     "Failed to send data to CAN with error: {}",
