@@ -8,25 +8,12 @@ pub use error::Error;
 use bit_timing::BitTimingKind;
 use types::CanFilter;
 
-use crate::can::{CanAdapter, Frame, Identifier, AsyncCanAdapter};
+use crate::can::{AsyncCanAdapter, CanAdapter, Frame, Identifier};
 use crate::{
-    XLevent,
-    XLaccess,
-    XLhandle,
-    XLportHandle,
-    XLcanTxEvent,
-    s_xl_tag_data,
-    s_xl_can_msg,
-    XL_CAN_EXT_MSG_ID,
-    XL_BUS_TYPE_CAN,
-    XL_INTERFACE_VERSION,
-    XL_INTERFACE_VERSION_V4,
-    e_XLevent_type_XL_TRANSMIT_MSG,
-    XL_CAN_TXMSG_FLAG_EDL,
-    XL_CAN_MSG_FLAG_TX_COMPLETED,
-    XLcanTxEvent__bindgen_ty_1,
-    XL_CAN_TX_MSG,
-    xlCanSetChannelMode,
+    e_XLevent_type_XL_TRANSMIT_MSG, s_xl_can_msg, s_xl_tag_data, xlCanSetChannelMode, XLaccess,
+    XLcanTxEvent, XLcanTxEvent__bindgen_ty_1, XLevent, XLhandle, XLportHandle, XL_BUS_TYPE_CAN,
+    XL_CAN_EXT_MSG_ID, XL_CAN_MSG_FLAG_TX_COMPLETED, XL_CAN_TXMSG_FLAG_EDL, XL_CAN_TX_MSG,
+    XL_INTERFACE_VERSION, XL_INTERFACE_VERSION_V4,
 };
 use std::collections::HashMap;
 use std::collections::VecDeque;
@@ -34,7 +21,6 @@ use std::collections::VecDeque;
 const XL_CAN_EV_TAG_TX_MSG: u16 = 1088;
 
 const CAN_FRAME_DATA_LENGTH: usize = 8;
-
 
 #[derive(Clone)]
 pub struct VectorCan {
@@ -90,8 +76,7 @@ impl VectorCan {
         fd_mode: bool,
         bit_rate: Option<u32>,
     ) -> Self {
-
-        /* 
+        /*
 
         let channel_configs = wrapper::get_channel_configs().unwrap();
         let mut mask: u64 = 0;
@@ -141,33 +126,50 @@ impl VectorCan {
         if let Some(timing) = &timing {
             match timing {
                 BitTimingKind::Standard(timing) => {
-                    wrapper::set_bit_timing(port_config.port_handle, mask, port_config.permission_mask, &timing)
-                        .unwrap();
+                    wrapper::set_bit_timing(
+                        port_config.port_handle,
+                        mask,
+                        port_config.permission_mask,
+                        &timing,
+                    )
+                    .unwrap();
                     // let bit_rate = bit_rate.unwrap_or(500_000);
                     // let bit_timing = bit_timing::BitTiming::new(bit_rate, timing).unwrap();
                     // wrapper::set_bit_timing(port_handle, channel_masks, bit_timing).unwrap();
                 }
                 BitTimingKind::Extended(timing) => {
-                    wrapper::set_bit_timing_fd(port_config.port_handle, mask, port_config.permission_mask, &timing)
-                        .unwrap();
+                    wrapper::set_bit_timing_fd(
+                        port_config.port_handle,
+                        mask,
+                        port_config.permission_mask,
+                        &timing,
+                    )
+                    .unwrap();
                 }
             }
         } else if fd_mode {
             // TODO: Implement https://github.com/hardbyte/python-can/blob/4a41409de8e1eefaa1aa003da7e4f84f018c6791/can/interfaces/vector/canlib.py#L288
         } else if let Some(bit_rate) = bit_rate {
-            wrapper::set_bit_rate(port_config.port_handle, mask, port_config.permission_mask, bit_rate).unwrap();
+            wrapper::set_bit_rate(
+                port_config.port_handle,
+                mask,
+                port_config.permission_mask,
+                bit_rate,
+            )
+            .unwrap();
         } else {
             println!("We are setting the to the default bit rate of 5000000");
-            wrapper::set_bit_rate(port_config.port_handle, mask, port_config.permission_mask, 500_000).unwrap();
+            wrapper::set_bit_rate(
+                port_config.port_handle,
+                mask,
+                port_config.permission_mask,
+                500_000,
+            )
+            .unwrap();
         }
 
         unsafe {
-            let status = xlCanSetChannelMode(
-                port_config.port_handle,
-                mask,
-                0x0,
-                0x0
-            );
+            let status = xlCanSetChannelMode(port_config.port_handle, mask, 0x0, 0x0);
 
             println!("Set channel status: {:?}", status);
         };
@@ -208,7 +210,6 @@ impl VectorCan {
         wrapper::deactivate_channel(self.port_handle, self.mask).unwrap();
         wrapper::close_port(self.port_handle).unwrap();
         wrapper::close_driver().unwrap();
-
     }
 
     pub fn new_async(&self) -> AsyncCanAdapter {
@@ -219,9 +220,9 @@ impl VectorCan {
 
     fn get_tx_channel_mask(&self, frames: &VecDeque<Frame>) -> u64 {
         //if frames.len() == 1 {
-          //  self.channel_masks.get(&(frames[0].bus as u32)).unwrap_or(&self.mask).clone()
+        //  self.channel_masks.get(&(frames[0].bus as u32)).unwrap_or(&self.mask).clone()
         //} else {
-          //  self.mask
+        //  self.mask
         //}
         self.mask
     }
@@ -241,7 +242,7 @@ impl VectorCan {
     fn receive_can(&self) -> Result<Frame, Error> {
         let event = match wrapper::receive_can(self.port_handle) {
             Ok(event) => event,
-            Err(err) => return Err(err), 
+            Err(err) => return Err(err),
         };
 
         // Ok(Frame::from(event))
@@ -258,10 +259,7 @@ impl VectorCan {
 
         wrapper::send_can_fd(self.port_handle, mask, events.len(), events);
     }
-
-
 }
-
 
 impl CanAdapter for VectorCan {
     fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<(), crate::error::Error> {
@@ -269,7 +267,7 @@ impl CanAdapter for VectorCan {
         match self.fd_mode {
             true => {
                 self.send_can_fd(frames);
-            },
+            }
             false => {
                 self.send_can(frames)?;
             }
@@ -290,7 +288,7 @@ impl CanAdapter for VectorCan {
             Err(err) => match err {
                 Error::EmptyQueue => return Ok(vec![]),
                 _ => return Err(crate::error::Error::VectorError(err)),
-            }
+            },
         };
 
         let mut frames = vec![frame];
@@ -302,10 +300,8 @@ impl CanAdapter for VectorCan {
     }
 }
 
-fn is_loopback(event: &XLevent) -> bool { 
-    unsafe {
-        (event.tagData.msg.flags & XL_CAN_MSG_FLAG_TX_COMPLETED as u16) == 0
-    }
+fn is_loopback(event: &XLevent) -> bool {
+    unsafe { (event.tagData.msg.flags & XL_CAN_MSG_FLAG_TX_COMPLETED as u16) == 0 }
 }
 
 fn build_xl_event(frame: &Frame) -> XLevent {
@@ -323,7 +319,7 @@ fn build_xl_event(frame: &Frame) -> XLevent {
 
     let event = XLevent {
         tag: e_XLevent_type_XL_TRANSMIT_MSG as u8,
-        chanIndex: 0,//frame.bus,
+        chanIndex: 0, //frame.bus,
         transId: 0,
         portHandle: 0,
         flags: 0,
@@ -337,8 +333,8 @@ fn build_xl_event(frame: &Frame) -> XLevent {
                 res1: 0,
                 data,
                 res2: 0,
-            }
-        }
+            },
+        },
     };
 
     event
@@ -367,8 +363,8 @@ fn build_xl_can_tx_event(frame: &Frame) -> XLcanTxEvent {
                 dlc: 0,
                 reserved: [0, 0, 0, 0, 0, 0, 0],
                 data: [0; 64],
-            }
-        }
+            },
+        },
     };
 
     event
@@ -376,13 +372,9 @@ fn build_xl_can_tx_event(frame: &Frame) -> XLcanTxEvent {
 
 impl From<XLevent> for Frame {
     fn from(event: XLevent) -> Self {
-        let data = unsafe {
-            event.tagData.msg.data.to_vec()
-        };
+        let data = unsafe { event.tagData.msg.data.to_vec() };
 
-        let tx_id = unsafe {
-            event.tagData.msg.id
-        };
+        let tx_id = unsafe { event.tagData.msg.id };
 
         Frame {
             bus: event.chanIndex,

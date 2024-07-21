@@ -121,7 +121,10 @@ impl AsyncCanAdapter {
     pub async fn send(&self, frame: &Frame) {
         // Create oneshot channel to signal the completion of the send operation
         let (callback_sender, callback_receiver) = oneshot::channel();
-        self.send_sender.send((frame.clone(), callback_sender)).await.unwrap();
+        self.send_sender
+            .send((frame.clone(), callback_sender))
+            .await
+            .unwrap();
 
         callback_receiver.await.unwrap();
     }

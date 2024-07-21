@@ -269,7 +269,8 @@ impl<'a> IsoTPAdapter<'a> {
             debug!("RX FC, data {}", hex::encode(&frame.data));
 
             // Check if Flow Control
-            if FrameType::from_repr(frame.data[0] & FRAME_TYPE_MASK) != Some(FrameType::FlowControl) {
+            if FrameType::from_repr(frame.data[0] & FRAME_TYPE_MASK) != Some(FrameType::FlowControl)
+            {
                 return Err(crate::isotp::error::Error::FlowControl.into());
             };
 
@@ -277,7 +278,9 @@ impl<'a> IsoTPAdapter<'a> {
             match FlowStatus::from_repr(frame.data[0] & FLOW_SATUS_MASK) {
                 Some(FlowStatus::ContinueToSend) => {} // Ok
                 Some(FlowStatus::Wait) => continue,    // Wait for next flow control
-                Some(FlowStatus::Overflow) => return Err(crate::isotp::error::Error::Overflow.into()),
+                Some(FlowStatus::Overflow) => {
+                    return Err(crate::isotp::error::Error::Overflow.into())
+                }
                 None => return Err(crate::isotp::error::Error::MalformedFrame.into()),
             };
 
@@ -345,7 +348,8 @@ impl<'a> IsoTPAdapter<'a> {
         debug!("TX {}", hex::encode(data));
 
         // Single frame has 1 byte of overhead for CAN, and 2 bytes for CAN-FD with escape sequence
-        let fits_in_single_frame = data.len() < self.can_max_dlen() || data.len() < self.max_can_data_length() - 1;
+        let fits_in_single_frame =
+            data.len() < self.can_max_dlen() || data.len() < self.max_can_data_length() - 1;
 
         if fits_in_single_frame {
             self.send_single_frame(data).await?;
@@ -410,7 +414,13 @@ impl<'a> IsoTPAdapter<'a> {
         Ok(len)
     }
 
-    async fn recv_consecutive_frame(&self, data: &[u8], buf: &mut Vec<u8>, len: usize, idx: u8) -> Result<u8> {
+    async fn recv_consecutive_frame(
+        &self,
+        data: &[u8],
+        buf: &mut Vec<u8>,
+        len: usize,
+        idx: u8,
+    ) -> Result<u8> {
         let msg_idx = data[0] & 0xF;
         let remaining_len = len - buf.len();
 
@@ -431,7 +441,12 @@ impl<'a> IsoTPAdapter<'a> {
         let end_idx = std::cmp::min(remaining_len + 1, data.len());
 
         buf.extend(&data[1..end_idx]);
-        debug!("RX CF, idx: {}, data {} {}", idx, hex::encode(data), hex::encode(&buf));
+        debug!(
+            "RX CF, idx: {}, data {} {}",
+            idx,
+            hex::encode(data),
+            hex::encode(&buf)
+        );
 
         if msg_idx != idx {
             return Err(crate::isotp::error::Error::OutOfOrder.into());
@@ -467,7 +482,9 @@ impl<'a> IsoTPAdapter<'a> {
                 }
                 Some(FrameType::Consecutive) => {
                     if let Some(len) = len {
-                        idx = self.recv_consecutive_frame(data, &mut buf, len, idx).await?;
+                        idx = self
+                            .recv_consecutive_frame(data, &mut buf, len, idx)
+                            .await?;
                         if buf.len() >= len {
                             return Ok(buf);
                         }

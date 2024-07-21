@@ -1,8 +1,10 @@
 use crate::{
-    xlActivateChannel, xlCanFdSetConfiguration, xlCanSetChannelBitrate, xlCanSetChannelMode, xlCanSetChannelParamsC200,
-    xlCloseDriver, xlClosePort, xlDeactivateChannel, xlGetApplConfig, xlGetChannelIndex, xlGetDriverConfig,
-    xlOpenDriver, xlOpenPort, xlSetNotification, xlCanTransmit, xlCanTransmitEx, xlReceive, XLevent,  XLcanTxEvent, XLaccess, XLcanFdConf, XLchannelConfig, XLdriverConfig, XLhandle,
-    XLportHandle, XL_BUS_TYPE_CAN, XL_SUCCESS, XL_ERR_QUEUE_IS_EMPTY, XL_ERR_QUEUE_IS_FULL,
+    xlActivateChannel, xlCanFdSetConfiguration, xlCanSetChannelBitrate, xlCanSetChannelMode,
+    xlCanSetChannelParamsC200, xlCanTransmit, xlCanTransmitEx, xlCloseDriver, xlClosePort,
+    xlDeactivateChannel, xlGetApplConfig, xlGetChannelIndex, xlGetDriverConfig, xlOpenDriver,
+    xlOpenPort, xlReceive, xlSetNotification, XLaccess, XLcanFdConf, XLcanTxEvent, XLchannelConfig,
+    XLdriverConfig, XLevent, XLhandle, XLportHandle, XL_BUS_TYPE_CAN, XL_ERR_QUEUE_IS_EMPTY,
+    XL_ERR_QUEUE_IS_FULL, XL_SUCCESS,
 };
 
 use crate::vector::types::{ApplicationConfig, PortConfig};
@@ -92,7 +94,7 @@ pub fn send_can(
     port_handle: XLportHandle,
     access_mask: XLaccess,
     events_count: u32,
-    events: Vec<XLevent>
+    events: Vec<XLevent>,
 ) -> Result<u32, Error> {
     unsafe {
         let mut count = events_count.clone();
@@ -129,21 +131,18 @@ pub fn send_can_fd(
     port_handle: XLportHandle,
     access_mask: XLaccess,
     events_count: usize,
-    events: Vec<XLcanTxEvent>
+    events: Vec<XLcanTxEvent>,
 ) {
-    
 }
 
-pub fn receive_can(
-    port_handle: XLportHandle,
-) -> Result<XLevent, Error> {
+pub fn receive_can(port_handle: XLportHandle) -> Result<XLevent, Error> {
     unsafe {
         let mut event: XLevent = std::mem::zeroed(); //XLcanFdConf {
         let mut out_count = 1u32;
         let status = xlReceive(
             port_handle,
             &mut out_count as *mut u32,
-            &mut event as *mut XLevent
+            &mut event as *mut XLevent,
         );
 
         match status as u32 {
@@ -173,7 +172,9 @@ pub fn set_bit_timing(
         return Ok(());
     }
 
-    let status = unsafe { xlCanSetChannelParamsC200(port_handle, channel_mask, timing.btr0(), timing.btr1()) };
+    let status = unsafe {
+        xlCanSetChannelParamsC200(port_handle, channel_mask, timing.btr0(), timing.btr1())
+    };
 
     match status as u32 {
         XL_SUCCESS => (),
@@ -211,7 +212,8 @@ pub fn set_bit_timing_fd(
         conf.tseg1Dbr = timing.data_tseg1;
         conf.tseg2Dbr = timing.data_tseg2;
 
-        let status = xlCanFdSetConfiguration(port_handle, channel_mask, &mut conf as *mut XLcanFdConf);
+        let status =
+            xlCanFdSetConfiguration(port_handle, channel_mask, &mut conf as *mut XLcanFdConf);
 
         match status as u32 {
             XL_SUCCESS => (),
@@ -256,7 +258,12 @@ pub fn set_bit_rate(
     Ok(())
 }
 
-pub fn set_channel_mode(port_handle: XLportHandle, channel_mask: XLaccess, tx: i32, txrq: i32) -> Result<(), Error> {
+pub fn set_channel_mode(
+    port_handle: XLportHandle,
+    channel_mask: XLaccess,
+    tx: i32,
+    txrq: i32,
+) -> Result<(), Error> {
     let status = unsafe { xlCanSetChannelMode(port_handle, channel_mask, tx, txrq) };
 
     match status as u32 {
@@ -268,7 +275,11 @@ pub fn set_channel_mode(port_handle: XLportHandle, channel_mask: XLaccess, tx: i
     }
 }
 
-pub fn set_notification(port_handle: XLportHandle, event_handle: &mut XLhandle, queue_level: i32) -> Result<(), Error> {
+pub fn set_notification(
+    port_handle: XLportHandle,
+    event_handle: &mut XLhandle,
+    queue_level: i32,
+) -> Result<(), Error> {
     let status = unsafe { xlSetNotification(port_handle, event_handle, queue_level) };
 
     match status as u32 {
@@ -341,13 +352,24 @@ pub fn find_global_channel_idx(
                 )))
             }
 
-            false => return Err(Error::DriverError(format!("No interface with serial {} found", serial))),
+            false => {
+                return Err(Error::DriverError(format!(
+                    "No interface with serial {} found",
+                    serial
+                )))
+            }
         };
     }
 
     if let Some(app_name) = app_name {
         let app_config = get_application_config(app_name, channel as u32)?;
-        let idx = unsafe { xlGetChannelIndex(app_config.hw_type, app_config.hw_index, app_config.hw_channel) };
+        let idx = unsafe {
+            xlGetChannelIndex(
+                app_config.hw_type,
+                app_config.hw_index,
+                app_config.hw_channel,
+            )
+        };
 
         if idx < 0 {
             // Undocumented behavior! See issue #353.
@@ -405,7 +427,10 @@ pub fn get_driver_config() -> Result<XLdriverConfig, Error> {
     }
 }
 
-pub fn get_application_config(app_name: &str, app_channel: u32) -> Result<ApplicationConfig, Error> {
+pub fn get_application_config(
+    app_name: &str,
+    app_channel: u32,
+) -> Result<ApplicationConfig, Error> {
     unsafe {
         let mut hw_type = std::mem::zeroed();
         let mut hw_index = std::mem::zeroed();

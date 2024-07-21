@@ -28,19 +28,27 @@ impl BitTiming {
         strict: bool,
     ) -> Result<Self, Error> {
         if brp < 1 || brp > 64 {
-            return Err(Error::BitTimingError("BRP must be between 1 and 64".to_string()));
+            return Err(Error::BitTimingError(
+                "BRP must be between 1 and 64".to_string(),
+            ));
         }
 
         if tseg1 < 1 || tseg1 > 16 {
-            return Err(Error::BitTimingError("TSEG1 must be between 1 and 16".to_string()));
+            return Err(Error::BitTimingError(
+                "TSEG1 must be between 1 and 16".to_string(),
+            ));
         }
 
         if tseg2 < 1 || tseg2 > 8 {
-            return Err(Error::BitTimingError("TSEG2 must be between 1 and 8".to_string()));
+            return Err(Error::BitTimingError(
+                "TSEG2 must be between 1 and 8".to_string(),
+            ));
         }
 
         if sjw < 1 || sjw > 4 {
-            return Err(Error::BitTimingError("SJW must be between 1 and 4".to_string()));
+            return Err(Error::BitTimingError(
+                "SJW must be between 1 and 4".to_string(),
+            ));
         }
 
         if sjw > tseg2 {
@@ -69,11 +77,15 @@ impl BitTiming {
             let bitrate = _bitrate(f_clock, brp, _nbt(tseg1, tseg2));
 
             if nbt < 8 || nbt > 25 {
-                return Err(Error::BitTimingError("NBT must be between 8 and 25".to_string()));
+                return Err(Error::BitTimingError(
+                    "NBT must be between 8 and 25".to_string(),
+                ));
             }
 
             if brp < 1 || brp > 32 {
-                return Err(Error::BitTimingError("BRP must be between 1 and 32".to_string()));
+                return Err(Error::BitTimingError(
+                    "BRP must be between 1 and 32".to_string(),
+                ));
             }
 
             if bitrate < 5_000 || bitrate > 1_000_000 {
@@ -138,11 +150,15 @@ impl BitTimingFd {
         strict: bool,
     ) -> Result<Self, Error> {
         if nom_brp < 1 {
-            return Err(Error::BitTimingError("Nominal BRP must be at least 1".to_string()));
+            return Err(Error::BitTimingError(
+                "Nominal BRP must be at least 1".to_string(),
+            ));
         }
 
         if data_brp < 1 {
-            return Err(Error::BitTimingError("Data BRP must be at least 1".to_string()));
+            return Err(Error::BitTimingError(
+                "Data BRP must be at least 1".to_string(),
+            ));
         }
 
         let nbt = _nbt_fd(nom_tseg1, nom_tseg2);
@@ -180,11 +196,15 @@ impl BitTimingFd {
 
         if strict {
             if nbt < 8 || nbt > 80 {
-                return Err(Error::BitTimingError("NBT must be between 8 and 80".to_string()));
+                return Err(Error::BitTimingError(
+                    "NBT must be between 8 and 80".to_string(),
+                ));
             }
 
             if dbt < 5 || dbt > 25 {
-                return Err(Error::BitTimingError("DBT must be between 5 and 25".to_string()));
+                return Err(Error::BitTimingError(
+                    "DBT must be between 5 and 25".to_string(),
+                ));
             }
 
             // TODO: DO more checks based on: https://github.com/hardbyte/python-can/blob/4a41409de8e1eefaa1aa003da7e4f84f018c6791/can/bit_timing.py#L632
@@ -205,7 +225,11 @@ impl BitTimingFd {
     }
 
     pub fn nom_bitrate(&self) -> u32 {
-        Self::_nom_bitrate(self.f_clock, self.nom_brp, _nbt_fd(self.nom_tseg1, self.nom_tseg2))
+        Self::_nom_bitrate(
+            self.f_clock,
+            self.nom_brp,
+            _nbt_fd(self.nom_tseg1, self.nom_tseg2),
+        )
     }
 
     pub fn data_bitrate(&self) -> u32 {

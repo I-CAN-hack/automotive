@@ -89,7 +89,9 @@ impl Panda {
         let mut buf: [u8; N] = [0; N];
 
         loop {
-            let recv: usize = self.handle.read_bulk(Endpoint::CanRead as u8, &mut buf, self.timeout)?;
+            let recv: usize =
+                self.handle
+                    .read_bulk(Endpoint::CanRead as u8, &mut buf, self.timeout)?;
 
             if recv == 0 {
                 return Ok(());
@@ -153,8 +155,14 @@ impl Panda {
             rusb::RequestType::Standard,
             rusb::Recipient::Device,
         );
-        self.handle
-            .write_control(request_type, endpoint as u8, value, index, &[], self.timeout)?;
+        self.handle.write_control(
+            request_type,
+            endpoint as u8,
+            value,
+            index,
+            &[],
+            self.timeout,
+        )?;
         Ok(())
     }
 }
@@ -170,7 +178,8 @@ impl CanAdapter for Panda {
         let buf = usb_protocol::pack_can_buffer(&frames)?;
 
         for chunk in buf {
-            self.handle.write_bulk(Endpoint::CanWrite as u8, &chunk, self.timeout)?;
+            self.handle
+                .write_bulk(Endpoint::CanWrite as u8, &chunk, self.timeout)?;
         }
         Ok(())
     }
@@ -179,7 +188,9 @@ impl CanAdapter for Panda {
     fn recv(&mut self) -> Result<Vec<Frame>> {
         let mut buf: [u8; MAX_BULK_SIZE] = [0; MAX_BULK_SIZE];
 
-        let recv: usize = self.handle.read_bulk(Endpoint::CanRead as u8, &mut buf, self.timeout)?;
+        let recv: usize = self
+            .handle
+            .read_bulk(Endpoint::CanRead as u8, &mut buf, self.timeout)?;
         self.dat.extend_from_slice(&buf[0..recv]);
 
         let frames = usb_protocol::unpack_can_buffer(&mut self.dat);

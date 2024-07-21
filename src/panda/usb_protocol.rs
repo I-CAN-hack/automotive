@@ -82,7 +82,11 @@ pub fn unpack_can_buffer(dat: &mut Vec<u8>) -> Result<Vec<Frame>, Error> {
     while dat.len() >= CANPACKET_HEAD_SIZE {
         let bus = (dat[0] >> 1) & 0b111;
         let dlc = (dat[0] >> 4) & 0b1111;
-        let id: u32 = ((dat[4] as u32) << 24 | (dat[3] as u32) << 16 | (dat[2] as u32) << 8 | (dat[1] as u32)) >> 3;
+        let id: u32 = ((dat[4] as u32) << 24
+            | (dat[3] as u32) << 16
+            | (dat[2] as u32) << 8
+            | (dat[1] as u32))
+            >> 3;
 
         let extended: bool = (dat[1] & 0b100) != 0;
         let returned: bool = (dat[1] & 0b010) != 0;
@@ -104,7 +108,9 @@ pub fn unpack_can_buffer(dat: &mut Vec<u8>) -> Result<Vec<Frame>, Error> {
         }
 
         if calculate_checksum(&dat[0..(CANPACKET_HEAD_SIZE + data_len)]) != 0 {
-            return Err(Error::PandaError(crate::panda::error::Error::InvalidChecksum));
+            return Err(Error::PandaError(
+                crate::panda::error::Error::InvalidChecksum,
+            ));
         }
 
         // Panda doesn't properly communicate if a frame was FD or not.
@@ -132,8 +138,8 @@ mod tests {
     #[test]
     fn test_unpack_single() {
         let mut buffer = vec![
-            208, 128, 1, 0, 0, 171, 0, 0, 0, 0, 0, 0, 13, 69, 0, 0, 8, 0, 0, 27, 0, 0, 0, 0, 0, 1, 0, 0, 255, 250, 0,
-            0, 0, 0, 199, 116, 151, 129,
+            208, 128, 1, 0, 0, 171, 0, 0, 0, 0, 0, 0, 13, 69, 0, 0, 8, 0, 0, 27, 0, 0, 0, 0, 0, 1,
+            0, 0, 255, 250, 0, 0, 0, 0, 199, 116, 151, 129,
         ];
         let frames = unpack_can_buffer(&mut buffer).unwrap();
 
@@ -146,8 +152,8 @@ mod tests {
         assert_eq!(
             frames[0].data,
             vec![
-                0, 0, 0, 0, 0, 0, 13, 69, 0, 0, 8, 0, 0, 27, 0, 0, 0, 0, 0, 1, 0, 0, 255, 250, 0, 0, 0, 0, 199, 116,
-                151, 129
+                0, 0, 0, 0, 0, 0, 13, 69, 0, 0, 8, 0, 0, 27, 0, 0, 0, 0, 0, 1, 0, 0, 255, 250, 0,
+                0, 0, 0, 199, 116, 151, 129
             ]
         );
     }
@@ -155,8 +161,8 @@ mod tests {
     #[test]
     fn test_remaining_data() {
         let mut buffer = vec![
-            208, 128, 1, 0, 0, 171, 0, 0, 0, 0, 0, 0, 13, 69, 0, 0, 8, 0, 0, 27, 0, 0, 0, 0, 0, 1, 0, 0, 255, 250, 0,
-            0, 0, 0, 199, 116, 151, 129, // Extra
+            208, 128, 1, 0, 0, 171, 0, 0, 0, 0, 0, 0, 13, 69, 0, 0, 8, 0, 0, 27, 0, 0, 0, 0, 0, 1,
+            0, 0, 255, 250, 0, 0, 0, 0, 199, 116, 151, 129, // Extra
             208, 128,
         ];
 
