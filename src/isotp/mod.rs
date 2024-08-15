@@ -60,7 +60,7 @@ pub struct IsoTPConfig {
     pub fd: bool,
     /// Extended address
     pub ext_address: Option<u8>,
-    /// Max data length. Will use default of 8 (CAN) or 64 (CAN-FD)
+    /// Max data length. Will use default of 8 (CAN) or 64 (CAN-FD) if not set
     pub max_dlen: Option<usize>,
 }
 
