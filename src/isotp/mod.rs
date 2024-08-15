@@ -60,6 +60,8 @@ pub struct IsoTPConfig {
     pub fd: bool,
     /// Extended address
     pub ext_address: Option<u8>,
+    /// Max data length. Will use default of 8 (CAN) or 64 (CAN-FD)
+    pub max_dlen: Option<usize>,
 }
 
 impl IsoTPConfig {
@@ -97,6 +99,7 @@ impl IsoTPConfig {
             separation_time_min: None,
             fd: false,
             ext_address: None,
+            max_dlen: None,
         }
     }
 }
@@ -156,10 +159,15 @@ impl<'a> IsoTPAdapter<'a> {
 
     /// Maximum data length for a CAN frame based on the current config
     fn max_can_data_length(&self) -> usize {
-        if self.config.fd {
-            self.can_fd_max_dlen()
-        } else {
-            self.can_max_dlen()
+        match self.config.max_dlen {
+            Some(dlen) => dlen,
+            None => {
+                if self.config.fd {
+                    self.can_fd_max_dlen()
+                } else {
+                    self.can_max_dlen()
+                }
+            }
         }
     }
 
