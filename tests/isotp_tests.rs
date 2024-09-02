@@ -21,6 +21,7 @@ struct VECUConfig {
     pub padding: Option<u8>,
     pub fd: bool,
     pub ext_address: Option<u8>,
+    pub max_dlen: Option<usize>,
 }
 
 impl VECUConfig {
@@ -78,11 +79,12 @@ async fn isotp_test_echo(msg_len: usize, config: VECUConfig) {
     isotp_config.fd = config.fd;
     isotp_config.ext_address = config.ext_address;
     isotp_config.timeout = std::time::Duration::from_millis(1000);
+    isotp_config.max_dlen = config.max_dlen;
 
     let isotp = IsoTPAdapter::new(&adapter, isotp_config);
 
     let mut stream = isotp.recv();
-    let request = vec![0xaa; msg_len];
+    let request = vec![0xcc; msg_len];
     isotp.send(&request).await.unwrap();
     let response = stream.next().await.unwrap().unwrap();
 
@@ -177,6 +179,29 @@ async fn isotp_test_fd() {
 #[cfg(feature = "test_vcan")]
 #[tokio::test]
 #[serial_test::serial]
+async fn isotp_test_fd_max_dlen() {
+    let config = VECUConfig {
+        fd: true,
+        max_dlen: Some(8),
+        ..Default::default()
+    };
+
+    // Single frame escape
+    isotp_test_echo(62, config).await;
+
+    // Single frame with some padding to reach next DLC
+    isotp_test_echo(50, config).await;
+
+    // Multiple frames
+    isotp_test_echo(256, config).await;
+
+    // First frame escape
+    isotp_test_echo(5000, config).await;
+}
+
+#[cfg(feature = "test_vcan")]
+#[tokio::test]
+#[serial_test::serial]
 async fn isotp_test_extended() {
     let config = VECUConfig {
         ext_address: Some(0xff),
@@ -199,6 +224,30 @@ async fn isotp_test_fd_extended() {
     let config = VECUConfig {
         fd: true,
         ext_address: Some(0xff),
+        ..Default::default()
+    };
+
+    // Single frame escape
+    isotp_test_echo(62, config).await;
+
+    // Single frame with some padding to reach next DLC
+    isotp_test_echo(50, config).await;
+
+    // Multiple frames
+    isotp_test_echo(256, config).await;
+
+    // First frame escape
+    isotp_test_echo(5000, config).await;
+}
+
+#[cfg(feature = "test_vcan")]
+#[tokio::test]
+#[serial_test::serial]
+async fn isotp_test_fd_extended_max_dlen() {
+    let config = VECUConfig {
+        fd: true,
+        ext_address: Some(0xff),
+        max_dlen: Some(8),
         ..Default::default()
     };
 

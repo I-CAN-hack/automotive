@@ -127,17 +127,17 @@ impl<'a> IsoTPAdapter<'a> {
         let offset = self.config.ext_address.is_some() as usize;
         let len = data.len() + offset;
 
-        // Pad to next valid DLC
+        // Pad to at least 8 bytes if padding is enabled
+        if let Some(padding) = self.config.padding {
+            let padding_len = CAN_MAX_DLEN - len; // Offset for extended address is already accounted for
+            data.extend(std::iter::repeat(padding).take(padding_len));
+        }
+
+        // Pad to next valid DLC for CAN-FD
         if !DLC_TO_LEN.contains(&len) {
             let idx = DLC_TO_LEN.iter().position(|&x| x > data.len()).unwrap();
             let padding = self.config.padding.unwrap_or(DEFAULT_PADDING_BYTE);
             let padding_len = DLC_TO_LEN[idx] - len;
-            data.extend(std::iter::repeat(padding).take(padding_len));
-        }
-
-        // Pad to full length if padding is enabled
-        if let Some(padding) = self.config.padding {
-            let padding_len = self.max_can_data_length() - len;
             data.extend(std::iter::repeat(padding).take(padding_len));
         }
     }
@@ -160,7 +160,7 @@ impl<'a> IsoTPAdapter<'a> {
     /// Maximum data length for a CAN frame based on the current config
     fn max_can_data_length(&self) -> usize {
         match self.config.max_dlen {
-            Some(dlen) => dlen,
+            Some(dlen) => dlen - self.offset(),
             None => {
                 if self.config.fd {
                     self.can_fd_max_dlen()
