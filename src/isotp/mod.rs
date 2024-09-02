@@ -210,8 +210,8 @@ impl<'a> IsoTPAdapter<'a> {
     pub async fn send_single_frame(&self, data: &[u8]) -> Result<()> {
         let mut buf;
 
-        if data.len() < 0x8 {
-            // Len fits in single nibble
+        if data.len() < self.can_max_dlen() {
+            // Len fits in classic CAN message
             buf = vec![FrameType::Single as u8 | data.len() as u8];
         } else {
             // Use escape sequence for length, length is in the next byte
