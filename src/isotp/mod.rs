@@ -129,8 +129,10 @@ impl<'a> IsoTPAdapter<'a> {
 
         // Pad to at least 8 bytes if padding is enabled
         if let Some(padding) = self.config.padding {
-            let padding_len = CAN_MAX_DLEN - len; // Offset for extended address is already accounted for
-            data.extend(std::iter::repeat(padding).take(padding_len));
+            if len < CAN_MAX_DLEN {
+                let padding_len = CAN_MAX_DLEN - len; // Offset for extended address is already accounted for
+                data.extend(std::iter::repeat(padding).take(padding_len));
+            }
         }
 
         // Pad to next valid DLC for CAN-FD
@@ -208,7 +210,7 @@ impl<'a> IsoTPAdapter<'a> {
     pub async fn send_single_frame(&self, data: &[u8]) -> Result<()> {
         let mut buf;
 
-        if data.len() < 0xf {
+        if data.len() < 0x8 {
             // Len fits in single nibble
             buf = vec![FrameType::Single as u8 | data.len() as u8];
         } else {

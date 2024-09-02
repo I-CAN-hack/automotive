@@ -163,6 +163,9 @@ async fn isotp_test_fd() {
         ..Default::default()
     };
 
+    // Single frame with some padding to reach next DLC
+    isotp_test_echo(8, config).await;
+
     // Single frame escape
     isotp_test_echo(62, config).await;
 
@@ -170,6 +173,7 @@ async fn isotp_test_fd() {
     isotp_test_echo(50, config).await;
 
     // Multiple frames
+    isotp_test_echo(218, config).await;
     isotp_test_echo(256, config).await;
 
     // First frame escape
