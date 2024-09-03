@@ -30,7 +30,8 @@
 //! ```rust
 //!  async fn uds_example() -> automotive::Result<()> {
 //!     let adapter = automotive::can::get_adapter()?;
-//!     let isotp = automotive::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
+//!     let config = automotive::isotp::IsoTPConfig::default().tx(0x7a1.into());
+//!     let isotp = automotive::isotp::IsoTPAdapter::new(&adapter, config);
 //!     let uds = automotive::uds::UDSClient::new(&isotp);
 //!
 //!     uds.tester_present().await.unwrap();

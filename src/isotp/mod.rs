@@ -4,7 +4,7 @@
 //! use automotive::StreamExt;
 //! async fn isotp_example() {
 //!    let adapter = automotive::can::get_adapter().unwrap();
-//!    let config = automotive::isotp::IsoTPConfig::new(0, automotive::can::Identifier::Standard(0x7a1));
+//!    let config = automotive::isotp::IsoTPConfig::default().tx(automotive::can::Identifier::Standard(0x7a1));
 //!    let isotp = automotive::isotp::IsoTPAdapter::new(&adapter, config);
 //!
 //!    let mut stream = isotp.recv(); // Create receiver before sending request
@@ -29,6 +29,7 @@ use tracing::debug;
 
 use self::types::FlowControlConfig;
 
+const DEFAULT_OFFSET: u32 = 0x8;
 const DEFAULT_TIMEOUT_MS: u64 = 100;
 const DEFAULT_PADDING_BYTE: u8 = 0xAA;
 
@@ -45,30 +46,53 @@ const ISO_TP_FD_MAX_DLEN: usize = (1 << 32) - 1;
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IsoTPConfig {
-    pub bus: u8,
+    bus_: u8,
     /// Transmit ID
-    pub tx_id: Identifier,
+    tx_: Identifier,
     /// Receive ID
-    pub rx_id: Identifier,
+    rx_: Identifier,
     /// Padding byte (0x00, or more efficient 0xAA). Set to None to disable padding.
-    pub padding: Option<u8>,
+    padding_: Option<u8>,
     /// Max timeout for receiving a frame
-    pub timeout: std::time::Duration,
+    timeout_: std::time::Duration,
     /// Override for Seperation Time (STmin) for transmitted frames
-    pub separation_time_min: Option<std::time::Duration>,
+    separation_time_min_: Option<std::time::Duration>,
     /// Enable CAN-FD Mode
-    pub fd: bool,
+    fd_: bool,
     /// Extended address
-    pub ext_address: Option<u8>,
+    ext_address_: Option<u8>,
     /// Max data length. Will use default of 8 (CAN) or 64 (CAN-FD) if not set
-    pub max_dlen: Option<usize>,
+    max_dlen_: Option<usize>,
+}
+
+impl Default for IsoTPConfig {
+    fn default() -> IsoTPConfig {
+        IsoTPConfig {
+            bus_: 0,
+            tx_: Identifier::Standard(0),
+            rx_: Identifier::Standard(0),
+            padding_: Some(DEFAULT_PADDING_BYTE),
+            timeout_: std::time::Duration::from_millis(DEFAULT_TIMEOUT_MS),
+            separation_time_min_: None,
+            fd_: false,
+            ext_address_: None,
+            max_dlen_: None,
+        }
+    }
 }
 
 impl IsoTPConfig {
-    pub fn new(bus: u8, id: Identifier) -> Self {
-        let tx_id = id;
-        let rx_id = match id {
-            Identifier::Standard(id) => Identifier::Standard(id + 8),
+    pub fn bus(mut self, bus: u8) -> Self {
+        self.bus_ = bus;
+        self
+    }
+
+    pub fn tx(mut self, id: Identifier) -> Self {
+        self.tx_ = id;
+
+        // Set rx_id using default offset logic
+        self.rx_ = match id {
+            Identifier::Standard(id) => Identifier::Standard(id + DEFAULT_OFFSET),
             Identifier::Extended(id) => {
                 let bytes = id.to_be_bytes();
                 let id = u32::from_be_bytes([bytes[0], bytes[1], bytes[3], bytes[2]]); // Swap last two bytes
@@ -76,31 +100,50 @@ impl IsoTPConfig {
             }
         };
 
-        Self::new_from_tx_rx(bus, tx_id, rx_id)
+        self
     }
 
-    pub fn new_from_offset(bus: u8, id: Identifier, offset: u32) -> Self {
-        let tx_id = id;
-        let rx_id = match id {
+    pub fn rx_offset(mut self, offset: u32) -> Self {
+        self.rx_ = match self.tx_ {
             Identifier::Standard(id) => Identifier::Standard(id + offset),
             Identifier::Extended(_) => panic!("Extended IDs do not support offset"),
         };
-
-        Self::new_from_tx_rx(bus, tx_id, rx_id)
+        self
     }
 
-    pub fn new_from_tx_rx(bus: u8, tx_id: Identifier, rx_id: Identifier) -> Self {
-        Self {
-            bus,
-            tx_id,
-            rx_id,
-            padding: Some(DEFAULT_PADDING_BYTE),
-            timeout: std::time::Duration::from_millis(DEFAULT_TIMEOUT_MS),
-            separation_time_min: None,
-            fd: false,
-            ext_address: None,
-            max_dlen: None,
-        }
+    pub fn rx(mut self, id: Identifier) -> Self {
+        self.rx_ = id;
+        self
+    }
+
+    pub fn padding(mut self, padding: Option<u8>) -> Self {
+        self.padding_ = padding;
+        self
+    }
+
+    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.timeout_ = timeout;
+        self
+    }
+
+    pub fn separation_time_min(mut self, separation_time_min: Option<std::time::Duration>) -> Self {
+        self.separation_time_min_ = separation_time_min;
+        self
+    }
+
+    pub fn fd(mut self, fd: bool) -> Self {
+        self.fd_ = fd;
+        self
+    }
+
+    pub fn ext_address(mut self, ext_address: Option<u8>) -> Self {
+        self.ext_address_ = ext_address;
+        self
+    }
+
+    pub fn max_dlen(mut self, max_dlen: Option<usize>) -> Self {
+        self.max_dlen_ = max_dlen;
+        self
     }
 }
 
@@ -111,12 +154,6 @@ pub struct IsoTPAdapter<'a> {
 }
 
 impl<'a> IsoTPAdapter<'a> {
-    /// Convenience method for creating a new IsoTPAdapter from a CAN adapter and an Arbitration ID.
-    pub fn from_id(adapter: &'a AsyncCanAdapter, id: u32) -> Self {
-        let config = IsoTPConfig::new(0, id.into());
-        Self::new(adapter, config)
-    }
-
     /// Create a new IsoTPAdapter from a CAN adapter and a configuration.
     pub fn new(adapter: &'a AsyncCanAdapter, config: IsoTPConfig) -> Self {
         Self { adapter, config }
@@ -124,11 +161,11 @@ impl<'a> IsoTPAdapter<'a> {
 
     fn pad(&self, data: &mut Vec<u8>) {
         // Ensure we leave space for the extended address
-        let offset = self.config.ext_address.is_some() as usize;
+        let offset = self.config.ext_address_.is_some() as usize;
         let len = data.len() + offset;
 
         // Pad to at least 8 bytes if padding is enabled
-        if let Some(padding) = self.config.padding {
+        if let Some(padding) = self.config.padding_ {
             if len < CAN_MAX_DLEN {
                 let padding_len = CAN_MAX_DLEN - len; // Offset for extended address is already accounted for
                 data.extend(std::iter::repeat(padding).take(padding_len));
@@ -138,7 +175,7 @@ impl<'a> IsoTPAdapter<'a> {
         // Pad to next valid DLC for CAN-FD
         if !DLC_TO_LEN.contains(&len) {
             let idx = DLC_TO_LEN.iter().position(|&x| x > data.len()).unwrap();
-            let padding = self.config.padding.unwrap_or(DEFAULT_PADDING_BYTE);
+            let padding = self.config.padding_.unwrap_or(DEFAULT_PADDING_BYTE);
             let padding_len = DLC_TO_LEN[idx] - len;
             data.extend(std::iter::repeat(padding).take(padding_len));
         }
@@ -146,7 +183,7 @@ impl<'a> IsoTPAdapter<'a> {
 
     /// Ofset from the start of the frame. 1 in case of extended address, 0 otherwise.
     fn offset(&self) -> usize {
-        self.config.ext_address.is_some() as usize
+        self.config.ext_address_.is_some() as usize
     }
 
     /// Maximum data for a clasic CAN frame, taking into account space needed for the extended address.
@@ -161,10 +198,10 @@ impl<'a> IsoTPAdapter<'a> {
 
     /// Maximum data length for a CAN frame based on the current config
     fn max_can_data_length(&self) -> usize {
-        match self.config.max_dlen {
+        match self.config.max_dlen_ {
             Some(dlen) => dlen - self.offset(),
             None => {
-                if self.config.fd {
+                if self.config.fd_ {
                     self.can_fd_max_dlen()
                 } else {
                     self.can_max_dlen()
@@ -175,7 +212,7 @@ impl<'a> IsoTPAdapter<'a> {
 
     /// Maximum data length for an ISO-TP packet based on the current config
     fn max_isotp_data_length(&self) -> usize {
-        if self.config.fd {
+        if self.config.fd_ {
             ISO_TP_FD_MAX_DLEN
         } else {
             ISO_TP_MAX_DLEN
@@ -186,7 +223,7 @@ impl<'a> IsoTPAdapter<'a> {
     fn frame(&self, data: &[u8]) -> Result<Frame> {
         let mut data = data.to_vec();
 
-        if let Some(ext_address) = self.config.ext_address {
+        if let Some(ext_address) = self.config.ext_address_ {
             data.insert(0, ext_address);
         }
 
@@ -197,11 +234,11 @@ impl<'a> IsoTPAdapter<'a> {
         }
 
         let frame = Frame {
-            bus: self.config.bus,
-            id: self.config.tx_id,
+            bus: self.config.bus_,
+            id: self.config.tx_,
             data,
             loopback: false,
-            fd: self.config.fd,
+            fd: self.config.fd_,
         };
 
         Ok(frame)
@@ -309,24 +346,24 @@ impl<'a> IsoTPAdapter<'a> {
         let stream = self
             .adapter
             .recv_filter(|frame| {
-                if frame.id != self.config.rx_id || frame.loopback {
+                if frame.id != self.config.rx_ || frame.loopback {
                     return false;
                 }
 
-                if self.config.ext_address.is_some() {
-                    return frame.data.first() == self.config.ext_address.as_ref();
+                if self.config.ext_address_.is_some() {
+                    return frame.data.first() == self.config.ext_address_.as_ref();
                 }
 
                 true
             })
-            .timeout(self.config.timeout);
+            .timeout(self.config.timeout_);
         tokio::pin!(stream);
 
         let offset = self.send_first_frame(data).await?;
         let mut fc_config = self.receive_flow_control(&mut stream).await?;
 
         // Check for separation time override
-        let st_min = match self.config.separation_time_min {
+        let st_min = match self.config.separation_time_min_ {
             Some(st_min) => st_min,
             None => fc_config.separation_time_min,
         };
@@ -516,17 +553,17 @@ impl<'a> IsoTPAdapter<'a> {
         let stream = self
             .adapter
             .recv_filter(|frame| {
-                if frame.id != self.config.rx_id || frame.loopback {
+                if frame.id != self.config.rx_ || frame.loopback {
                     return false;
                 }
 
-                if self.config.ext_address.is_some() {
-                    return frame.data.first() == self.config.ext_address.as_ref();
+                if self.config.ext_address_.is_some() {
+                    return frame.data.first() == self.config.ext_address_.as_ref();
                 }
 
                 true
             })
-            .timeout(self.config.timeout);
+            .timeout(self.config.timeout_);
 
         Box::pin(stream! {
             tokio::pin!(stream);

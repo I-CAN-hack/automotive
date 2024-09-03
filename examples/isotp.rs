@@ -8,7 +8,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let adapter = automotive::can::get_adapter().unwrap();
-    let config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
+    let config = IsoTPConfig::default().tx(Identifier::Standard(0x7a1));
     let isotp = IsoTPAdapter::new(&adapter, config);
 
     let mut stream = isotp.recv();

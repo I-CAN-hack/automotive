@@ -1,5 +1,5 @@
 use automotive::can::AsyncCanAdapter;
-use automotive::isotp::IsoTPAdapter;
+use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
 use automotive::Result;
 
 use automotive::uds::DataIdentifier;
@@ -9,7 +9,8 @@ use bstr::ByteSlice;
 use strum::IntoEnumIterator;
 
 async fn get_version(adapter: &AsyncCanAdapter, identifier: u32) -> Result<()> {
-    let isotp = IsoTPAdapter::from_id(adapter, identifier);
+    let config = IsoTPConfig::default().tx(identifier.into());
+    let isotp = IsoTPAdapter::new(adapter, config);
     let uds = UDSClient::new(&isotp);
 
     uds.tester_present().await?;
