@@ -22,7 +22,6 @@ pub enum Error {
     PandaError(#[from] crate::panda::Error),
     #[error(transparent)]
     UDSError(#[from] crate::uds::Error),
-    // #[cfg(target_os = "windows")]
     #[error(transparent)]
     VectorError(#[from] crate::vector::Error),
 }

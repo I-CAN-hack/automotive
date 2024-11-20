@@ -19,6 +19,7 @@ serde = ["dep:serde"]
 
 [build-dependencies]
 bindgen = "0.69.4"
+copy_to_output = "2.2.0"
 
 [dependencies]
 async-stream = "0.3.5"
