@@ -68,6 +68,7 @@ impl Drop for VectorCan {
 
 impl CanAdapter for VectorCan {
     fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
+        // TODO: can we send frames in bulk? If we fill up the TXqueue we need to know which messages were actually sent out
         while let Some(frame) = frames.pop_front() {
             let xl_frame: XLcanTxEvent = frame.clone().into();
             let xl_frames = vec![xl_frame];
