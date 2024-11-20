@@ -1,7 +1,7 @@
 use crate::vector::bindings as xl;
 use crate::vector::error::Error;
 use crate::vector::types::{
-    ApplicationConfig, HwType, PortHandle, XLaccess, XLcanRxEvent, XLcanTxEvent,
+    ChannelConfig, HwType, PortHandle, XLaccess, XLcanRxEvent, XLcanTxEvent,
 };
 use crate::Result;
 
@@ -27,7 +27,34 @@ pub fn xl_close_driver() -> Result<()> {
     }
 }
 
-pub fn xl_get_application_config(app_name: &str, app_channel: u32) -> Result<ApplicationConfig> {
+pub fn xl_get_driver_config(channel_idx: usize) -> Result<ChannelConfig> {
+    unsafe {
+        let mut config: xl::XLdriverConfig = std::mem::zeroed();
+        let status = xl::xlGetDriverConfig(&mut config);
+
+        match status as u32 {
+            xl::XL_SUCCESS => {
+                let channel_count: usize = config.channelCount as usize;
+                assert!(channel_idx < channel_count);
+                tracing::info!("Channel count {}", channel_count);
+
+                let channel = config.channel[channel_idx];
+
+                Ok(ChannelConfig {
+                    hw_type: HwType::from_repr(channel.hwType as u32).unwrap(),
+                    hw_index: channel.hwIndex as u32,
+                    hw_channel: channel.hwChannel as u32,
+                })
+            }
+            _ => {
+                Err(Error::DriverError(format!("xlGetDriverConfig failed, err {}", status)).into())
+            }
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub fn xl_get_application_config(app_name: &str, app_channel: u32) -> Result<ChannelConfig> {
     unsafe {
         let mut hw_type = std::mem::zeroed();
         let mut hw_index = std::mem::zeroed();
@@ -42,7 +69,7 @@ pub fn xl_get_application_config(app_name: &str, app_channel: u32) -> Result<App
             xl::XL_BUS_TYPE_CAN,
         );
         match status as u32 {
-            xl::XL_SUCCESS => Ok(ApplicationConfig {
+            xl::XL_SUCCESS => Ok(ChannelConfig {
                 hw_type: HwType::from_repr(hw_type).unwrap(),
                 hw_index,
                 hw_channel,
@@ -53,7 +80,7 @@ pub fn xl_get_application_config(app_name: &str, app_channel: u32) -> Result<App
 }
 
 #[allow(dead_code)]
-pub fn xl_get_channel_index(app_config: &ApplicationConfig) -> Result<u32> {
+pub fn xl_get_channel_index(app_config: &ChannelConfig) -> Result<u32> {
     unsafe {
         Ok(xl::xlGetChannelIndex(
             app_config.hw_type as i32,
@@ -63,7 +90,7 @@ pub fn xl_get_channel_index(app_config: &ApplicationConfig) -> Result<u32> {
     }
 }
 
-pub fn xl_get_channel_mask(app_config: &ApplicationConfig) -> Result<XLaccess> {
+pub fn xl_get_channel_mask(app_config: &ChannelConfig) -> Result<XLaccess> {
     unsafe {
         Ok(xl::xlGetChannelMask(
             app_config.hw_type as i32,
@@ -98,15 +125,12 @@ pub fn xl_open_port(user_name: &str, access_mask: XLaccess) -> Result<PortHandle
     }
 }
 
-pub fn xl_close_port(port_handle: &PortHandle,) -> Result<()> {
+pub fn xl_close_port(port_handle: &PortHandle) -> Result<()> {
     unsafe {
-        let status =
-            xl::xlClosePort(port_handle.port_handle);
+        let status = xl::xlClosePort(port_handle.port_handle);
         match status as u32 {
             xl::XL_SUCCESS => Ok(()),
-            _ => {
-                Err(Error::DriverError(format!("xlClosePort failed, err {}", status)).into())
-            }
+            _ => Err(Error::DriverError(format!("xlClosePort failed, err {}", status)).into()),
         }
     }
 }
@@ -126,13 +150,12 @@ pub fn xl_activate_channel(port_handle: &PortHandle, access_mask: XLaccess) -> R
 
 pub fn xl_deactivate_channel(port_handle: &PortHandle, access_mask: XLaccess) -> Result<()> {
     unsafe {
-        let status =
-            xl::xlDeactivateChannel(port_handle.port_handle, access_mask);
+        let status = xl::xlDeactivateChannel(port_handle.port_handle, access_mask);
         match status as u32 {
             xl::XL_SUCCESS => Ok(()),
-            _ => {
-                Err(Error::DriverError(format!("xlDeactivateChannel failed, err {}", status)).into())
-            }
+            _ => Err(
+                Error::DriverError(format!("xlDeactivateChannel failed, err {}", status)).into(),
+            ),
         }
     }
 }

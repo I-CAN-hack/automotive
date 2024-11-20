@@ -88,7 +88,7 @@ pub enum HwType {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct ApplicationConfig {
+pub struct ChannelConfig {
     pub hw_type: HwType,
     pub hw_index: u32,
     pub hw_channel: u32,

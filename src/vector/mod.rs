@@ -29,11 +29,14 @@ impl VectorCan {
     pub fn new() -> Result<VectorCan> {
         xl_open_driver()?;
 
-        // TODO: Accept app name and channel from user
-        let config = xl_get_application_config("CANalyzer", 0)?;
+        // Get config based on global channel number
+        let config = xl_get_driver_config(0)?;
 
-        // let config = xl_get_application_config("NewApp", 0)?;
-        // info!("Got Application Config: {:?}", config);
+        // Get config based on predfined config.
+        // TODO: This produces weird errors
+        // let config = xl_get_application_config("CANalyzer", 0)?;
+
+        info!("Got Application Config: {:?}", config);
 
         // let channel_index = xl_get_channel_index(&config)?;
         // info!("Channel index: {}", channel_index);
