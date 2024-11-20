@@ -9,6 +9,7 @@ fn main() {
     let bindings = bindgen::Builder::default()
         .header("third_party/vector/wrapper.h")
         .clang_arg("-Wno-pragma-pack")
+        .layout_tests(false)
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()
         .expect("Unable to generate bindings");

@@ -5,7 +5,7 @@ use automotive::panda::Panda;
 use std::collections::VecDeque;
 use std::time::Duration;
 
-static BULK_NUM_FRAMES_SYNC: u64 = 0x100;
+static BULK_NUM_FRAMES_SYNC: u64 = 0x100; // Why does this fail with 0x1000?
 static BULK_NUM_FRAMES_ASYNC: u64 = 0x1000;
 static BULK_SYNC_TIMEOUT_MS: u64 = 1000;
 static BULK_ASYNC_TIMEOUT_MS: u64 = 5000;
@@ -52,7 +52,7 @@ async fn bulk_send(adapter: &AsyncCanAdapter) {
     let mut frames = vec![];
 
     for i in 0..BULK_NUM_FRAMES_ASYNC {
-        frames.push(Frame::new(0, 0x123.into(), &i.to_be_bytes()).unwrap());
+        frames.push(Frame::new(0, 0x456.into(), &i.to_be_bytes()).unwrap());
     }
 
     let r = frames.iter().map(|frame| adapter.send(frame));
@@ -78,6 +78,22 @@ fn panda_bulk_send_sync() {
 async fn panda_bulk_send_async() {
     let panda = automotive::panda::Panda::new_async().unwrap();
     bulk_send(&panda).await;
+}
+
+#[cfg(feature = "test_vector")]
+#[test]
+#[serial_test::serial]
+fn vector_bulk_send_sync() {
+    let mut vector = automotive::vector::VectorCan::new().unwrap();
+    bulk_send_sync(&mut vector);
+}
+
+#[cfg(feature = "test_vector")]
+#[tokio::test]
+#[serial_test::serial]
+async fn vector_bulk_send_async() {
+    let vector = automotive::vector::VectorCan::new_async().unwrap();
+    bulk_send(&vector).await;
 }
 
 #[cfg(feature = "test_socketcan")]

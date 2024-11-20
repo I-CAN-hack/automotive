@@ -68,15 +68,18 @@ impl Drop for VectorCan {
 
 impl CanAdapter for VectorCan {
     fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
-        if frames.is_empty() {
-            return Ok(());
+        while let Some(frame) = frames.pop_front() {
+            let xl_frame: XLcanTxEvent = frame.clone().into();
+            let xl_frames = vec![xl_frame];
+
+            if let Ok(tx) = xl_can_transmit_ex(&self.port_handle, self.channel_mask, &xl_frames) {
+                assert_eq!(tx, 1);
+            } else {
+                // TODO: figure out what error happened, and decide if we can retry later
+                frames.push_front(frame);
+                break;
+            }
         }
-
-        let frames: Vec<Frame> = frames.drain(..).collect();
-        let frames: Vec<XLcanTxEvent> = frames.into_iter().map(|f| f.into()).collect();
-
-        let tx = xl_can_transmit_ex(&self.port_handle, self.channel_mask, &frames)?;
-        assert_eq!(tx, frames.len() as u32);
 
         Ok(())
     }

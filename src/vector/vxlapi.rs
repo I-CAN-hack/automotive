@@ -7,7 +7,7 @@ use crate::Result;
 
 // CAN FD: Size of the port receive queue allocated by the driver in bytes. The value must be a
 // power of 2 and within a range of 8192…524288 bytes (0.5 MB).
-const DEFAULT_RX_QUEUE_SIZE: u32 = 8192;
+const DEFAULT_RX_QUEUE_SIZE: u32 = 52428;
 
 pub fn xl_open_driver() -> Result<()> {
     let status = unsafe { xl::xlOpenDriver() };
