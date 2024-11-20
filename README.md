@@ -80,3 +80,4 @@ Implementing a new adapter is done by implementing the `CanAdapter` Trait. Hardw
  - J2534 Support on Windows
  - More device support
  - WebUSB support
+ - Python bindings

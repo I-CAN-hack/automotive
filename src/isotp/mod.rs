@@ -60,6 +60,8 @@ pub struct IsoTPConfig {
     pub fd: bool,
     /// Extended address
     pub ext_address: Option<u8>,
+    /// Max data length. Will use default of 8 (CAN) or 64 (CAN-FD) if not set
+    pub max_dlen: Option<usize>,
 }
 
 impl IsoTPConfig {
@@ -97,6 +99,7 @@ impl IsoTPConfig {
             separation_time_min: None,
             fd: false,
             ext_address: None,
+            max_dlen: None,
         }
     }
 }
@@ -124,17 +127,19 @@ impl<'a> IsoTPAdapter<'a> {
         let offset = self.config.ext_address.is_some() as usize;
         let len = data.len() + offset;
 
-        // Pad to next valid DLC
+        // Pad to at least 8 bytes if padding is enabled
+        if let Some(padding) = self.config.padding {
+            if len < CAN_MAX_DLEN {
+                let padding_len = CAN_MAX_DLEN - len; // Offset for extended address is already accounted for
+                data.extend(std::iter::repeat(padding).take(padding_len));
+            }
+        }
+
+        // Pad to next valid DLC for CAN-FD
         if !DLC_TO_LEN.contains(&len) {
             let idx = DLC_TO_LEN.iter().position(|&x| x > data.len()).unwrap();
             let padding = self.config.padding.unwrap_or(DEFAULT_PADDING_BYTE);
             let padding_len = DLC_TO_LEN[idx] - len;
-            data.extend(std::iter::repeat(padding).take(padding_len));
-        }
-
-        // Pad to full length if padding is enabled
-        if let Some(padding) = self.config.padding {
-            let padding_len = self.max_can_data_length() - len;
             data.extend(std::iter::repeat(padding).take(padding_len));
         }
     }
@@ -156,10 +161,15 @@ impl<'a> IsoTPAdapter<'a> {
 
     /// Maximum data length for a CAN frame based on the current config
     fn max_can_data_length(&self) -> usize {
-        if self.config.fd {
-            self.can_fd_max_dlen()
-        } else {
-            self.can_max_dlen()
+        match self.config.max_dlen {
+            Some(dlen) => dlen - self.offset(),
+            None => {
+                if self.config.fd {
+                    self.can_fd_max_dlen()
+                } else {
+                    self.can_max_dlen()
+                }
+            }
         }
     }
 
@@ -200,8 +210,8 @@ impl<'a> IsoTPAdapter<'a> {
     pub async fn send_single_frame(&self, data: &[u8]) -> Result<()> {
         let mut buf;
 
-        if data.len() < 0xf {
-            // Len fits in single nibble
+        if data.len() < self.can_max_dlen() {
+            // Len fits in classic CAN message
             buf = vec![FrameType::Single as u8 | data.len() as u8];
         } else {
             // Use escape sequence for length, length is in the next byte
