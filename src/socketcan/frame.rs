@@ -60,24 +60,17 @@ impl From<&Frame> for can_frame {
     }
 }
 
-impl From<socketcan::Id> for crate::can::Identifier {
-    fn from(id: socketcan::Id) -> Self {
-        match id {
-            socketcan::Id::Standard(id) => crate::can::Identifier::Standard(id.as_raw() as u32),
-            socketcan::Id::Extended(id) => crate::can::Identifier::Extended(id.as_raw()),
-        }
-    }
-}
+impl From<&Frame> for canfd_frame {
+    fn from(frame: &Frame) -> canfd_frame {
+        assert!(frame.fd);
+        assert!(frame.data.len() <= CANFD_MAX_DLEN);
 
-impl From<crate::can::Identifier> for socketcan::Id {
-    fn from(id: crate::can::Identifier) -> Self {
-        match id {
-            crate::can::Identifier::Standard(id) => {
-                socketcan::Id::Standard(socketcan::StandardId::new(id as u16).unwrap())
-            }
-            crate::can::Identifier::Extended(id) => {
-                socketcan::Id::Extended(socketcan::ExtendedId::new(id).unwrap())
-            }
-        }
+        let mut raw_frame = canfd_frame_default();
+        raw_frame.can_id = id_to_canid_t(frame.id);
+        raw_frame.len = frame.data.len() as u8;
+        // TODO: Set flags like BRS
+        raw_frame.data[..frame.data.len()].copy_from_slice(&frame.data);
+
+        raw_frame
     }
 }
