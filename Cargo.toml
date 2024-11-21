@@ -13,7 +13,7 @@ repository = "https://github.com/I-CAN-hack/automotive"
 default = ["default-adapters"]
 all = ["all-adapters", "serde"]
 default-adapters = ["panda", "socketcan"]
-all-adapters = ["vector-xl"]
+all-adapters = ["default-adapters", "vector-xl"]
 serde = ["dep:serde"]
 
 # adapters
