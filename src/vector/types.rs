@@ -111,7 +111,7 @@ impl From<crate::can::Frame> for XLcanTxEvent {
             false => 0,
         };
 
-        // TODO: move calculation can::Frame?
+        // TODO: move calculation to can::Frame?
         let dlc = LEN_TO_DLC[frame.data.len()];
 
         // Copy data into array
@@ -162,14 +162,9 @@ impl TryFrom<XLcanRxEvent> for crate::can::Frame {
                     fd,
                 })
             }
-            // TODO: investigate if TX error happen if we need to slow down transmitting
-            // e.g. TX buffer overflow
-            RxTags::XL_CAN_EV_TAG_CHIP_STATE => {
-                // let state = unsafe {event.tagData.canChipState};
-                // tracing::warn!("XL_CAN_EV_CHIP_STATE busStatus {}, txErrorCounter {}, rxErrorCounter {}", state.busStatus, state.txErrorCounter, state.rxErrorCounter);
-                Err(())
+            RxTags::XL_CAN_EV_TAG_CHIP_STATE | RxTags::XL_CAN_EV_TAG_TX_ERROR => {
+                Err(()) // Ignore these for now
             }
-            RxTags::XL_CAN_EV_TAG_TX_ERROR => Err(()),
             _ => {
                 tracing::warn!("xlCanReceive unhandled tag {:?}", tag);
                 Err(())

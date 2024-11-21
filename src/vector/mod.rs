@@ -31,21 +31,14 @@ impl VectorCan {
 
         // Get config based on global channel number
         let config = xl_get_driver_config(0)?;
-
-        // Get config based on predfined config.
-        // TODO: This produces weird errors
-        // let config = xl_get_application_config("CANalyzer", 0)?;
-
         info!("Got Application Config: {:?}", config);
 
-        // let channel_index = xl_get_channel_index(&config)?;
-        // info!("Channel index: {}", channel_index);
+        // TODO: This produces weird errors
+        // Get config based on predfined config.
+        // let config = xl_get_application_config("CANalyzer", 0)?;
 
         let channel_mask = xl_get_channel_mask(&config)?;
-        // info!("Channel mask: {}", channel_mask);
-
         let port_handle = xl_open_port("automotive", channel_mask)?;
-        // info!("Port: {:?}", port_handle);
 
         xl_activate_channel(&port_handle, channel_mask)?;
         info!("Connected to Vector Device. HW: {:?}", config.hw_type);
@@ -68,7 +61,7 @@ impl Drop for VectorCan {
 
 impl CanAdapter for VectorCan {
     fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
-        // TODO: can we send frames in bulk? If we fill up the TXqueue we need to know which messages were actually sent out
+        // TODO: can we send frames in bulk? If we fill up the TX queue can we figure out which messages were actually sent out?
         while let Some(frame) = frames.pop_front() {
             let xl_frame: XLcanTxEvent = frame.clone().into();
             let xl_frames = vec![xl_frame];
@@ -76,7 +69,7 @@ impl CanAdapter for VectorCan {
             if let Ok(tx) = xl_can_transmit_ex(&self.port_handle, self.channel_mask, &xl_frames) {
                 assert_eq!(tx, 1);
             } else {
-                // TODO: figure out what error happened, and decide if we can retry later
+                // TODO: figure out what error happened, and decide if we can retry later or need to shut down
                 frames.push_front(frame);
                 break;
             }
