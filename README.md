@@ -47,6 +47,7 @@ The following CAN adapters are supported.
 ### Supported CAN adapters
  - SocketCAN (Linux only)
  - comma.ai panda (all platforms using [rusb](https://crates.io/crates/rusb))
+ - Vector Devices (Windows only)
 
 ### Known limitations / Notes
 This library has some unique features that might expose (performance) issues in drivers you wouldn't otherwise notice, so check the list of known limitations below.
@@ -61,6 +62,7 @@ This library supports awaiting a sent frame and waiting for the ACK on the CAN b
    - Kenel built in driver (`peak_usb`). The kernel driver properly implements `IFF_ECHO`, but has a rather small TX queue. This should not cause any issues, but it can be inreased with `ifconfig can0 txqueuelen <size>`.
    - Out-of-tree driver (`pcan`) that can be [downloaded](https://www.peak-system.com/fileadmin/media/linux/index.htm) from Peak System's website. The out-of-tree driver is not recommended as it does  not implement `IFF_ECHO`.
   - neoVI/ValueCAN: Use of Intrepid Control System's devices is not recommended due to issues in their SocketCAN driver. If many frames are transmitted simultaneously it will cause the whole system/kernel to hang. [intrepid-socketcan-kernel-module#20](https://github.com/intrepidcs/intrepid-socketcan-kernel-module/issues/20) tracks this issue.
+ - Vector Devices are supported through the Vector XL Driver Library, and can be abled using the `vector-xl` feature. Make sure to distribute `vxlapi64.dll` alongside your application.
 
 
 ### Implementing a New Adapter
