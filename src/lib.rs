@@ -45,22 +45,25 @@
 //! The following CAN adapters are supported.
 //!
 //! ### Supported CAN adapters
-//!  - SocketCAN (Linux only, supported using [socketcan-rs](https://github.com/socketcan-rs/socketcan-rs))
+//!  - SocketCAN (Linux only)
 //!  - comma.ai panda (all platforms using [rusb](https://crates.io/crates/rusb))
+//!  - Vector Devices (Windows x64 only)
 //!
 //! ### Known limitations / Notes
-//!  This library has some unique features that might expose (performance) issues in drivers you wouldn't otherwise notice, so check the list of known limitations below.
+//! This library has some unique features that might expose (performance) issues in drivers you wouldn't otherwise notice, so check the list of known limitations below.
 //!
 //! This library supports awaiting a sent frame and waiting for the ACK on the CAN bus. This requires receiving these ACKs from the adapter, and matching them to the appropriate sent frame. This requires some level of hardware support that is not offered by all adapters/drivers. If this is not supported by the driver, an ACK will be simulated as soon as the frame is transmitted, but this can cause issues if precise timing is needed.
 //!
-//!  - SocketCAN drivers without `IFF_ECHO`: This class of SocketCAN drivers has no hardware support for notifying the driver when a frame was ACKed. This is instead emulated by the [Linux kernel](https://github.com/torvalds/linux/blob/master/net/can/af_can.c#L256). Due to transmitted frames immediately being received again this can cause the receive queue to fill up if more than 476 (default RX queue size on most systems) are transmitted in one go. To solve this we implement emulated ACKs ourself, instead of relying on the ACKs from the kernel.
-//! - comma.ai panda
-//!   - The panda does not retry frames that are not ACKed, and drops them instead. This can cause panics in some internal parts of the library when frames are dropped. [panda#1922](https://github.com/commaai/panda/issues/1922) tracks this issue.
-//!   - The CAN-FD flag on a frame is ignored, if the hardware is configured for CAN-FD all frames will be interpreted as FD regardless of the FD frame bit (r0 bit).
-//! - PCAN-USB: The Peak CAN adapters have two drivers:
-//!   - Kenel built in driver(`peak_usb`). The kernel driver properly implements `IFF_ECHO`, but has a rather small TX queue. This should not cause any issues, but it can be inreased with `ifconfig can0 txqueuelen <size>`.
-//!   - Out-of-tree driver (`pcan`) that can be [downloaded](https://www.peak-system.com/fileadmin/media/linux/index.htm) from Peak System's website. The out-of-tree driver is not recommended as it does  not implement `IFF_ECHO`.
-//!  - neoVI/ValueCAN: Use of Intrepid Control System's devices is not recommended due to issues in their SocketCAN driver. If many frames are transmitted simultaneously it will cause the whole system/kernel to hang. [intrepid-socketcan-kernel-module#20](https://github.com/intrepidcs/intrepid-socketcan-kernel-module/issues/20) tracks this issue.
+//!  - SocketCAN Devices
+//!    - SocketCAN drivers without `IFF_ECHO`: This class of SocketCAN drivers has no hardware support for notifying the driver when a frame was ACKed. This is instead emulated by the [Linux kernel](https://github.com/torvalds/linux/blob/master/net/can/af_can.c#L256). Due to transmitted frames immediately being received again this can cause the receive queue to fill up if more than 476 (default RX queue size on most systems) are transmitted in one go. To solve this we implement emulated ACKs ourself, instead of relying on the ACKs from the kernel.
+//!    - PCAN-USB: The Peak CAN adapters have two drivers:
+//!      - Kenel built in driver (`peak_usb`). The kernel driver properly implements `IFF_ECHO`, but has a rather small TX queue. This should not cause any issues, but it can be increased with `ifconfig can0 txqueuelen <size>`.
+//!      - Out-of-tree driver (`pcan`) that can be [downloaded](https://www.peak-system.com/fileadmin/media/linux/index.htm) from Peak System's website. The out-of-tree driver is not recommended as it does  not implement `IFF_ECHO`.
+//!    - neoVI/ValueCAN: Use of Intrepid Control System's devices is not recommended due to issues in their SocketCAN driver. If many frames are transmitted simultaneously it will cause the whole system/kernel to hang. [intrepid-socketcan-kernel-module#20](https://github.com/intrepidcs/intrepid-socketcan-kernel-module/issues/20) tracks this issue.
+//!  - comma.ai panda
+//!    - The panda does not retry frames that are not ACKed, and drops them instead. This can cause panics in some internal parts of the library when frames are dropped. [panda#1922](https://github.com/commaai/panda/issues/1922) tracks this issue.
+//!    - The CAN-FD flag on a frame is ignored, if the hardware is configured for CAN-FD all frames will be interpreted as FD regardless of the FD frame bit (r0 bit).
+//!  - Vector Devices are supported through the Vector XL Driver Library, and support can be enabled using the `vector-xl` feature. Make sure to distribute `vxlapi64.dll` alongside your application.
 //!
 //!
 //! ### Implementing a New Adapter
@@ -68,12 +71,12 @@
 //!
 //!  - The `send` function takes a `&mut VecDequeue` of frames. Frames to be sent are taken from the *front* of this queue. If there is no space in the hardware or driver buffer to send out all messages it's OK to return before the queue is fully empty. If an error occurs make sure to put the message back at the beginning of the queue and return.
 //!  - The hardware or driver is free to prioritize sending frames with a lower Arbitration ID to prevent priority inversion. However frames with the same Arbitration ID need to be send out on the CAN bus in the same order as they were queued. This assumption is needed to match a received ACK to the correct frame.
-//! - Once a frame is ACKed it should be put in the receive queue with the `loopback` flag set. The `AsyncCanAdapter` wrapper will take care of matching it against the right transmit frame and resolving the Future. If this is not supported by the underlying hardware, this can be faked by looping back all transmitted frames immediately.
+//!  - Once a frame is ACKed it should be put in the receive queue with the `loopback` flag set. The `AsyncCanAdapter` wrapper will take care of matching it against the right transmit frame and resolving the Future. If this is not supported by the underlying hardware, this can be faked by looping back all transmitted frames immediately.
+
 
 pub mod can;
 mod error;
 pub mod isotp;
-pub mod panda;
 pub mod uds;
 
 /// Re-export of relevant stream traits from `tokio_stream`.
@@ -82,8 +85,11 @@ pub use tokio_stream::{Stream, StreamExt, Timeout};
 pub use error::Error;
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "socketcan"))]
 pub mod socketcan;
 
 #[cfg(all(target_os = "windows", feature = "vector-xl"))]
 pub mod vector;
+
+#[cfg(feature = "panda")]
+pub mod panda;

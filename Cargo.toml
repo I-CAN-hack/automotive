@@ -10,19 +10,22 @@ repository = "https://github.com/I-CAN-hack/automotive"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = []
+default = ["default-adapters"]
 all = ["all-adapters", "serde"]
+default-adapters = ["panda", "socketcan"]
 all-adapters = ["vector-xl"]
 serde = ["dep:serde"]
 
 # adapters
 vector-xl = []
+panda = []
+socketcan = []
 
 # adapter tests
-test_panda = []
-test_socketcan = []
-test_vector = ["vector-xl"]
-test_vcan = []
+test-panda = ["panda"]
+test-socketcan = ["socketcan"]
+test-vector = ["vector-xl"]
+test-vcan = ["socketcan"]
 
 [dependencies]
 async-stream = "0.3.5"

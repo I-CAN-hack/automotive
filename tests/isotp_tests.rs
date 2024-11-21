@@ -69,7 +69,7 @@ async fn vecu_spawn(adapter: &AsyncCanAdapter, config: VECUConfig) -> ChildGuard
     vecu
 }
 
-#[cfg(feature = "test_vcan")]
+#[cfg(feature = "test-vcan")]
 async fn isotp_test_echo(msg_len: usize, config: VECUConfig) {
     let adapter = automotive::socketcan::SocketCan::new_async("vcan0").unwrap();
     let _vecu = vecu_spawn(&adapter, config).await;
@@ -92,7 +92,7 @@ async fn isotp_test_echo(msg_len: usize, config: VECUConfig) {
     assert_eq!(response, request);
 }
 
-#[cfg(feature = "test_vcan")]
+#[cfg(feature = "test-vcan")]
 #[tokio::test]
 #[serial_test::serial]
 async fn isotp_test_flow_control() {
@@ -107,7 +107,7 @@ async fn isotp_test_flow_control() {
     isotp_test_echo(256, config).await;
 }
 
-#[cfg(feature = "test_vcan")]
+#[cfg(feature = "test-vcan")]
 #[tokio::test]
 #[serial_test::serial]
 async fn isotp_test_padding() {
@@ -122,7 +122,7 @@ async fn isotp_test_padding() {
     isotp_test_echo(64, config).await;
 }
 
-#[cfg(feature = "test_vcan")]
+#[cfg(feature = "test-vcan")]
 #[tokio::test]
 #[serial_test::serial]
 async fn isotp_test_stmin() {
@@ -137,7 +137,7 @@ async fn isotp_test_stmin() {
     assert!(start.elapsed() > stmin * 8);
 }
 
-#[cfg(feature = "test_vcan")]
+#[cfg(feature = "test-vcan")]
 #[tokio::test]
 #[serial_test::serial]
 async fn isotp_test_bs() {
@@ -154,7 +154,7 @@ async fn isotp_test_bs() {
     }
 }
 
-#[cfg(feature = "test_vcan")]
+#[cfg(feature = "test-vcan")]
 #[tokio::test]
 #[serial_test::serial]
 async fn isotp_test_fd() {
@@ -182,7 +182,7 @@ async fn isotp_test_fd() {
     isotp_test_echo(5000, config).await;
 }
 
-#[cfg(feature = "test_vcan")]
+#[cfg(feature = "test-vcan")]
 #[tokio::test]
 #[serial_test::serial]
 async fn isotp_test_fd_max_dlen() {
@@ -205,7 +205,7 @@ async fn isotp_test_fd_max_dlen() {
     isotp_test_echo(5000, config).await;
 }
 
-#[cfg(feature = "test_vcan")]
+#[cfg(feature = "test-vcan")]
 #[tokio::test]
 #[serial_test::serial]
 async fn isotp_test_extended() {
@@ -223,7 +223,7 @@ async fn isotp_test_extended() {
     isotp_test_echo(256, config).await;
 }
 
-#[cfg(feature = "test_vcan")]
+#[cfg(feature = "test-vcan")]
 #[tokio::test]
 #[serial_test::serial]
 async fn isotp_test_fd_extended() {
@@ -251,7 +251,7 @@ async fn isotp_test_fd_extended() {
     isotp_test_echo(5000, config).await;
 }
 
-#[cfg(feature = "test_vcan")]
+#[cfg(feature = "test-vcan")]
 #[tokio::test]
 #[serial_test::serial]
 async fn isotp_test_fd_extended_max_dlen() {
