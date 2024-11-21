@@ -106,6 +106,22 @@ async fn panda_bulk_send_async() {
     bulk_send(&panda).await;
 }
 
+#[cfg(feature = "test_vector")]
+#[test]
+#[serial_test::serial]
+fn vector_bulk_send_sync() {
+    let mut vector = automotive::vector::VectorCan::new().unwrap();
+    bulk_send_sync(&mut vector);
+}
+
+#[cfg(feature = "test_vector")]
+#[tokio::test]
+#[serial_test::serial]
+async fn vector_bulk_send_async() {
+    let vector = automotive::vector::VectorCan::new_async().unwrap();
+    bulk_send(&vector).await;
+}
+
 #[cfg(feature = "test_socketcan")]
 #[test]
 #[serial_test::serial]

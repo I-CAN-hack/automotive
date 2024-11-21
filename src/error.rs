@@ -2,7 +2,7 @@
 use thiserror::Error;
 
 /// The main error type for the library. Each module has it's own error type that is contained by this error.
-#[derive(Error, Debug, PartialEq, Copy, Clone)]
+#[derive(Error, Debug, PartialEq, Clone)]
 pub enum Error {
     #[error("Not Found")]
     NotFound,
@@ -22,6 +22,10 @@ pub enum Error {
     PandaError(#[from] crate::panda::Error),
     #[error(transparent)]
     UDSError(#[from] crate::uds::Error),
+
+    #[cfg(all(target_os = "windows", feature = "vector-xl"))]
+    #[error(transparent)]
+    VectorError(#[from] crate::vector::Error),
 }
 
 impl From<tokio_stream::Elapsed> for Error {
