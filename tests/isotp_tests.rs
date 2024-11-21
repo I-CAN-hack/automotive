@@ -74,12 +74,12 @@ async fn isotp_test_echo(msg_len: usize, config: VECUConfig) {
     let adapter = automotive::socketcan::SocketCan::new_async("vcan0").unwrap();
     let _vecu = vecu_spawn(&adapter, config).await;
 
-    let mut isotp_config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
-    isotp_config.padding = config.padding;
-    isotp_config.fd = config.fd;
-    isotp_config.ext_address = config.ext_address;
-    isotp_config.timeout = std::time::Duration::from_millis(1000);
-    isotp_config.max_dlen = config.max_dlen;
+    let isotp_config = IsoTPConfig::default()
+        .tx(Identifier::Standard(0x7a1))
+        .padding(config.padding)
+        .fd(config.fd)
+        .ext_address(config.ext_address)
+        .max_dlen(config.max_dlen);
 
     let isotp = IsoTPAdapter::new(&adapter, isotp_config);
 
