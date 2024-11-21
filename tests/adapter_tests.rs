@@ -90,7 +90,7 @@ async fn bulk_send(adapter: &AsyncCanAdapter) {
     .unwrap();
 }
 
-#[cfg(feature = "test_panda")]
+#[cfg(feature = "test-panda")]
 #[test]
 #[serial_test::serial]
 fn panda_bulk_send_sync() {
@@ -98,7 +98,7 @@ fn panda_bulk_send_sync() {
     bulk_send_sync(&mut panda);
 }
 
-#[cfg(feature = "test_panda")]
+#[cfg(feature = "test-panda")]
 #[tokio::test]
 #[serial_test::serial]
 async fn panda_bulk_send_async() {
@@ -106,7 +106,7 @@ async fn panda_bulk_send_async() {
     bulk_send(&panda).await;
 }
 
-#[cfg(feature = "test_vector")]
+#[cfg(feature = "test-vector")]
 #[test]
 #[serial_test::serial]
 fn vector_bulk_send_sync() {
@@ -114,7 +114,7 @@ fn vector_bulk_send_sync() {
     bulk_send_sync(&mut vector);
 }
 
-#[cfg(feature = "test_vector")]
+#[cfg(feature = "test-vector")]
 #[tokio::test]
 #[serial_test::serial]
 async fn vector_bulk_send_async() {
@@ -122,7 +122,7 @@ async fn vector_bulk_send_async() {
     bulk_send(&vector).await;
 }
 
-#[cfg(feature = "test_socketcan")]
+#[cfg(feature = "test-socketcan")]
 #[test]
 #[serial_test::serial]
 fn socketcan_bulk_send_sync() {
@@ -131,7 +131,7 @@ fn socketcan_bulk_send_sync() {
     bulk_send_sync(&mut adapter);
 }
 
-#[cfg(feature = "test_socketcan")]
+#[cfg(feature = "test-socketcan")]
 #[tokio::test]
 #[serial_test::serial]
 async fn socketcan_bulk_send_async() {
@@ -139,15 +139,7 @@ async fn socketcan_bulk_send_async() {
     bulk_send(&adapter).await;
 }
 
-// #[cfg(feature = "test_socketcan")]
-// #[tokio::test]
-// #[serial_test::serial]
-// async fn socketcan_send_fd() {
-//     let adapter = automotive::socketcan::SocketCan::new_async("can0").unwrap();
-//     adapter.send(&Frame::new(0, 0x123.into(), &[0u8; 64])).await;
-// }
-
-#[cfg(feature = "test_vcan")]
+#[cfg(feature = "test-vcan")]
 #[test]
 #[serial_test::serial]
 fn vcan_bulk_send_sync() {
@@ -155,7 +147,7 @@ fn vcan_bulk_send_sync() {
     bulk_send_sync(&mut adapter);
 }
 
-#[cfg(feature = "test_vcan")]
+#[cfg(feature = "test-vcan")]
 #[tokio::test]
 #[serial_test::serial]
 async fn vcan_bulk_send_async() {
@@ -163,7 +155,7 @@ async fn vcan_bulk_send_async() {
     bulk_send(&adapter).await;
 }
 
-#[cfg(feature = "test_vcan")]
+#[cfg(feature = "test-vcan")]
 #[tokio::test]
 #[serial_test::serial]
 async fn vcan_send_fd() {
@@ -173,7 +165,7 @@ async fn vcan_send_fd() {
         .await;
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "socketcan"))]
 #[tokio::test]
 #[serial_test::serial]
 async fn socketcan_open_nonexistent() {

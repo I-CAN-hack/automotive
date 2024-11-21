@@ -14,18 +14,21 @@ pub enum Error {
     Timeout,
     #[error("Disconnected")]
     Disconnected,
+
     #[error(transparent)]
     IsoTPError(#[from] crate::isotp::Error),
     #[error(transparent)]
     LibUsbError(#[from] rusb::Error),
-    #[error(transparent)]
-    PandaError(#[from] crate::panda::Error),
     #[error(transparent)]
     UDSError(#[from] crate::uds::Error),
 
     #[cfg(all(target_os = "windows", feature = "vector-xl"))]
     #[error(transparent)]
     VectorError(#[from] crate::vector::Error),
+
+    #[cfg(feature = "panda")]
+    #[error(transparent)]
+    PandaError(#[from] crate::panda::Error),
 }
 
 impl From<tokio_stream::Elapsed> for Error {

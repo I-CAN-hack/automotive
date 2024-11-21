@@ -29,7 +29,7 @@ async fn vecu_spawn(adapter: &AsyncCanAdapter) -> ChildGuard {
     vecu
 }
 
-#[cfg(feature = "test_vcan")]
+#[cfg(feature = "test-vcan")]
 #[tokio::test]
 #[serial_test::serial]
 async fn uds_test_sids() {
