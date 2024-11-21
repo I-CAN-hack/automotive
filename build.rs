@@ -12,7 +12,12 @@ fn main() {
     println!("cargo:rustc-link-lib=vxlapi64");
 
     let bindings = bindgen::Builder::default()
-        .header(format!("{}", Path::new(&dir).join("third_party/vector/wrapper.h").display()))
+        .header(format!(
+            "{}",
+            Path::new(&dir)
+                .join("third_party/vector/wrapper.h")
+                .display()
+        ))
         .clang_arg("-Wno-pragma-pack")
         .layout_tests(false)
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
