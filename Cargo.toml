@@ -21,7 +21,7 @@ vector-xl = []
 # adapter tests
 test_panda = []
 test_socketcan = []
-test_vector = []
+test_vector = ["vector-xl"]
 test_vcan = []
 
 [dependencies]

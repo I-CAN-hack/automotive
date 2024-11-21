@@ -1,3 +1,4 @@
+//! Vector CAN Adapter support through the XL Driver
 mod bindings;
 pub mod error;
 pub mod types;
@@ -21,16 +22,17 @@ pub struct VectorCan {
 
 impl VectorCan {
     /// Convenience function to create a new adapter and wrap in an [`AsyncCanAdapter`]
-    pub fn new_async() -> Result<AsyncCanAdapter> {
-        let vector = VectorCan::new()?;
+    pub fn new_async(channel_idx: usize) -> Result<AsyncCanAdapter> {
+        let vector = VectorCan::new(channel_idx)?;
         Ok(AsyncCanAdapter::new(vector))
     }
 
-    pub fn new() -> Result<VectorCan> {
+    /// Create a new Vector Adapter based on the global channel ID
+    pub fn new(channel_idx: usize) -> Result<VectorCan> {
         xl_open_driver()?;
 
         // Get config based on global channel number
-        let config = xl_get_driver_config(0)?;
+        let config = xl_get_driver_config(channel_idx)?;
         info!("Got Application Config: {:?}", config);
 
         // TODO: This produces weird errors

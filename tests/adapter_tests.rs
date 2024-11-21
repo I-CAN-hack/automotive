@@ -110,7 +110,7 @@ async fn panda_bulk_send_async() {
 #[test]
 #[serial_test::serial]
 fn vector_bulk_send_sync() {
-    let mut vector = automotive::vector::VectorCan::new().unwrap();
+    let mut vector = automotive::vector::VectorCan::new(0).unwrap();
     bulk_send_sync(&mut vector);
 }
 
@@ -118,7 +118,7 @@ fn vector_bulk_send_sync() {
 #[tokio::test]
 #[serial_test::serial]
 async fn vector_bulk_send_async() {
-    let vector = automotive::vector::VectorCan::new_async().unwrap();
+    let vector = automotive::vector::VectorCan::new_async(0).unwrap();
     bulk_send(&vector).await;
 }
 
