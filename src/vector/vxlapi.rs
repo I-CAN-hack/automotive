@@ -163,15 +163,14 @@ pub fn xl_deactivate_channel(port_handle: &PortHandle, access_mask: XLaccess) ->
 pub fn xl_can_transmit_ex(
     port_handle: &PortHandle,
     access_mask: XLaccess,
-    events: &Vec<XLcanTxEvent>,
+    events: &[XLcanTxEvent],
 ) -> Result<u32> {
     unsafe {
         let msg_cnt = events.len() as u32;
         let mut msg_cnt_sent = std::mem::zeroed();
 
-        // Convert Vec into pointer
-        let mut boxed = events.clone().into_boxed_slice();
-        // let mut array = boxed.as_mut_ptr();
+        // Clone so we can pass a mut ptr to the C API
+        let mut boxed = events.to_owned();
 
         let status = xl::xlCanTransmitEx(
             port_handle.port_handle,
