@@ -1,13 +1,18 @@
-use copy_to_output::copy_to_output;
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+#[cfg(all(target_os = "windows", feature = "vector-vxlapi"))]
 fn main() {
-    println!("cargo:rustc-link-search=third_party/vector");
+    let dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+
+    println!(
+        "cargo:rustc-link-search={}",
+        Path::new(&dir).join("third_party/vector").display()
+    );
     println!("cargo:rustc-link-lib=vxlapi64");
 
     let bindings = bindgen::Builder::default()
-        .header("third_party/vector/wrapper.h")
+        .header(format!("{}", Path::new(&dir).join("third_party/vector/wrapper.h").display()))
         .clang_arg("-Wno-pragma-pack")
         .layout_tests(false)
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
@@ -18,10 +23,4 @@ fn main() {
     bindings
         .write_to_file(out_path.join("vxlapi_bindings.rs"))
         .expect("Couldn't write bindings!");
-
-    copy_to_output(
-        "third_party/vector/vxlapi64.dll",
-        &env::var("PROFILE").unwrap(),
-    )
-    .expect("Could not copy DLL");
 }

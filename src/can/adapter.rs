@@ -16,9 +16,12 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
         }
     }
 
-    if let Ok(adapter) = crate::vector::VectorCan::new_async() {
-        return Ok(adapter);
-    };
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(adapter) = crate::vector::VectorCan::new_async() {
+            return Ok(adapter);
+        };
+    }
 
     Err(crate::error::Error::NotFound)
 }

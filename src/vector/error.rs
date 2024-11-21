@@ -5,10 +5,4 @@ use thiserror::Error;
 pub enum Error {
     #[error("Driver error: {0}")]
     DriverError(String),
-    #[error("BitTimming error: {0}")]
-    BitTimingError(String),
-    #[error("Qeue is empty")]
-    EmptyQueue,
-    #[error("Qeue is full")]
-    FullQueue,
 }
