@@ -12,11 +12,11 @@ repository = "https://github.com/I-CAN-hack/automotive"
 [features]
 default = ["all"]
 all = ["all-adapters", "serde"]
-all-adapters = ["vector-vxlapi"]
+all-adapters = ["vector-xl"]
 serde = ["dep:serde"]
 
 # adapters
-vector-vxlapi = []
+vector-xl = []
 
 # adapter tests
 test_panda = []

@@ -85,5 +85,5 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[cfg(target_os = "linux")]
 pub mod socketcan;
 
-#[cfg(all(target_os = "windows", feature = "vector-vxlapi"))]
+#[cfg(all(target_os = "windows", feature = "vector-xl"))]
 pub mod vector;

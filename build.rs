@@ -1,8 +1,8 @@
-use std::env;
-use std::path::{Path, PathBuf};
+#[cfg(all(target_os = "windows", feature = "vector-xl"))]
+fn build_vxlapi() {
+    use std::env;
+    use std::path::{Path, PathBuf};
 
-#[cfg(all(target_os = "windows", feature = "vector-vxlapi"))]
-fn main() {
     let dir = env::var("CARGO_MANIFEST_DIR").unwrap();
 
     println!(
@@ -28,4 +28,9 @@ fn main() {
     bindings
         .write_to_file(out_path.join("vxlapi_bindings.rs"))
         .expect("Couldn't write bindings!");
+}
+
+fn main() {
+    #[cfg(all(target_os = "windows", feature = "vector-xl"))]
+    build_vxlapi();
 }
