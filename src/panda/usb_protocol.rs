@@ -7,7 +7,7 @@ const CANPACKET_MAX_CHUNK_SIZE: usize = 256;
 // Header layout
 
 //  byte 0
-//   unsigned char reserved : 1;
+//   unsigned char fd : 1;
 //   unsigned char bus : 3;
 //   unsigned char data_len_code : 4;  // lookup length with dlc_to_len
 
@@ -45,9 +45,7 @@ pub fn pack_can_buffer(frames: &[Frame]) -> Result<Vec<Vec<u8>>, Error> {
             return Err(Error::MalformedFrame);
         }
 
-        if frame.fd {
-            return Err(Error::NotSupported);
-        }
+        let fd = frame.fd as u8;
 
         let dlc = DLC_TO_LEN.iter().position(|&x| x == frame.data.len());
         let dlc = dlc.ok_or(Error::MalformedFrame)? as u8;
@@ -55,7 +53,7 @@ pub fn pack_can_buffer(frames: &[Frame]) -> Result<Vec<Vec<u8>>, Error> {
         let word_4b: u32 = (id << 3) | (extended << 2);
 
         let header: [u8; CANPACKET_HEAD_SIZE - 1] = [
-            (dlc << 4) | (frame.bus << 1),
+            (dlc << 4) | (frame.bus << 1) | fd,
             (word_4b & 0xff) as u8,
             ((word_4b >> 8) & 0xff) as u8,
             ((word_4b >> 16) & 0xff) as u8,
@@ -82,6 +80,7 @@ pub fn unpack_can_buffer(dat: &mut Vec<u8>) -> Result<Vec<Frame>, Error> {
     while dat.len() >= CANPACKET_HEAD_SIZE {
         let bus = (dat[0] >> 1) & 0b111;
         let dlc = (dat[0] >> 4) & 0b1111;
+        let fd = (dat[0] & 0b1) != 0;
         let id: u32 = ((dat[4] as u32) << 24
             | (dat[3] as u32) << 16
             | (dat[2] as u32) << 8
@@ -112,10 +111,6 @@ pub fn unpack_can_buffer(dat: &mut Vec<u8>) -> Result<Vec<Frame>, Error> {
                 crate::panda::error::Error::InvalidChecksum,
             ));
         }
-
-        // Panda doesn't properly communicate if a frame was FD or not.
-        // We'll assume it was FD when the data length is > 8.
-        let fd = data_len > 8;
 
         ret.push(Frame {
             id,
@@ -186,6 +181,13 @@ mod tests {
                 data: vec![1, 2, 3, 4],
                 loopback: false,
                 fd: false,
+            },
+            Frame {
+                bus: 1,
+                id: Identifier::Extended(0x123),
+                data: vec![1, 2, 3, 4],
+                loopback: false,
+                fd: true,
             },
         ];
 
