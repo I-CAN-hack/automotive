@@ -1,5 +1,2 @@
 /target
 .vscode/
-
-windows/
-bindings.rs
