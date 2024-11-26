@@ -18,6 +18,7 @@ const VENDOR_ID: u16 = 0xbbaa;
 const PRODUCT_ID: u16 = 0xddcc;
 const EXPECTED_CAN_PACKET_VERSION: u8 = 4;
 const MAX_BULK_SIZE: usize = 16384;
+const PANDA_BUS_CNT: usize = 3;
 
 /// Blocking implementation of the panda CAN adapter
 pub struct Panda {
@@ -73,6 +74,10 @@ impl Panda {
             panda.set_heartbeat_disabled()?;
             panda.can_reset_communications()?;
 
+            for i in 0..PANDA_BUS_CNT {
+                panda.set_canfd_auto(i, false)?;
+            }
+
             // can_reset_communications() doesn't work properly, flush manually
             panda.flush_rx()?;
 
@@ -111,6 +116,13 @@ impl Panda {
 
     fn set_power_save(&self, power_save_enabled: bool) -> Result<()> {
         self.usb_write_control(Endpoint::PowerSave, power_save_enabled as u16, 0)
+    }
+
+    fn set_canfd_auto(&self, bus: usize, auto: bool) -> Result<()> {
+        if bus >= PANDA_BUS_CNT {
+            return Err(crate::Error::NotSupported);
+        }
+        self.usb_write_control(Endpoint::CanFDAuto, bus as u16, auto as u16)
     }
 
     /// Get the hardware type of the panda. Usefull to detect if it supports CAN-FD.

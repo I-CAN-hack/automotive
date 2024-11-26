@@ -25,6 +25,7 @@ pub enum Endpoint {
     CanRead = 0x81,
     PacketsVersions = 0xdd,
     PowerSave = 0xe7,
+    CanFDAuto = 0xe8,
     HeartbeatDisabled = 0xf8,
 }
 
