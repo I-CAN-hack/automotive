@@ -62,7 +62,6 @@
 //!    - neoVI/ValueCAN: Use of Intrepid Control System's devices is not recommended due to issues in their SocketCAN driver. If many frames are transmitted simultaneously it will cause the whole system/kernel to hang. [intrepid-socketcan-kernel-module#20](https://github.com/intrepidcs/intrepid-socketcan-kernel-module/issues/20) tracks this issue.
 //!  - comma.ai panda
 //!    - The panda does not retry frames that are not ACKed, and drops them instead. This can cause panics in some internal parts of the library when frames are dropped. [panda#1922](https://github.com/commaai/panda/issues/1922) tracks this issue.
-//!    - The CAN-FD flag on a frame is ignored, if the hardware is configured for CAN-FD all frames will be interpreted as FD regardless of the FD frame bit (r0 bit).
 //!  - Vector Devices are supported through the Vector XL Driver Library, and support can be enabled using the `vector-xl` feature. Make sure to distribute `vxlapi64.dll` alongside your application.
 //!
 //!
@@ -72,7 +71,6 @@
 //!  - The `send` function takes a `&mut VecDequeue` of frames. Frames to be sent are taken from the *front* of this queue. If there is no space in the hardware or driver buffer to send out all messages it's OK to return before the queue is fully empty. If an error occurs make sure to put the message back at the beginning of the queue and return.
 //!  - The hardware or driver is free to prioritize sending frames with a lower Arbitration ID to prevent priority inversion. However frames with the same Arbitration ID need to be send out on the CAN bus in the same order as they were queued. This assumption is needed to match a received ACK to the correct frame.
 //!  - Once a frame is ACKed it should be put in the receive queue with the `loopback` flag set. The `AsyncCanAdapter` wrapper will take care of matching it against the right transmit frame and resolving the Future. If this is not supported by the underlying hardware, this can be faked by looping back all transmitted frames immediately.
-
 
 pub mod can;
 mod error;

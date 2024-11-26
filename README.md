@@ -62,7 +62,6 @@ This library supports awaiting a sent frame and waiting for the ACK on the CAN b
    - neoVI/ValueCAN: Use of Intrepid Control System's devices is not recommended due to issues in their SocketCAN driver. If many frames are transmitted simultaneously it will cause the whole system/kernel to hang. [intrepid-socketcan-kernel-module#20](https://github.com/intrepidcs/intrepid-socketcan-kernel-module/issues/20) tracks this issue.
  - comma.ai panda
    - The panda does not retry frames that are not ACKed, and drops them instead. This can cause panics in some internal parts of the library when frames are dropped. [panda#1922](https://github.com/commaai/panda/issues/1922) tracks this issue.
-   - The CAN-FD flag on a frame is ignored, if the hardware is configured for CAN-FD all frames will be interpreted as FD regardless of the FD frame bit (r0 bit).
  - Vector Devices are supported through the Vector XL Driver Library, and support can be enabled using the `vector-xl` feature. Make sure to distribute `vxlapi64.dll` alongside your application.
 
 
