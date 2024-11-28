@@ -1,0 +1,17 @@
+name: Windows
+
+on: [push, pull_request]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build
+        run: cargo build --verbose --features=all
+      - name: Run tests
+        run: cargo test --features=all --verbose
