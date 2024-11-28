@@ -12,4 +12,4 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Build
-        run: cargo build --verbose --features=vector-xl
+        run: cargo build --verbose --features=all
