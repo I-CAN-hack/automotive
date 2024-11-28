@@ -20,4 +20,4 @@ jobs:
       - name: Build
         run: cargo build --verbose --features=all
       - name: Run tests
-        run: cargo test --features=test-vcan --verbose
+        run: cargo test --features=test-vcan,all --verbose
