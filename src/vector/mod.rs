@@ -17,8 +17,8 @@ use tracing::info;
 const CONFIG_500K_2M_80: XLcanFdConf = XLcanFdConf {
     arbitrationBitRate: 500_000,
     sjwAbr: 1,
-    tseg1Abr: 25,
-    tseg2Abr: 6,
+    tseg1Abr: 15,
+    tseg2Abr: 4,
     dataBitRate: 2_000_000,
     sjwDbr: 1,
     tseg1Dbr: 31,
