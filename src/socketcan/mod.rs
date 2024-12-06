@@ -127,7 +127,7 @@ impl CanAdapter for SocketCan {
     fn config_timing(
         &mut self,
         _bus: usize,
-        _config: &crate::can::timing::TimingConfig,
+        _config: &crate::can::TimingConfig,
     ) -> crate::Result<()> {
         warn!("Ignoring timing config. Set using ip link");
         // TODO: Report error instead?

@@ -7,10 +7,10 @@ mod usb_protocol;
 pub use error::Error;
 use std::collections::VecDeque;
 
-use crate::can::timing::TimingConfig;
 use crate::can::AsyncCanAdapter;
 use crate::can::CanAdapter;
 use crate::can::Frame;
+use crate::can::TimingConfig;
 use crate::panda::constants::{Endpoint, HwType, SafetyModel, FD_PANDAS};
 use crate::Result;
 use tracing::{info, warn};
