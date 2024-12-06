@@ -9,10 +9,25 @@ pub use error::Error;
 use std::collections::VecDeque;
 
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
-use crate::vector::types::{PortHandle, XLaccess, XLcanTxEvent};
+use crate::vector::types::{PortHandle, XLaccess, XLcanFdConf, XLcanTxEvent};
 use crate::vector::vxlapi::*;
 use crate::Result;
 use tracing::info;
+
+const CONFIG_500K_2M_80: XLcanFdConf = XLcanFdConf {
+    arbitrationBitRate: 500_000,
+    sjwAbr: 1,
+    tseg1Abr: 15,
+    tseg2Abr: 4,
+    dataBitRate: 2_000_000,
+    sjwDbr: 1,
+    tseg1Dbr: 31,
+    tseg2Dbr: 8,
+    reserved: 0,
+    options: 0,
+    reserved1: [0, 0],
+    reserved2: 0,
+};
 
 #[derive(Clone)]
 pub struct VectorCan {
@@ -41,6 +56,9 @@ impl VectorCan {
 
         let channel_mask = xl_get_channel_mask(&config)?;
         let port_handle = xl_open_port("automotive", channel_mask)?;
+
+        // Configure bitrate
+        xl_can_fd_set_configuration(&port_handle, channel_mask, &CONFIG_500K_2M_80)?;
 
         xl_activate_channel(&port_handle, channel_mask)?;
         info!("Connected to Vector Device. HW: {:?}", config.hw_type);

@@ -1,7 +1,9 @@
 use strum_macros::FromRepr;
 
 use crate::vector::bindings as xl;
-pub use crate::vector::bindings::{XLaccess, XLcanRxEvent, XLcanTxEvent, XLportHandle};
+pub use crate::vector::bindings::{
+    XLaccess, XLcanFdConf, XLcanRxEvent, XLcanTxEvent, XLportHandle,
+};
 
 pub static DLC_TO_LEN: &[usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64];
 pub static LEN_TO_DLC: &[u8] = &[

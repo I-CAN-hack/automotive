@@ -1,7 +1,7 @@
 use crate::vector::bindings as xl;
 use crate::vector::error::Error;
 use crate::vector::types::{
-    ChannelConfig, HwType, PortHandle, XLaccess, XLcanRxEvent, XLcanTxEvent,
+    ChannelConfig, HwType, PortHandle, XLaccess, XLcanFdConf, XLcanRxEvent, XLcanTxEvent,
 };
 use crate::Result;
 
@@ -103,7 +103,7 @@ pub fn xl_get_channel_mask(app_config: &ChannelConfig) -> Result<XLaccess> {
 pub fn xl_open_port(user_name: &str, access_mask: XLaccess) -> Result<PortHandle> {
     unsafe {
         let mut port_handle = std::mem::zeroed();
-        let mut permission_mask = std::mem::zeroed();
+        let mut permission_mask = access_mask; // Request init access so we can change bitrate
 
         let status = xl::xlOpenPort(
             &mut port_handle,
@@ -155,6 +155,24 @@ pub fn xl_deactivate_channel(port_handle: &PortHandle, access_mask: XLaccess) ->
             xl::XL_SUCCESS => Ok(()),
             _ => Err(
                 Error::DriverError(format!("xlDeactivateChannel failed, err {}", status)).into(),
+            ),
+        }
+    }
+}
+
+pub fn xl_can_fd_set_configuration(
+    port_handle: &PortHandle,
+    access_mask: XLaccess,
+    config: &XLcanFdConf,
+) -> Result<()> {
+    unsafe {
+        let mut config = config.clone();
+        let status = xl::xlCanFdSetConfiguration(port_handle.port_handle, access_mask, &mut config);
+        match status as u32 {
+            xl::XL_SUCCESS => Ok(()),
+            _ => Err(
+                Error::DriverError(format!("xlCanFdSetConfiguration failed, err {}", status))
+                    .into(),
             ),
         }
     }
