@@ -91,4 +91,13 @@ impl CanAdapter for VectorCan {
 
         Ok(frames)
     }
+
+    fn config_timing(
+        &mut self,
+        _bus: usize,
+        _config: &crate::can::timing::TimingConfig,
+    ) -> crate::Result<()> {
+        todo!("No yet implemented");
+        Ok(())
+    }
 }

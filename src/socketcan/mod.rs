@@ -1,4 +1,6 @@
 //! This module provides a [`CanAdapter`] implementation for SocketCAN interfaces
+use tracing::warn;
+
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
 use crate::socketcan::socket::CanFdSocket;
 use crate::Result;
@@ -120,5 +122,15 @@ impl CanAdapter for SocketCan {
         frames.extend(self.loopback_queue.drain(..));
 
         Ok(frames)
+    }
+
+    fn config_timing(
+        &mut self,
+        _bus: usize,
+        _config: &crate::can::timing::TimingConfig,
+    ) -> crate::Result<()> {
+        warn!("Ignoring timing config. Set using ip link");
+        // TODO: Report error instead?
+        Ok(())
     }
 }

@@ -2,6 +2,7 @@
 
 pub mod adapter;
 pub mod async_can;
+pub mod timing;
 
 use std::collections::VecDeque;
 use std::fmt;
@@ -127,6 +128,11 @@ impl fmt::Debug for Frame {
 pub trait CanAdapter {
     fn send(&mut self, frames: &mut VecDeque<crate::can::Frame>) -> crate::Result<()>;
     fn recv(&mut self) -> crate::Result<Vec<Frame>>;
+    fn config_timing(
+        &mut self,
+        bus: usize,
+        config: &crate::can::timing::TimingConfig,
+    ) -> crate::Result<()>;
 }
 
 #[cfg(test)]

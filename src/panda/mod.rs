@@ -7,10 +7,11 @@ mod usb_protocol;
 pub use error::Error;
 use std::collections::VecDeque;
 
+use crate::can::timing::TimingConfig;
 use crate::can::AsyncCanAdapter;
 use crate::can::CanAdapter;
 use crate::can::Frame;
-use crate::panda::constants::{Endpoint, HwType, SafetyModel};
+use crate::panda::constants::{Endpoint, HwType, SafetyModel, FD_PANDAS};
 use crate::Result;
 use tracing::{info, warn};
 
@@ -19,6 +20,7 @@ const PRODUCT_ID: u16 = 0xddcc;
 const EXPECTED_CAN_PACKET_VERSION: u8 = 4;
 const MAX_BULK_SIZE: usize = 16384;
 const PANDA_BUS_CNT: usize = 3;
+const PANDA_DEFAULT_SAMPLE_POINT: f32 = 0.8; // SAE J2284-4 and SAE J2284-5
 
 /// Blocking implementation of the panda CAN adapter
 pub struct Panda {
@@ -55,7 +57,7 @@ impl Panda {
                 continue;
             }
 
-            let panda = Panda {
+            let mut panda = Panda {
                 dat: vec![],
                 handle: device.open()?,
                 timeout: std::time::Duration::from_millis(100),
@@ -74,8 +76,11 @@ impl Panda {
             panda.set_heartbeat_disabled()?;
             panda.can_reset_communications()?;
 
+            let config = TimingConfig::default();
+
             for i in 0..PANDA_BUS_CNT {
                 panda.set_canfd_auto(i, false)?;
+                panda.config_timing(i, &config)?;
             }
 
             // can_reset_communications() doesn't work properly, flush manually
@@ -123,6 +128,19 @@ impl Panda {
             return Err(crate::Error::NotSupported);
         }
         self.usb_write_control(Endpoint::CanFDAuto, bus as u16, auto as u16)
+    }
+
+    fn set_can_speed_kbps(&self, bus: usize, speed_kbps: u32) -> Result<()> {
+        self.usb_write_control(Endpoint::CanSpeed, bus as u16, (speed_kbps * 10) as u16)
+    }
+
+    fn set_can_data_speed_kbps(&self, bus: usize, speed_kbps: u32) -> Result<()> {
+        self.usb_write_control(Endpoint::CanDataSpeed, bus as u16, (speed_kbps * 10) as u16)
+    }
+
+    fn supports_fd(&self) -> Result<bool> {
+        let hw_type = self.get_hw_type()?;
+        Ok(FD_PANDAS.contains(&hw_type))
     }
 
     /// Get the hardware type of the panda. Usefull to detect if it supports CAN-FD.
@@ -216,5 +234,25 @@ impl CanAdapter for Panda {
                 Ok(vec![])
             }
         }
+    }
+
+    fn config_timing(&mut self, bus: usize, config: &TimingConfig) -> Result<()> {
+        self.set_can_speed_kbps(bus, config.classic.bitrate / 1000)?;
+        if config.classic.sample_point != PANDA_DEFAULT_SAMPLE_POINT {
+            warn!("Setting sample point is not supported on Panda, ignoring");
+        }
+
+        if let Some(fd) = &config.fd {
+            if !self.supports_fd()? {
+                warn!("CAN-FD not supported by adapter");
+            } else {
+                self.set_can_data_speed_kbps(bus, fd.bitrate / 1000)?;
+                if fd.sample_point != PANDA_DEFAULT_SAMPLE_POINT {
+                    warn!("Setting sample point is not supported on Panda, ignoring");
+                }
+            }
+        }
+
+        Ok(())
     }
 }
