@@ -71,10 +71,10 @@ impl VectorCan {
         // let config = xl_get_application_config("CANalyzer", 0)?;
 
         let channel_mask = xl_get_channel_mask(&config)?;
-        let port_handle = xl_open_port("automotive", channel_mask)?;
+        let port_handle = xl_open_port("automotive", channel_mask, false)?;
 
         // Configure bitrate
-        xl_can_fd_set_configuration(&port_handle, channel_mask, &CONFIG_500K_1M_75)?;
+        // xl_can_fd_set_configuration(&port_handle, channel_mask, &CONFIG_500K_1M_75)?;
 
         xl_activate_channel(&port_handle, channel_mask)?;
         info!("Connected to Vector Device. HW: {:?}", config.hw_type);
