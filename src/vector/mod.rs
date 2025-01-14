@@ -29,6 +29,21 @@ const CONFIG_500K_2M_80: XLcanFdConf = XLcanFdConf {
     reserved2: 0,
 };
 
+const CONFIG_500K_1M_75: XLcanFdConf = XLcanFdConf {
+    arbitrationBitRate: 500_000,
+    sjwAbr: 2,
+    tseg1Abr: 5,
+    tseg2Abr: 2,
+    dataBitRate: 1_000_000,
+    sjwDbr: 20,
+    tseg1Dbr: 59,
+    tseg2Dbr: 20,
+    reserved: 0,
+    options: 0,
+    reserved1: [0, 0],
+    reserved2: 0,
+};
+
 #[derive(Clone)]
 pub struct VectorCan {
     port_handle: PortHandle,
@@ -45,6 +60,7 @@ impl VectorCan {
     /// Create a new Vector Adapter based on the global channel ID
     pub fn new(channel_idx: usize) -> Result<VectorCan> {
         xl_open_driver()?;
+        let channel_idx = 1;
 
         // Get config based on global channel number
         let config = xl_get_driver_config(channel_idx)?;
@@ -58,7 +74,7 @@ impl VectorCan {
         let port_handle = xl_open_port("automotive", channel_mask)?;
 
         // Configure bitrate
-        xl_can_fd_set_configuration(&port_handle, channel_mask, &CONFIG_500K_2M_80)?;
+        xl_can_fd_set_configuration(&port_handle, channel_mask, &CONFIG_500K_1M_75)?;
 
         xl_activate_channel(&port_handle, channel_mask)?;
         info!("Connected to Vector Device. HW: {:?}", config.hw_type);

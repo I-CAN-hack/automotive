@@ -157,7 +157,8 @@ impl TryFrom<XLcanRxEvent> for crate::can::Frame {
                 let fd = frame.msgFlags & xl::XL_CAN_RXMSG_FLAG_EDL != 0;
 
                 Ok(Self {
-                    bus: event.channelIndex as u8, // TODO: perform proper mapping based on xlGetChannelIndex,
+                    //bus: event.channelIndex as u8, // TODO: perform proper mapping based on xlGetChannelIndex,
+                    bus: 0, // TODO: perform proper mapping based on xlGetChannelIndex,
                     id,
                     data: frame.data[..len].into(),
                     loopback,
