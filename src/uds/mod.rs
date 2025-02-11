@@ -59,11 +59,21 @@ impl<'a> UDSClient<'a> {
         loop {
             let response = stream.next().await.unwrap()?;
 
+            // Ensure we got a reply at all
+            if response.is_empty() {
+                return Err(Error::InvalidResponseLength.into());
+            }
+
             // Check for errors
             let response_sid = response[0];
             if response_sid == NEGATIVE_RESPONSE {
-                let code: NegativeResponseCode = response[2].into();
+                // Negative response consists of [0x7F, SID, Error]
+                // According to ISO 14229-1, there can be no extra data after the response code but we will accept this
+                if response.len() <= 2 {
+                    return Err(Error::InvalidResponseLength.into());
+                }
 
+                let code: NegativeResponseCode = response[2].into();
                 if code == NegativeResponseCode::RequestCorrectlyReceivedResponsePending {
                     info!("Received Response Pending");
                     continue;
@@ -79,6 +89,11 @@ impl<'a> UDSClient<'a> {
 
             // Check sub function
             if let Some(sub_function) = sub_function {
+                // Ensure we also have a subfunction in the response
+                if response.len() <= 1 {
+                    return Err(Error::InvalidResponseLength.into());
+                }
+
                 if response[1] != sub_function {
                     return Err(Error::InvalidSubFunction(response[1]).into());
                 }
