@@ -2,12 +2,14 @@
 
 pub mod adapter;
 pub mod async_can;
+pub mod timing;
 
 use std::collections::VecDeque;
 use std::fmt;
 
 pub use adapter::get_adapter;
 pub use async_can::AsyncCanAdapter;
+pub use timing::{BitTiming, TimingConfig};
 
 pub static DLC_TO_LEN: &[usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64];
 
@@ -127,6 +129,11 @@ impl fmt::Debug for Frame {
 pub trait CanAdapter {
     fn send(&mut self, frames: &mut VecDeque<crate::can::Frame>) -> crate::Result<()>;
     fn recv(&mut self) -> crate::Result<Vec<Frame>>;
+    fn config_timing(
+        &mut self,
+        bus: usize,
+        config: &crate::can::timing::TimingConfig,
+    ) -> crate::Result<()>;
 }
 
 #[cfg(test)]

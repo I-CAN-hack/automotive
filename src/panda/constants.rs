@@ -21,6 +21,8 @@ pub enum Endpoint {
     CanWrite = 0x3,
     HwType = 0xc1,
     SafetyModel = 0xdc,
+    CanSpeed = 0xde,
+    CanDataSpeed = 0xf9,
     CanResetCommunications = 0xc0,
     CanRead = 0x81,
     PacketsVersions = 0xdd,
@@ -35,3 +37,10 @@ pub enum SafetyModel {
     Silent = 0,
     AllOutput = 17,
 }
+
+pub const FD_PANDAS: [HwType; 4] = [
+    HwType::RedPanda,
+    HwType::RedPandaV2,
+    HwType::Tres,
+    HwType::Quatro,
+];
