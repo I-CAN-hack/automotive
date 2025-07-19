@@ -30,8 +30,9 @@ The automotive crate also supplies interfaces for various diagnostic protocols s
 ```rust
  async fn uds_example() -> automotive::Result<()> {
     let adapter = automotive::can::get_adapter()?;
-    let isotp = automotive::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
-    let uds = automotive::uds::UDSClient::new(&isotp);
+
+    let config = automotive::isotp::IsoTPConfig::default().tx(0x7a1.into());
+    let isotp = automotive::isotp::IsoTPAdapter::new(&adapter, config);
 
     uds.tester_present().await.unwrap();
     let response = uds.read_data_by_identifier(automotive::uds::DataIdentifier::ApplicationSoftwareIdentification as u16).await?;
