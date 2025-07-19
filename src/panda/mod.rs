@@ -14,8 +14,8 @@ use crate::panda::constants::{Endpoint, HwType, SafetyModel};
 use crate::Result;
 use tracing::{info, warn};
 
-const VENDOR_ID: u16 = 0xbbaa;
-const PRODUCT_ID: u16 = 0xddcc;
+const USB_VIDS: &[u16] = &[0xbbaa, 0x3801];
+const USB_PIDS: &[u16] = &[0xddee, 0xddcc];
 const EXPECTED_CAN_PACKET_VERSION: u8 = 4;
 const MAX_BULK_SIZE: usize = 16384;
 const PANDA_BUS_CNT: usize = 3;
@@ -48,10 +48,10 @@ impl Panda {
         for device in rusb::devices().unwrap().iter() {
             let device_desc = device.device_descriptor().unwrap();
 
-            if device_desc.vendor_id() != VENDOR_ID {
+            if !USB_VIDS.contains(&device_desc.vendor_id()) {
                 continue;
             }
-            if device_desc.product_id() != PRODUCT_ID {
+            if !USB_PIDS.contains(&device_desc.product_id()) {
                 continue;
             }
 
