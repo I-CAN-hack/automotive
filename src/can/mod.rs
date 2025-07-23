@@ -1,6 +1,7 @@
 //! Generic CAN types and traits
 
 pub mod adapter;
+pub mod adapter_config;
 pub mod async_can;
 
 use std::collections::VecDeque;
