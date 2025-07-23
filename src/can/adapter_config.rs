@@ -1,5 +1,5 @@
 pub enum AdapterConfig {
-    /// Best effort adapter configuration. Will choose the first available adapter, and will apply the configuration
+    /// Best effort adapter configuration. Will choose the first available adapter, and apply the configuration
     Any(GenericConfig),
 
     /// SocketCAN adapter configuration.
@@ -24,14 +24,17 @@ pub enum VectorChannel {
 }
 
 pub enum VectorConfig {
-    /// Open channel without requesting init access. This allows for piggy-backing on the bus without forcing configuration, e.g. for simultaneous use with CANoe.
+    /// Open channel without requesting init access (non-exclusive mode).
+    /// This allows for piggy-backing on the bus without forcing configuration, e.g. for simultaneous use with CANoe.
     NonInitAccess,
-    /// Open channel with requesting init access. This allows us to configre the channel and set the bitrate.
+    /// Open channel while requesting init access. This allows us to configure the channel and set the bitrate.
+    /// Other applications might still be able to use the channel in NonInitAccess mode.
     InitAccess(GenericConfig),
 }
 
 pub struct GenericConfig {
     pub classic: TimingConfig,
+    /// If None, FD support will be disabled.
     pub fd: Option<TimingConfig>,
 }
 
