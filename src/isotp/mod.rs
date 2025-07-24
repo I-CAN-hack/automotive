@@ -26,6 +26,7 @@ use crate::Result;
 use crate::{Stream, StreamExt, Timeout};
 use async_stream::stream;
 use tracing::debug;
+use tokio_hrtime;
 
 use self::types::FlowControlConfig;
 
@@ -345,7 +346,7 @@ impl<'a> IsoTPAdapter<'a> {
                 // Sleep for separation time between frames
                 let last = it.peek().is_none();
                 if !last {
-                    tokio::time::sleep(st_min).await;
+                    tokio_hrtime::sleep(st_min).await;
                 }
             }
         }
