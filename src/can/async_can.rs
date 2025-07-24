@@ -85,6 +85,7 @@ fn process<T: CanAdapter>(
                 );
             }
         }
+        std::thread::yield_now();
     }
 }
 
