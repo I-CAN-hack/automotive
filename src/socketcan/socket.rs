@@ -42,7 +42,7 @@ impl CanFdSocket {
         // Convert into sockaddr_storage
         let bytes = as_bytes(&addr);
         let len = bytes.len();
-        let mut storage: libc::sockaddr_storage = unsafe { std::mem::zeroed() };
+        let mut storage = socket2::SockAddrStorage::zeroed();
         as_bytes_mut(&mut storage)[..len].copy_from_slice(bytes);
         let sock_addr = unsafe { socket2::SockAddr::new(storage, len as socklen_t) };
 
