@@ -17,6 +17,8 @@ jobs:
           pip install --user scapy
           scripts/build_can_isotp.sh
           scripts/set_up_vcan.sh
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
       - name: Build
         run: cargo build --verbose --features=all
       - name: Run tests
