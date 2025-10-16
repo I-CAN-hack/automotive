@@ -61,7 +61,7 @@ impl VectorCan {
     /// Create a new Vector Adapter based on the global channel ID
     pub fn new(channel_idx: usize, conf: &XLcanFdConf) -> Result<VectorCan> {
         xl_open_driver()?;
-        let channel_idx = 1;
+        let channel_idx = 4;
 
         // Get config based on global channel number
         let config = xl_get_driver_config(channel_idx)?;
