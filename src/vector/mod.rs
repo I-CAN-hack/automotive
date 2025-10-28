@@ -14,7 +14,7 @@ use crate::vector::vxlapi::*;
 use crate::Result;
 use tracing::info;
 
-const CONFIG_500K_2M_80: XLcanFdConf = XLcanFdConf {
+pub const CONFIG_500K_2M_80: XLcanFdConf = XLcanFdConf {
     arbitrationBitRate: 500_000,
     sjwAbr: 1,
     tseg1Abr: 15,
@@ -37,13 +37,13 @@ pub struct VectorCan {
 
 impl VectorCan {
     /// Convenience function to create a new adapter and wrap in an [`AsyncCanAdapter`]
-    pub fn new_async(channel_idx: usize) -> Result<AsyncCanAdapter> {
-        let vector = VectorCan::new(channel_idx)?;
+    pub fn new_async(channel_idx: usize, config: &XLcanFdConf) -> Result<AsyncCanAdapter> {
+        let vector = VectorCan::new(channel_idx, config)?;
         Ok(AsyncCanAdapter::new(vector))
     }
 
     /// Create a new Vector Adapter based on the global channel ID
-    pub fn new(channel_idx: usize) -> Result<VectorCan> {
+    pub fn new(channel_idx: usize, conf: &XLcanFdConf) -> Result<VectorCan> {
         xl_open_driver()?;
 
         // Get config based on global channel number
@@ -58,7 +58,7 @@ impl VectorCan {
         let port_handle = xl_open_port("automotive", channel_mask)?;
 
         // Configure bitrate
-        xl_can_fd_set_configuration(&port_handle, channel_mask, &CONFIG_500K_2M_80)?;
+        xl_can_fd_set_configuration(&port_handle, channel_mask, conf)?;
 
         xl_activate_channel(&port_handle, channel_mask)?;
         info!("Connected to Vector Device. HW: {:?}", config.hw_type);
