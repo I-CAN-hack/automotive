@@ -9,7 +9,8 @@ pub use error::Error;
 use std::collections::VecDeque;
 
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
-use crate::vector::types::{PortHandle, XLaccess, XLcanFdConf, XLcanTxEvent};
+pub use crate::vector::types::XLcanFdConf;
+use crate::vector::types::{PortHandle, XLaccess, XLcanTxEvent};
 use crate::vector::vxlapi::*;
 use crate::Result;
 use tracing::info;
