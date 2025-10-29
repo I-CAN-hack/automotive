@@ -6,6 +6,7 @@ use automotive::uds::Error as UDSError;
 use automotive::uds::NegativeResponseCode;
 use automotive::uds::UDSClient;
 use automotive::StreamExt;
+use automotive::Error;
 use std::process::{Child, Command};
 
 static VECU_STARTUP_TIMEOUT_MS: u64 = 10000;
@@ -50,5 +51,5 @@ async fn uds_test_sids() {
     let resp = uds.diagnostic_session_control(0x2).await;
     let security_access_denied =
         UDSError::NegativeResponse(NegativeResponseCode::SecurityAccessDenied);
-    assert_eq!(resp, Err(security_access_denied.into()));
+    assert!(matches!(resp, Err(Error::UDSError(e)) if e == security_access_denied));
 }

@@ -5,3 +5,6 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 include!(concat!(env!("OUT_DIR"), "/vxlapi_bindings.rs"));
+
+unsafe impl Sync for Xl {}
+unsafe impl Send for Xl {}

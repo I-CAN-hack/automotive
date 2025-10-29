@@ -208,7 +208,7 @@ mod tests {
             fd: false,
         }];
         let r = pack_can_buffer(&frames);
-        assert_eq!(r, Err(Error::MalformedFrame));
+        assert!(matches!(r, Err(Error::MalformedFrame)));
     }
 
     #[test]
@@ -221,6 +221,6 @@ mod tests {
             fd: false,
         }];
         let r = pack_can_buffer(&frames);
-        assert_eq!(r, Err(Error::MalformedFrame));
+        assert!(matches!(r, Err(Error::MalformedFrame)));
     }
 }
