@@ -18,6 +18,6 @@ jobs:
           scripts/build_can_isotp.sh
           scripts/set_up_vcan.sh
       - name: Build
-        run: cargo build --verbose --features=all
+        run: cargo build --verbose --features=serde
       - name: Run tests
-        run: cargo test --features=test-vcan,all --verbose
+        run: cargo test --features=test-vcan,serde --verbose

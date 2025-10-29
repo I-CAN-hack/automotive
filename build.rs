@@ -1,4 +1,4 @@
-#[cfg(all(target_os = "windows", feature = "vector-xl"))]
+#[cfg(feature = "vector-xl")]
 fn build_vxlapi() {
     use std::env;
     use std::path::{Path, PathBuf};
@@ -31,6 +31,6 @@ fn build_vxlapi() {
 }
 
 fn main() {
-    #[cfg(all(target_os = "windows", feature = "vector-xl"))]
+    #[cfg(feature = "vector-xl")]
     build_vxlapi();
 }
