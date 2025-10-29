@@ -100,10 +100,13 @@ pub fn xl_get_channel_mask(app_config: &ChannelConfig) -> Result<XLaccess> {
     }
 }
 
-pub fn xl_open_port(user_name: &str, access_mask: XLaccess) -> Result<PortHandle> {
+pub fn xl_open_port(user_name: &str, access_mask: XLaccess, init: bool) -> Result<PortHandle> {
     unsafe {
         let mut port_handle = std::mem::zeroed();
-        let mut permission_mask = access_mask; // Request init access so we can change bitrate
+        let mut permission_mask = std::mem::zeroed();
+        if init {
+            permission_mask = access_mask; // Request init access so we can change bitrate
+        }
 
         let status = xl::xlOpenPort(
             &mut port_handle,

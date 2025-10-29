@@ -38,13 +38,13 @@ pub struct VectorCan {
 
 impl VectorCan {
     /// Convenience function to create a new adapter and wrap in an [`AsyncCanAdapter`]
-    pub fn new_async(channel_idx: usize, config: &XLcanFdConf) -> Result<AsyncCanAdapter> {
-        let vector = VectorCan::new(channel_idx, config)?;
+    pub fn new_async(channel_idx: usize, conf: &Option<XLcanFdConf>) -> Result<AsyncCanAdapter> {
+        let vector = VectorCan::new(channel_idx, conf)?;
         Ok(AsyncCanAdapter::new(vector))
     }
 
     /// Create a new Vector Adapter based on the global channel ID
-    pub fn new(channel_idx: usize, conf: &XLcanFdConf) -> Result<VectorCan> {
+    pub fn new(channel_idx: usize, conf: &Option<XLcanFdConf>) -> Result<VectorCan> {
         xl_open_driver()?;
 
         // Get config based on global channel number
@@ -56,10 +56,13 @@ impl VectorCan {
         // let config = xl_get_application_config("CANalyzer", 0)?;
 
         let channel_mask = xl_get_channel_mask(&config)?;
-        let port_handle = xl_open_port("automotive", channel_mask)?;
+        let init_access = conf.is_some();
+        let port_handle = xl_open_port("automotive", channel_mask, init_access)?;
 
         // Configure bitrate
-        xl_can_fd_set_configuration(&port_handle, channel_mask, conf)?;
+        if let Some(conf) = conf {
+            xl_can_fd_set_configuration(&port_handle, channel_mask, conf)?;
+        }
 
         xl_activate_channel(&port_handle, channel_mask)?;
         info!("Connected to Vector Device. HW: {:?}", config.hw_type);
