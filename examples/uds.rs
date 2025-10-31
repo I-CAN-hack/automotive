@@ -6,7 +6,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     let adapter = automotive::can::get_adapter()?;
-    let isotp = automotive::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
+    let config =
+        automotive::isotp::IsoTPConfig::default().tx(automotive::can::Identifier::Standard(0x7a1));
+    let isotp = automotive::isotp::IsoTPAdapter::new(&adapter, config);
     let uds = automotive::uds::UDSClient::new(&isotp);
 
     uds.tester_present().await?;

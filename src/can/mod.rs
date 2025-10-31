@@ -19,6 +19,12 @@ pub enum Identifier {
     Extended(u32),
 }
 
+impl Default for Identifier {
+    fn default() -> Self {
+        Identifier::Standard(0)
+    }
+}
+
 impl Identifier {
     pub fn is_standard(&self) -> bool {
         match self {
