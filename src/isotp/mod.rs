@@ -1,10 +1,11 @@
 //! ISO Transport Protocol (ISO-TP) implementation, implements ISO 15765-2
 //! ## Example:
 //! ```rust
-//! use automotive::StreamExt;
+//! # use embedded_can::{Id, StandardId};
+//! # use automotive::StreamExt;
 //! async fn isotp_example() {
 //!    let adapter = automotive::can::get_adapter().unwrap();
-//!    let config = automotive::isotp::IsoTPConfig::new(0, automotive::can::Identifier::Standard(0x7a1));
+//!    let config = automotive::isotp::IsoTPConfig::new(0, Id::Standard(StandardId::new(0x7a1).unwrap()));
 //!    let isotp = automotive::isotp::IsoTPAdapter::new(&adapter, config);
 //!
 //!    let mut stream = isotp.recv(); // Create receiver before sending request
@@ -18,10 +19,11 @@ mod error;
 mod types;
 
 pub use constants::{FlowStatus, FrameType, FLOW_SATUS_MASK, FRAME_TYPE_MASK};
+use embedded_can::{ExtendedId, Id, StandardId};
 pub use error::Error;
 
 use crate::can::AsyncCanAdapter;
-use crate::can::{Frame, Identifier, DLC_TO_LEN};
+use crate::can::{Frame, DLC_TO_LEN};
 use crate::Result;
 use crate::{Stream, StreamExt, Timeout};
 use async_stream::stream;
@@ -43,13 +45,14 @@ const ISO_TP_FD_MAX_DLEN: usize = (1 << 32) - 1;
 
 /// Configuring passed to the IsoTPAdapter.
 #[derive(Debug, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IsoTPConfig {
     pub bus: u8,
     /// Transmit ID
-    pub tx_id: Identifier,
+    pub tx_id: Id,
     /// Receive ID
-    pub rx_id: Identifier,
+    ///
+    /// This may be an invalid `Id`
+    rx_id: Id,
     /// Padding byte (0x00, or more efficient 0xAA). Set to None to disable padding.
     pub padding: Option<u8>,
     /// Max timeout for receiving a frame
@@ -65,31 +68,31 @@ pub struct IsoTPConfig {
 }
 
 impl IsoTPConfig {
-    pub fn new(bus: u8, id: Identifier) -> Self {
+    pub fn new(bus: u8, id: Id) -> Self {
         let tx_id = id;
         let rx_id = match id {
-            Identifier::Standard(id) => Identifier::Standard(id + 8),
-            Identifier::Extended(id) => {
-                let bytes = id.to_be_bytes();
+            Id::Standard(id) => unsafe { StandardId::new_unchecked(id.as_raw() + 8) }.into(),
+            Id::Extended(id) => {
+                let bytes = id.as_raw().to_be_bytes();
                 let id = u32::from_be_bytes([bytes[0], bytes[1], bytes[3], bytes[2]]); // Swap last two bytes
-                Identifier::Extended(id)
+                unsafe { ExtendedId::new_unchecked(id) }.into()
             }
         };
 
         Self::new_from_tx_rx(bus, tx_id, rx_id)
     }
 
-    pub fn new_from_offset(bus: u8, id: Identifier, offset: u32) -> Self {
+    pub fn new_from_offset(bus: u8, id: Id, offset: u16) -> Self {
         let tx_id = id;
         let rx_id = match id {
-            Identifier::Standard(id) => Identifier::Standard(id + offset),
-            Identifier::Extended(_) => panic!("Extended IDs do not support offset"),
+            Id::Standard(id) => unsafe { StandardId::new_unchecked(id.as_raw() + offset) }.into(),
+            Id::Extended(_) => panic!("Extended IDs do not support offset"),
         };
 
         Self::new_from_tx_rx(bus, tx_id, rx_id)
     }
 
-    pub fn new_from_tx_rx(bus: u8, tx_id: Identifier, rx_id: Identifier) -> Self {
+    pub fn new_from_tx_rx(bus: u8, tx_id: Id, rx_id: Id) -> Self {
         Self {
             bus,
             tx_id,
@@ -102,6 +105,15 @@ impl IsoTPConfig {
             max_dlen: None,
         }
     }
+
+    /// Receive ID
+    ///
+    /// # Safety
+    ///
+    /// The returned Id may be invalid
+    pub unsafe fn rx_id(&self) -> Id {
+        self.rx_id
+    }
 }
 
 /// Wraps a CAN adapter to provide a simple interface for sending and receiving ISO-TP frames. CAN-FD ISO-TP is currently not supported.
@@ -112,9 +124,14 @@ pub struct IsoTPAdapter<'a> {
 
 impl<'a> IsoTPAdapter<'a> {
     /// Convenience method for creating a new IsoTPAdapter from a CAN adapter and an Arbitration ID.
-    pub fn from_id(adapter: &'a AsyncCanAdapter, id: u32) -> Self {
-        let config = IsoTPConfig::new(0, id.into());
-        Self::new(adapter, config)
+    pub fn from_id(adapter: &'a AsyncCanAdapter, id: u32) -> Result<Self>  {
+        let id = if id <= StandardId::MAX.as_raw().into() {
+            StandardId::new(id as u16).ok_or(crate::Error::InvalidId)?.into()
+        } else {
+            ExtendedId::new(id).ok_or(crate::Error::InvalidId)?.into()
+        };
+        let config = IsoTPConfig::new(0, id);
+        Ok(Self::new(adapter, config))
     }
 
     /// Create a new IsoTPAdapter from a CAN adapter and a configuration.

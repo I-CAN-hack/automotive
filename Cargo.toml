@@ -11,10 +11,9 @@ repository = "https://github.com/I-CAN-hack/automotive"
 
 [features]
 default = ["default-adapters"]
-all = ["all-adapters", "serde"]
+all = ["all-adapters"]
 default-adapters = ["panda", "socketcan"]
 all-adapters = ["default-adapters", "vector-xl"]
-serde = ["dep:serde"]
 
 # adapters
 vector-xl = ["dep:bindgen"]
@@ -30,9 +29,9 @@ test-vcan = ["socketcan"]
 [dependencies]
 async-stream = "0.3.5"
 bstr = "1.9.0"
+embedded-can = "0.4"
 hex = "0.4"
 rusb = "0.9"
-serde = { version = "1.0.197", features = ["derive"], optional = true }
 strum = "0.26"
 strum_macros = "0.26"
 thiserror = "1.0.58"

@@ -8,17 +8,16 @@
 //! The following adapter opens the first available adapter on the system, and then receives all frames. Note how the sent frame is awaited, which waits until the message is ACKed on the CAN bus.
 //!
 //! ```rust
-//! use automotive::StreamExt;
+//! # use automotive::StreamExt;
 //! async fn can_example() -> automotive::Result<()> {
 //!     let adapter = automotive::can::get_adapter()?;
 //!     let mut stream = adapter.recv();
 //!
-//!     let frame = automotive::can::Frame::new(0, 0x541.into(), &[0xff; 8])?;
+//!     let frame = automotive::can::Frame::new(0, embedded_can::StandardId::new(0x541).unwrap().into(), &[0xff; 8])?;
 //!     adapter.send(&frame).await;
 //!
 //!     while let Some(frame) = stream.next().await {
-//!         let id: u32 = frame.id.into();
-//!         println!("[{}]\t0x{:x}\t{}", frame.bus, id, hex::encode(frame.data));
+//!         println!("[{}]\t0x{:?}\t{}", frame.bus, frame.id, hex::encode(frame.data));
 //!     }
 //!     Ok(())
 //! }
@@ -30,7 +29,7 @@
 //! ```rust
 //!  async fn uds_example() -> automotive::Result<()> {
 //!     let adapter = automotive::can::get_adapter()?;
-//!     let isotp = automotive::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
+//!     let isotp = automotive::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1)?;
 //!     let uds = automotive::uds::UDSClient::new(&isotp);
 //!
 //!     uds.tester_present().await.unwrap();

@@ -9,7 +9,7 @@ use bstr::ByteSlice;
 use strum::IntoEnumIterator;
 
 async fn get_version(adapter: &AsyncCanAdapter, identifier: u32) -> Result<()> {
-    let isotp = IsoTPAdapter::from_id(adapter, identifier);
+    let isotp = IsoTPAdapter::from_id(adapter, identifier)?;
     let uds = UDSClient::new(&isotp);
 
     uds.tester_present().await?;

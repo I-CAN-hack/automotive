@@ -1,4 +1,6 @@
-use crate::can::{Frame, Identifier, DLC_TO_LEN};
+use embedded_can::{ExtendedId, Id, StandardId};
+
+use crate::can::{Frame, DLC_TO_LEN};
 use crate::error::Error;
 
 const CANPACKET_HEAD_SIZE: usize = 0x6;
@@ -33,17 +35,10 @@ pub fn pack_can_buffer(frames: &[Frame]) -> Result<Vec<Vec<u8>>, Error> {
     ret.push(vec![]);
 
     for frame in frames {
-        let extended: u32 = match frame.id {
-            Identifier::Standard(_) => 0,
-            Identifier::Extended(_) => 1,
+        let (extended, id) = match frame.id {
+            Id::Standard(id) => (0, id.as_raw().into()),
+            Id::Extended(id) => (1, id.as_raw()),
         };
-
-        let id: u32 = frame.id.into();
-
-        // Check if the id is valid
-        if id > 0x7ff && extended == 0 {
-            return Err(Error::MalformedFrame);
-        }
 
         let fd = frame.fd as u8;
 
@@ -90,14 +85,11 @@ pub fn unpack_can_buffer(dat: &mut Vec<u8>) -> Result<Vec<Frame>, Error> {
         let extended: bool = (dat[1] & 0b100) != 0;
         let returned: bool = (dat[1] & 0b010) != 0;
 
-        // Check if the id is valid
-        if id > 0x7ff && !extended {
-            return Err(Error::MalformedFrame);
-        }
-
         let id = match extended {
-            true => Identifier::Extended(id),
-            false => Identifier::Standard(id),
+            true => ExtendedId::new(id).ok_or(Error::InvalidId)?.into(),
+            false => StandardId::new(id.try_into().map_err(|_| Error::InvalidId)?)
+                .ok_or(Error::InvalidId)?
+                .into(),
         };
 
         // Check if we have enough data to unpack the whole frame
@@ -142,7 +134,7 @@ mod tests {
         assert_eq!(buffer.len(), 0);
 
         assert_eq!(frames.len(), 1);
-        assert_eq!(frames[0].id, Identifier::Standard(48));
+        assert_eq!(frames[0].id, StandardId::new(48).unwrap().into());
         assert_eq!(frames[0].bus, 0);
         assert_eq!(
             frames[0].data,
@@ -170,21 +162,21 @@ mod tests {
         let frames = vec![
             Frame {
                 bus: 0,
-                id: Identifier::Standard(0x123),
+                id: StandardId::new(0x123).unwrap().into(),
                 data: vec![1, 2, 3, 4, 5, 6, 7, 8],
                 loopback: false,
                 fd: false,
             },
             Frame {
                 bus: 1,
-                id: Identifier::Extended(0x123),
+                id: ExtendedId::new(0x123).unwrap().into(),
                 data: vec![1, 2, 3, 4],
                 loopback: false,
                 fd: false,
             },
             Frame {
                 bus: 1,
-                id: Identifier::Extended(0x123),
+                id: ExtendedId::new(0x123).unwrap().into(),
                 data: vec![1, 2, 3, 4],
                 loopback: false,
                 fd: true,
@@ -202,21 +194,8 @@ mod tests {
     fn test_round_malformed_dlc() {
         let frames = vec![Frame {
             bus: 0,
-            id: Identifier::Standard(0x123),
+            id: StandardId::new(0x123).unwrap().into(),
             data: vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
-            loopback: false,
-            fd: false,
-        }];
-        let r = pack_can_buffer(&frames);
-        assert_eq!(r, Err(Error::MalformedFrame));
-    }
-
-    #[test]
-    fn test_round_malformed_id() {
-        let frames = vec![Frame {
-            bus: 0,
-            id: Identifier::Standard(0xfff),
-            data: vec![1, 2, 3, 4, 5, 6, 7, 8],
             loopback: false,
             fd: false,
         }];

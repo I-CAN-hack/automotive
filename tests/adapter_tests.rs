@@ -1,6 +1,6 @@
 #![allow(dead_code, unused_imports)]
-use automotive::can::AsyncCanAdapter;
-use automotive::can::{CanAdapter, Frame, Identifier};
+use automotive::can::{AsyncCanAdapter, ExtendedId, StandardId};
+use automotive::can::{CanAdapter, Frame, Id};
 use automotive::panda::Panda;
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -17,7 +17,7 @@ fn get_test_frames(amount: usize) -> Vec<Frame> {
     frames.push(
         Frame::new(
             0,
-            Identifier::Extended(0x1234),
+            ExtendedId::new(0x1234).unwrap().into(),
             &[0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA],
         )
         .unwrap(),
@@ -27,18 +27,18 @@ fn get_test_frames(amount: usize) -> Vec<Frame> {
     frames.push(
         Frame::new(
             0,
-            Identifier::Extended(0x123),
+            ExtendedId::new(0x123).unwrap().into(),
             &[0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA],
         )
         .unwrap(),
     );
 
     // Zero length data
-    frames.push(Frame::new(0, 0x0.into(), &[]).unwrap());
+    frames.push(Frame::new(0, StandardId::ZERO.into(), &[]).unwrap());
 
     // Add bulk
     for i in 0..amount {
-        frames.push(Frame::new(0, 0x123.into(), &i.to_be_bytes()).unwrap());
+        frames.push(Frame::new(0, StandardId::new(0x123).unwrap().into(), &i.to_be_bytes()).unwrap());
     }
 
     frames
@@ -161,7 +161,7 @@ async fn vcan_bulk_send_async() {
 async fn vcan_send_fd() {
     let adapter = automotive::socketcan::SocketCan::new_async("vcan0").unwrap();
     adapter
-        .send(&Frame::new(0, 0x123.into(), &[0u8; 64]).unwrap())
+        .send(&Frame::new(0, StandardId::new(0x123).unwrap().into(), &[0u8; 64]).unwrap())
         .await;
 }
 

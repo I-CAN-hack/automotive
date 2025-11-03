@@ -61,11 +61,11 @@ dependencies = [
  "async-stream",
  "bindgen",
  "bstr",
+ "embedded-can",
  "futures",
  "hex",
  "libc",
  "rusb",
- "serde",
  "serial_test",
  "socket2",
  "strum",
@@ -178,6 +178,15 @@ name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
+
+[[package]]
+name = "embedded-can"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9d2e857f87ac832df68fa498d18ddc679175cf3d2e4aa893988e5601baf9438"
+dependencies = [
+ "nb",
+]
 
 [[package]]
 name = "errno"
@@ -424,6 +433,12 @@ dependencies = [
  "wasi",
  "windows-sys 0.59.0",
 ]
+
+[[package]]
+name = "nb"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d5439c4ad607c3c23abf66de8c8bf57ba8adcd1f129e699851a6e43935d339d"
 
 [[package]]
 name = "nom"

@@ -1,6 +1,5 @@
 #![allow(dead_code, unused_imports)]
-use automotive::can::AsyncCanAdapter;
-use automotive::can::Identifier;
+use automotive::can::{AsyncCanAdapter, StandardId};
 use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
 use automotive::StreamExt;
 use std::process::{Child, Command};
@@ -74,7 +73,7 @@ async fn isotp_test_echo(msg_len: usize, config: VECUConfig) {
     let adapter = automotive::socketcan::SocketCan::new_async("vcan0").unwrap();
     let _vecu = vecu_spawn(&adapter, config).await;
 
-    let mut isotp_config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
+    let mut isotp_config = IsoTPConfig::new(0, StandardId::new(0x7a1).unwrap().into());
     isotp_config.padding = config.padding;
     isotp_config.fd = config.fd;
     isotp_config.ext_address = config.ext_address;

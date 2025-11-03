@@ -105,8 +105,8 @@ pub struct PortHandle {
 impl From<crate::can::Frame> for XLcanTxEvent {
     fn from(frame: crate::can::Frame) -> Self {
         let can_id = match frame.id {
-            crate::can::Identifier::Standard(id) => id,
-            crate::can::Identifier::Extended(id) => id | xl::XL_CAN_EXT_MSG_ID,
+            crate::can::Id::Standard(id) => id.as_raw().into(),
+            crate::can::Id::Extended(id) => id.as_raw() | xl::XL_CAN_EXT_MSG_ID,
         };
         let flags = match frame.fd {
             true => xl::XL_CAN_TXMSG_FLAG_EDL,
@@ -150,8 +150,12 @@ impl TryFrom<XLcanRxEvent> for crate::can::Frame {
                 let loopback = tag == RxTags::XL_CAN_EV_TAG_TX_OK;
 
                 let id = match frame.canId & xl::XL_CAN_EXT_MSG_ID != 0 {
-                    false => crate::can::Identifier::Standard(frame.canId & 0x7ff),
-                    true => crate::can::Identifier::Extended(frame.canId & 0x1fffffff),
+                    false => crate::can::StandardId::new(frame.canId as u16 & 0x7ff)
+                        .ok_or(())?
+                        .into(),
+                    true => crate::can::ExtendedId::new(frame.canId & 0x1fffffff)
+                        .ok_or(())?
+                        .into(),
                 };
                 let len = DLC_TO_LEN[frame.dlc as usize];
                 let fd = frame.msgFlags & xl::XL_CAN_RXMSG_FLAG_EDL != 0;

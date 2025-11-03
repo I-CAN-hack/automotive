@@ -1,6 +1,7 @@
+use embedded_can::{ExtendedId, Id, StandardId};
 use libc::{can_frame, canfd_frame, canid_t, CANFD_MAX_DLEN, CAN_EFF_FLAG, CAN_MAX_DLC};
 
-use crate::can::{Frame, Identifier};
+use crate::can::Frame;
 
 pub fn can_frame_default() -> can_frame {
     unsafe { std::mem::zeroed() }
@@ -10,17 +11,18 @@ pub fn canfd_frame_default() -> canfd_frame {
     unsafe { std::mem::zeroed() }
 }
 
-fn id_to_canid_t(id: Identifier) -> canid_t {
+fn id_to_canid_t(id: Id) -> canid_t {
     match id {
-        Identifier::Standard(id) => id,
-        Identifier::Extended(id) => id | CAN_EFF_FLAG,
+        Id::Standard(id) => id.as_raw().into(),
+        Id::Extended(id) => id.as_raw() | CAN_EFF_FLAG,
     }
 }
 
-fn canid_t_to_id(id: canid_t) -> Identifier {
+fn canid_t_to_id(id: canid_t) -> Id {
+    // These unwraps are safe because the IDs are guaranteed to be valid
     match id & CAN_EFF_FLAG != 0 {
-        true => Identifier::Extended(id & 0x1fffffff),
-        false => Identifier::Standard(id & 0x7ff),
+        true => ExtendedId::new(id & 0x1fffffff).unwrap().into(),
+        false => StandardId::new(id as u16 & 0x7ff).unwrap().into(),
     }
 }
 

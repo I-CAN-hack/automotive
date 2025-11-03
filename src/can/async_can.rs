@@ -4,9 +4,9 @@ use std::collections::{HashMap, VecDeque};
 
 use crate::can::CanAdapter;
 use crate::can::Frame;
-use crate::can::Identifier;
 use crate::Stream;
 use async_stream::stream;
+use embedded_can::Id;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::debug;
@@ -15,7 +15,7 @@ const CAN_TX_BUFFER_SIZE: usize = 128;
 const CAN_RX_BUFFER_SIZE: usize = 1024;
 const DEBUG: bool = false;
 
-type BusIdentifier = (u8, Identifier);
+type BusIdentifier = (u8, Id);
 type FrameCallback = (Frame, oneshot::Sender<()>);
 
 fn process<T: CanAdapter>(

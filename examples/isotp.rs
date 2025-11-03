@@ -1,6 +1,6 @@
-use automotive::can::Identifier;
 use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
 use automotive::StreamExt;
+use embedded_can::StandardId;
 use tracing_subscriber;
 
 #[tokio::main]
@@ -8,7 +8,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let adapter = automotive::can::get_adapter().unwrap();
-    let config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
+    let config = IsoTPConfig::new(0, StandardId::new(0x7a1).unwrap().into());
     let isotp = IsoTPAdapter::new(&adapter, config);
 
     let mut stream = isotp.recv();
