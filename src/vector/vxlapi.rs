@@ -35,8 +35,15 @@ pub fn xl_get_driver_config(channel_idx: usize) -> Result<ChannelConfig> {
         match status as u32 {
             xl::XL_SUCCESS => {
                 let channel_count: usize = config.channelCount as usize;
-                assert!(channel_idx < channel_count);
                 tracing::info!("Channel count {}", channel_count);
+
+                if channel_idx >= channel_count {
+                    return Err(Error::DriverError(format!(
+                        "Requested channel index {} but only {} channels available",
+                        channel_idx, channel_count
+                    ))
+                    .into());
+                }
 
                 let channel = config.channel[channel_idx];
 
