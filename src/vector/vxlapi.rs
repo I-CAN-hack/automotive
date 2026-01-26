@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use crate::vector::bindings as xl;
 use crate::vector::error::Error;
 use crate::vector::types::{
@@ -9,8 +11,17 @@ use crate::Result;
 // power of 2 and within a range of 8192…524288 bytes (0.5 MB).
 const DEFAULT_RX_QUEUE_SIZE: u32 = 52428;
 
+static XL: LazyLock<Result<xl::Xl>> = LazyLock::new(|| {
+    let filename = libloading::library_filename("vxlapi64");
+    Ok(unsafe { xl::Xl::new(filename) }?)
+});
+
+fn vxlapi64() -> Result<&'static xl::Xl> {
+    XL.as_ref().map_err(|e| e.clone())
+}
+
 pub fn xl_open_driver() -> Result<()> {
-    let status = unsafe { xl::xlOpenDriver() };
+    let status = unsafe { vxlapi64()?.xlOpenDriver() };
 
     match status as u32 {
         xl::XL_SUCCESS => Ok(()),
@@ -19,7 +30,7 @@ pub fn xl_open_driver() -> Result<()> {
 }
 
 pub fn xl_close_driver() -> Result<()> {
-    let status = unsafe { xl::xlCloseDriver() };
+    let status = unsafe { vxlapi64()?.xlCloseDriver() };
 
     match status as u32 {
         xl::XL_SUCCESS => Ok(()),
@@ -30,7 +41,7 @@ pub fn xl_close_driver() -> Result<()> {
 pub fn xl_get_driver_config(channel_idx: usize) -> Result<ChannelConfig> {
     unsafe {
         let mut config: xl::XLdriverConfig = std::mem::zeroed();
-        let status = xl::xlGetDriverConfig(&mut config);
+        let status = vxlapi64()?.xlGetDriverConfig(&mut config);
 
         match status as u32 {
             xl::XL_SUCCESS => {
@@ -60,7 +71,7 @@ pub fn xl_get_application_config(app_name: &str, app_channel: u32) -> Result<Cha
         let mut hw_index = std::mem::zeroed();
         let mut hw_channel = std::mem::zeroed();
 
-        let status = xl::xlGetApplConfig(
+        let status = vxlapi64()?.xlGetApplConfig(
             app_name.as_ptr() as *mut i8,
             app_channel,
             &mut hw_type,
@@ -82,7 +93,7 @@ pub fn xl_get_application_config(app_name: &str, app_channel: u32) -> Result<Cha
 #[allow(dead_code)]
 pub fn xl_get_channel_index(app_config: &ChannelConfig) -> Result<u32> {
     unsafe {
-        Ok(xl::xlGetChannelIndex(
+        Ok(vxlapi64()?.xlGetChannelIndex(
             app_config.hw_type as i32,
             app_config.hw_index as i32,
             app_config.hw_channel as i32,
@@ -92,7 +103,7 @@ pub fn xl_get_channel_index(app_config: &ChannelConfig) -> Result<u32> {
 
 pub fn xl_get_channel_mask(app_config: &ChannelConfig) -> Result<XLaccess> {
     unsafe {
-        Ok(xl::xlGetChannelMask(
+        Ok(vxlapi64()?.xlGetChannelMask(
             app_config.hw_type as i32,
             app_config.hw_index as i32,
             app_config.hw_channel as i32,
@@ -108,7 +119,7 @@ pub fn xl_open_port(user_name: &str, access_mask: XLaccess, init: bool) -> Resul
             permission_mask = access_mask; // Request init access so we can change bitrate
         }
 
-        let status = xl::xlOpenPort(
+        let status = vxlapi64()?.xlOpenPort(
             &mut port_handle,
             user_name.as_ptr() as *mut i8,
             access_mask,
@@ -130,7 +141,7 @@ pub fn xl_open_port(user_name: &str, access_mask: XLaccess, init: bool) -> Resul
 
 pub fn xl_close_port(port_handle: &PortHandle) -> Result<()> {
     unsafe {
-        let status = xl::xlClosePort(port_handle.port_handle);
+        let status = vxlapi64()?.xlClosePort(port_handle.port_handle);
         match status as u32 {
             xl::XL_SUCCESS => Ok(()),
             _ => Err(Error::DriverError(format!("xlClosePort failed, err {}", status)).into()),
@@ -140,8 +151,12 @@ pub fn xl_close_port(port_handle: &PortHandle) -> Result<()> {
 
 pub fn xl_activate_channel(port_handle: &PortHandle, access_mask: XLaccess) -> Result<()> {
     unsafe {
-        let status =
-            xl::xlActivateChannel(port_handle.port_handle, access_mask, xl::XL_BUS_TYPE_CAN, 0);
+        let status = vxlapi64()?.xlActivateChannel(
+            port_handle.port_handle,
+            access_mask,
+            xl::XL_BUS_TYPE_CAN,
+            0,
+        );
         match status as u32 {
             xl::XL_SUCCESS => Ok(()),
             _ => {
@@ -153,7 +168,7 @@ pub fn xl_activate_channel(port_handle: &PortHandle, access_mask: XLaccess) -> R
 
 pub fn xl_deactivate_channel(port_handle: &PortHandle, access_mask: XLaccess) -> Result<()> {
     unsafe {
-        let status = xl::xlDeactivateChannel(port_handle.port_handle, access_mask);
+        let status = vxlapi64()?.xlDeactivateChannel(port_handle.port_handle, access_mask);
         match status as u32 {
             xl::XL_SUCCESS => Ok(()),
             _ => Err(
@@ -170,7 +185,8 @@ pub fn xl_can_fd_set_configuration(
 ) -> Result<()> {
     unsafe {
         let mut config = config.clone();
-        let status = xl::xlCanFdSetConfiguration(port_handle.port_handle, access_mask, &mut config);
+        let status =
+            vxlapi64()?.xlCanFdSetConfiguration(port_handle.port_handle, access_mask, &mut config);
         match status as u32 {
             xl::XL_SUCCESS => Ok(()),
             _ => Err(
@@ -193,7 +209,7 @@ pub fn xl_can_transmit_ex(
         // Clone so we can pass a mut ptr to the C API
         let mut boxed = events.to_owned();
 
-        let status = xl::xlCanTransmitEx(
+        let status = vxlapi64()?.xlCanTransmitEx(
             port_handle.port_handle,
             access_mask,
             msg_cnt,
@@ -211,7 +227,7 @@ pub fn xl_can_transmit_ex(
 pub fn xl_can_receive(port_handle: &PortHandle) -> Result<Option<XLcanRxEvent>> {
     unsafe {
         let mut event: XLcanRxEvent = ::std::mem::zeroed();
-        let status = xl::xlCanReceive(port_handle.port_handle, &mut event);
+        let status = vxlapi64()?.xlCanReceive(port_handle.port_handle, &mut event);
         match status as u32 {
             xl::XL_SUCCESS => {
                 // tracing::info!("Got events size: {}, tag 0x{:x}", event.size, event.tag);

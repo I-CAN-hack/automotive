@@ -5,13 +5,29 @@ fn build_vxlapi() {
 
     let dir = env::var("CARGO_MANIFEST_DIR").unwrap();
 
-    println!(
-        "cargo:rustc-link-search={}",
-        Path::new(&dir).join("third_party/vector").display()
-    );
-    println!("cargo:rustc-link-lib=vxlapi64");
+    const ALLOWED_ITEMS: &[&str] = &[
+        "XL_BUS_.*",
+        "XL_CAN_.*",
+        "XL_ERR_.*",
+        "XL_HWTYPE_.*",
+        "XL_INTERFACE_VERSION_.*",
+        "XL_SUCCESS",
+        "xlActivateChannel",
+        "xlCanFdSetConfiguration",
+        "xlCanReceive",
+        "xlCanTransmitEx",
+        "xlCloseDriver",
+        "xlClosePort",
+        "xlDeactivateChannel",
+        "xlGetApplConfig",
+        "xlGetChannelIndex",
+        "xlGetChannelMask",
+        "xlGetDriverConfig",
+        "xlOpenDriver",
+        "xlOpenPort",
+    ];
 
-    let bindings = bindgen::Builder::default()
+    let mut bindings = bindgen::Builder::default()
         .header(format!(
             "{}",
             Path::new(&dir)
@@ -21,8 +37,14 @@ fn build_vxlapi() {
         .clang_arg("-Wno-pragma-pack")
         .layout_tests(false)
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
-        .generate()
-        .expect("Unable to generate bindings");
+        .dynamic_library_name("Xl")
+        .dynamic_link_require_all(true);
+
+    for item in ALLOWED_ITEMS {
+        bindings = bindings.allowlist_item(item);
+    }
+
+    let bindings = bindings.generate().expect("Unable to generate bindings");
 
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     bindings
