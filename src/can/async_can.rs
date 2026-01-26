@@ -85,7 +85,7 @@ fn process<T: CanAdapter>(
                 );
             }
         }
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        std::thread::sleep(std::time::Duration::from_micros(1));
     }
 }
 
