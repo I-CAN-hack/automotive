@@ -1,3 +1,5 @@
+use std::env;
+
 #[cfg(feature = "vector-xl")]
 fn build_vxlapi() {
     use std::env;
@@ -53,6 +55,21 @@ fn build_vxlapi() {
 }
 
 fn main() {
-    #[cfg(feature = "vector-xl")]
-    build_vxlapi();
+    // Re-run if these change (helps with incremental builds / switching targets).
+    println!("cargo:rerun-if-env-changed=TARGET");
+    println!("cargo:rerun-if-env-changed=HOST");
+    println!("cargo:rerun-if-env-changed=CARGO_CFG_TARGET_OS");
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_VECTOR_XL");
+
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let vector_xl_enabled = env::var_os("CARGO_FEATURE_VECTOR_XL").is_some();
+
+    let host = env::var("HOST").unwrap_or_default();
+    let target = env::var("TARGET").unwrap_or_default();
+    let is_cross = host != target;
+
+    if target_os == "windows" && vector_xl_enabled && is_cross {
+        #[cfg(feature = "vector-xl")]
+        build_vxlapi();
+    }
 }

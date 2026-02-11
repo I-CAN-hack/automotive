@@ -54,3 +54,8 @@ serial_test = "3.0.0"
 
 [build-dependencies]
 bindgen = { version = "0.69.4", optional = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-gnu"]

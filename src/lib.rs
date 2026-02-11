@@ -72,6 +72,8 @@
 //!  - The hardware or driver is free to prioritize sending frames with a lower Arbitration ID to prevent priority inversion. However frames with the same Arbitration ID need to be send out on the CAN bus in the same order as they were queued. This assumption is needed to match a received ACK to the correct frame.
 //!  - Once a frame is ACKed it should be put in the receive queue with the `loopback` flag set. The `AsyncCanAdapter` wrapper will take care of matching it against the right transmit frame and resolving the Future. If this is not supported by the underlying hardware, this can be faked by looping back all transmitted frames immediately.
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 pub mod can;
 mod error;
 pub mod isotp;
@@ -84,10 +86,13 @@ pub use error::Error;
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(all(target_os = "linux", feature = "socketcan"))]
+#[cfg_attr(docsrs, doc(cfg(all(target_os = "linux", feature = "socketcan"))))]
 pub mod socketcan;
 
 #[cfg(all(target_os = "windows", feature = "vector-xl"))]
+#[cfg_attr(docsrs, doc(cfg(all(target_os = "windows", feature = "vector-xl"))))]
 pub mod vector;
 
 #[cfg(feature = "panda")]
+#[cfg_attr(docsrs, doc(cfg(feature = "panda")))]
 pub mod panda;
