@@ -15,6 +15,7 @@ use crate::vector::vxlapi::*;
 use crate::Result;
 use tracing::info;
 
+/// Predefined configuration for 500 kbps arbitration bitrate and 2 Mbps data bitrate
 pub const CONFIG_500K_2M_80: XLcanFdConf = XLcanFdConf {
     arbitrationBitRate: 500_000,
     sjwAbr: 1,
@@ -44,6 +45,9 @@ impl VectorCan {
     }
 
     /// Create a new Vector Adapter based on the global channel ID
+    /// If conf is provided, the channel will be initialized with the provided configuration.
+    /// If not, the channel will be opened without requesting init (exclusive) access,
+    /// and can be configured using other tools (e.g. Vector's CANalyzer).
     pub fn new(channel_idx: usize, conf: &Option<XLcanFdConf>) -> Result<VectorCan> {
         xl_open_driver()?;
 

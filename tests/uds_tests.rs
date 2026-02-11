@@ -5,8 +5,8 @@ use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
 use automotive::uds::Error as UDSError;
 use automotive::uds::NegativeResponseCode;
 use automotive::uds::UDSClient;
-use automotive::StreamExt;
 use automotive::Error;
+use automotive::StreamExt;
 use std::process::{Child, Command};
 
 static VECU_STARTUP_TIMEOUT_MS: u64 = 10000;
