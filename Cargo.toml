@@ -1,6 +1,6 @@
 [package]
 name = "automotive"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 license = "MIT"
 keywords = ["automotive", "CAN", "UDS"]
@@ -58,4 +58,3 @@ bindgen = { version = "0.69.4", optional = true }
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
-targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-gnu"]
