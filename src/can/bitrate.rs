@@ -128,6 +128,16 @@ struct PhaseBitrateConfig {
 pub enum BitrateError {
     #[error("clock_hz must be greater than 0")]
     InvalidClock,
+    #[error("brp_inc must be greater than 0")]
+    InvalidBrpIncrementStep,
+    #[error("invalid brp range [{min}, {max}], expected 1 <= min <= max")]
+    InvalidBrpRange { min: u32, max: u32 },
+    #[error("invalid tseg1 range [{min}, {max}], expected min <= max")]
+    InvalidTseg1Range { min: u32, max: u32 },
+    #[error("invalid tseg2 range [{min}, {max}], expected min <= max")]
+    InvalidTseg2Range { min: u32, max: u32 },
+    #[error("sjw_max must be greater than 0")]
+    InvalidSjwMax,
     #[error("bitrate must be greater than 0")]
     InvalidBitrate,
     #[error("sample_point must be in range [0.0, 1.0)")]
@@ -568,8 +578,29 @@ fn validate_timing_const(btc: &BitTimingConst) -> Result<(), BitrateError> {
     if btc.clock_hz == 0 {
         return Err(BitrateError::InvalidClock);
     }
+    if btc.brp_min == 0 || btc.brp_min > btc.brp_max {
+        return Err(BitrateError::InvalidBrpRange {
+            min: btc.brp_min,
+            max: btc.brp_max,
+        });
+    }
     if btc.brp_inc == 0 {
-        return Err(BitrateError::InvalidBrpIncrement { brp: 0, brp_inc: 0 });
+        return Err(BitrateError::InvalidBrpIncrementStep);
+    }
+    if btc.tseg1_min > btc.tseg1_max {
+        return Err(BitrateError::InvalidTseg1Range {
+            min: btc.tseg1_min,
+            max: btc.tseg1_max,
+        });
+    }
+    if btc.tseg2_min > btc.tseg2_max {
+        return Err(BitrateError::InvalidTseg2Range {
+            min: btc.tseg2_min,
+            max: btc.tseg2_max,
+        });
+    }
+    if btc.sjw_max == 0 {
+        return Err(BitrateError::InvalidSjwMax);
     }
     Ok(())
 }
@@ -1009,6 +1040,70 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err, BitrateError::InvalidSamplePoint);
+    }
+
+    #[test]
+    fn invalid_timing_const_brp_inc_zero_rejected() {
+        let mut btc = PEAK_NOMINAL_BTC;
+        btc.brp_inc = 0;
+
+        let err = validate_timing_const(&btc).unwrap_err();
+        assert_eq!(err, BitrateError::InvalidBrpIncrementStep);
+    }
+
+    #[test]
+    fn invalid_timing_const_brp_range_rejected() {
+        let mut btc = PEAK_NOMINAL_BTC;
+        btc.brp_min = 0;
+
+        let err = validate_timing_const(&btc).unwrap_err();
+        assert_eq!(err, BitrateError::InvalidBrpRange { min: 0, max: 1024 });
+    }
+
+    #[test]
+    fn invalid_timing_const_tseg1_range_rejected() {
+        let mut btc = PEAK_NOMINAL_BTC;
+        btc.tseg1_min = btc.tseg1_max + 1;
+
+        let err = validate_timing_const(&btc).unwrap_err();
+        assert_eq!(
+            err,
+            BitrateError::InvalidTseg1Range {
+                min: btc.tseg1_min,
+                max: btc.tseg1_max
+            }
+        );
+    }
+
+    #[test]
+    fn invalid_timing_const_tseg2_range_rejected_before_solver() {
+        let mut btc = PEAK_NOMINAL_BTC;
+        btc.tseg2_min = btc.tseg2_max + 1;
+        let timing = AdapterTimingConst {
+            nominal: btc,
+            data: None,
+        };
+
+        let err = BitrateBuilder::with_timing_const(timing)
+            .bitrate(500_000)
+            .build()
+            .unwrap_err();
+        assert_eq!(
+            err,
+            BitrateError::InvalidTseg2Range {
+                min: btc.tseg2_min,
+                max: btc.tseg2_max
+            }
+        );
+    }
+
+    #[test]
+    fn invalid_timing_const_sjw_max_zero_rejected() {
+        let mut btc = PEAK_NOMINAL_BTC;
+        btc.sjw_max = 0;
+
+        let err = validate_timing_const(&btc).unwrap_err();
+        assert_eq!(err, BitrateError::InvalidSjwMax);
     }
 
     #[test]
