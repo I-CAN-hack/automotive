@@ -2,6 +2,7 @@
 
 pub mod adapter;
 pub mod async_can;
+pub mod bitrate;
 
 use std::collections::VecDeque;
 use std::fmt;
