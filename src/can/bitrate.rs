@@ -13,8 +13,8 @@
 //! - otherwise: sample point 0.875
 //!
 //! The resulting [`BitrateConfig`] contains:
-//! - the adapter-facing values (`brp`, `tseg1`, `tseg2`, `sjw`)
-//! - the resulting `bitrate` and `sample_point`
+//! - nominal/arbitration phase settings as one [`AdapterBitTiming`]
+//! - optional CAN-FD data phase settings as one [`AdapterBitTiming`]
 
 use thiserror::Error;
 
@@ -64,8 +64,8 @@ pub struct AdapterTimingConst {
     pub data: Option<BitTimingConst>,
 }
 
-/// Generic timing values typically needed by CAN adapter drivers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Resolved timing and bitrate values for one CAN phase.
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AdapterBitTiming {
     /// Bitrate prescaler.
@@ -76,36 +76,38 @@ pub struct AdapterBitTiming {
     pub tseg2: u32,
     /// Synchronization jump width.
     pub sjw: u32,
+    /// Actual bitrate in bits per second.
+    pub bitrate: u32,
+    /// Actual sample point in normalized form (`0.0 < sample_point < 1.0`).
+    pub sample_point: f64,
+}
+
+impl AdapterBitTiming {
+    /// Duration of one phase bit in time quanta.
+    pub fn bit_time_tq(&self) -> u32 {
+        CAN_SYNC_SEG + self.tseg1 + self.tseg2
+    }
 }
 
 /// Resolved bitrate configuration.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BitrateConfig {
-    /// Adapter-facing timing values.
-    pub timing: AdapterBitTiming,
-    /// Actual bitrate in bits per second.
-    pub bitrate: u32,
-    /// Actual sample point in normalized form (`0.0 < sample_point < 1.0`).
-    pub sample_point: f64,
-    /// Optional CAN-FD data phase adapter-facing timing values.
-    pub data_timing: Option<AdapterBitTiming>,
-    /// Optional CAN-FD data phase bitrate in bits per second.
-    pub data_bitrate: Option<u32>,
-    /// Optional CAN-FD data phase sample point in normalized form (`0.0 < sample_point < 1.0`).
-    pub data_sample_point: Option<f64>,
+    /// Nominal/arbitration phase settings (also used for classic CAN).
+    pub nominal: AdapterBitTiming,
+    /// Optional CAN-FD data phase settings.
+    pub data: Option<AdapterBitTiming>,
 }
 
 impl BitrateConfig {
-    /// Duration of one bit in time quanta.
+    /// Duration of one nominal/arbitration bit in time quanta.
     pub fn bit_time_tq(&self) -> u32 {
-        CAN_SYNC_SEG + self.timing.tseg1 + self.timing.tseg2
+        self.nominal.bit_time_tq()
     }
 
     /// Duration of one CAN-FD data phase bit in time quanta.
     pub fn data_bit_time_tq(&self) -> Option<u32> {
-        self.data_timing
-            .map(|timing| CAN_SYNC_SEG + timing.tseg1 + timing.tseg2)
+        self.data.map(|data| data.bit_time_tq())
     }
 }
 
@@ -115,13 +117,6 @@ struct SamplePointCandidate {
     sample_point_error: u32,
     tseg1: u32,
     tseg2: u32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct PhaseBitrateConfig {
-    timing: AdapterBitTiming,
-    bitrate: u32,
-    sample_point: f64,
 }
 
 /// Error type returned by [`BitrateBuilder::build`].
@@ -237,8 +232,8 @@ pub enum BitrateError {
 ///     .build()
 ///     .unwrap();
 ///
-/// assert_eq!(cfg.bitrate, 500_000);
-/// assert!((cfg.sample_point - 0.8).abs() < 1e-9);
+/// assert_eq!(cfg.nominal.bitrate, 500_000);
+/// assert!((cfg.nominal.sample_point - 0.8).abs() < 1e-9);
 /// ```
 ///
 /// ## Direct timing mode
@@ -289,8 +284,8 @@ pub enum BitrateError {
 ///     .build()
 ///     .unwrap();
 ///
-/// assert_eq!(cfg.bitrate, 500_000);
-/// assert!((cfg.sample_point - 0.8).abs() < 1e-9);
+/// assert_eq!(cfg.nominal.bitrate, 500_000);
+/// assert!((cfg.nominal.sample_point - 0.8).abs() < 1e-9);
 /// ```
 ///
 /// ## CAN-FD data phase
@@ -349,7 +344,7 @@ pub enum BitrateError {
 ///     .build()
 ///     .unwrap();
 ///
-/// assert_eq!(cfg.data_bitrate, Some(2_000_000));
+/// assert_eq!(cfg.data.map(|data| data.bitrate), Some(2_000_000));
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct BitrateBuilder {
@@ -496,49 +491,37 @@ impl BitrateBuilder {
             self.build_from_direct_mode()?
         };
 
-        let (data_timing, data_bitrate, data_sample_point) =
-            if let Some(data_bitrate_target) = self.data_bitrate {
-                let data_timing_const = self
-                    .timing_const
-                    .data
-                    .ok_or(BitrateError::DataBitrateNotSupported)?;
-                validate_timing_const(&data_timing_const)?;
+        let data = if let Some(data_bitrate_target) = self.data_bitrate {
+            let data_timing_const = self
+                .timing_const
+                .data
+                .ok_or(BitrateError::DataBitrateNotSupported)?;
+            validate_timing_const(&data_timing_const)?;
 
-                let data = solve_bitrate_mode(
-                    &data_timing_const,
-                    data_bitrate_target,
-                    self.data_sample_point,
-                    self.data_sjw,
-                    self.max_bitrate_error,
-                )?;
+            let data = solve_bitrate_mode(
+                &data_timing_const,
+                data_bitrate_target,
+                self.data_sample_point,
+                self.data_sjw,
+                self.max_bitrate_error,
+            )?;
 
-                if data.bitrate < nominal.bitrate {
-                    return Err(BitrateError::DataBitrateLowerThanNominal {
-                        data_bitrate: data.bitrate,
-                        arbitration_bitrate: nominal.bitrate,
-                    });
-                }
+            if data.bitrate < nominal.bitrate {
+                return Err(BitrateError::DataBitrateLowerThanNominal {
+                    data_bitrate: data.bitrate,
+                    arbitration_bitrate: nominal.bitrate,
+                });
+            }
 
-                (
-                    Some(data.timing),
-                    Some(data.bitrate),
-                    Some(data.sample_point),
-                )
-            } else {
-                (None, None, None)
-            };
+            Some(data)
+        } else {
+            None
+        };
 
-        Ok(BitrateConfig {
-            timing: nominal.timing,
-            bitrate: nominal.bitrate,
-            sample_point: nominal.sample_point,
-            data_timing,
-            data_bitrate,
-            data_sample_point,
-        })
+        Ok(BitrateConfig { nominal, data })
     }
 
-    fn build_from_bitrate_mode(self) -> Result<PhaseBitrateConfig, BitrateError> {
+    fn build_from_bitrate_mode(self) -> Result<AdapterBitTiming, BitrateError> {
         let bitrate = self.bitrate.ok_or(BitrateError::MissingConfiguration)?;
 
         solve_bitrate_mode(
@@ -550,7 +533,7 @@ impl BitrateBuilder {
         )
     }
 
-    fn build_from_direct_mode(self) -> Result<PhaseBitrateConfig, BitrateError> {
+    fn build_from_direct_mode(self) -> Result<AdapterBitTiming, BitrateError> {
         if self.sample_point.is_some() {
             return Err(BitrateError::SamplePointRequiresBitrate);
         }
@@ -612,7 +595,7 @@ fn solve_bitrate_mode(
     sample_point: Option<f64>,
     sjw: Option<u32>,
     max_bitrate_error: u32,
-) -> Result<PhaseBitrateConfig, BitrateError> {
+) -> Result<AdapterBitTiming, BitrateError> {
     if bitrate == 0 {
         return Err(BitrateError::InvalidBitrate);
     }
@@ -694,13 +677,11 @@ fn solve_bitrate_mode(
 
     let bit_time_tq = CAN_SYNC_SEG + candidate.tseg1 + candidate.tseg2;
     let actual_bitrate = btc.clock_hz / (best_brp * bit_time_tq);
-    Ok(PhaseBitrateConfig {
-        timing: AdapterBitTiming {
-            brp: best_brp,
-            tseg1: candidate.tseg1,
-            tseg2: candidate.tseg2,
-            sjw,
-        },
+    Ok(AdapterBitTiming {
+        brp: best_brp,
+        tseg1: candidate.tseg1,
+        tseg2: candidate.tseg2,
+        sjw,
         bitrate: actual_bitrate,
         sample_point: sample_point_to_float(candidate.sample_point),
     })
@@ -712,7 +693,7 @@ fn solve_direct_mode(
     tseg1: u32,
     tseg2: u32,
     sjw: Option<u32>,
-) -> Result<PhaseBitrateConfig, BitrateError> {
+) -> Result<AdapterBitTiming, BitrateError> {
     check_ranges(btc, brp, tseg1, tseg2)?;
 
     let sjw = sjw.unwrap_or_else(|| calc_default_sjw(tseg1, tseg2));
@@ -721,13 +702,11 @@ fn solve_direct_mode(
     let bit_time_tq = CAN_SYNC_SEG + tseg1 + tseg2;
     let bitrate = btc.clock_hz / (brp * bit_time_tq);
     let sample_point = sample_point_to_float(1000 * (CAN_SYNC_SEG + tseg1) / bit_time_tq);
-    Ok(PhaseBitrateConfig {
-        timing: AdapterBitTiming {
-            brp,
-            tseg1,
-            tseg2,
-            sjw,
-        },
+    Ok(AdapterBitTiming {
+        brp,
+        tseg1,
+        tseg2,
+        sjw,
         bitrate,
         sample_point,
     })
@@ -954,10 +933,10 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(cfg.bitrate, 500_000);
-        assert!((cfg.sample_point - 0.8).abs() < 1e-9);
-        assert!(cfg.timing.brp >= PEAK_NOMINAL_BTC.brp_min);
-        assert!(cfg.timing.brp <= PEAK_NOMINAL_BTC.brp_max);
+        assert_eq!(cfg.nominal.bitrate, 500_000);
+        assert!((cfg.nominal.sample_point - 0.8).abs() < 1e-9);
+        assert!(cfg.nominal.brp >= PEAK_NOMINAL_BTC.brp_min);
+        assert!(cfg.nominal.brp <= PEAK_NOMINAL_BTC.brp_max);
     }
 
     #[test]
@@ -968,7 +947,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(cfg.bitrate, 500_000);
+        assert_eq!(cfg.nominal.bitrate, 500_000);
     }
 
     #[test]
@@ -1017,7 +996,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(cfg.timing.sjw, 1);
+        assert_eq!(cfg.nominal.sjw, 1);
     }
 
     #[test]
@@ -1029,9 +1008,9 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(cfg.bitrate, 500_000);
-        assert!((cfg.sample_point - 0.8).abs() < 1e-9);
-        assert_eq!(cfg.timing.sjw, 2);
+        assert_eq!(cfg.nominal.bitrate, 500_000);
+        assert!((cfg.nominal.sample_point - 0.8).abs() < 1e-9);
+        assert_eq!(cfg.nominal.sjw, 2);
     }
 
     #[test]
@@ -1159,12 +1138,12 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(cfg.bitrate, 500_000);
-        assert!((cfg.sample_point - 0.8).abs() < 1e-9);
+        assert_eq!(cfg.nominal.bitrate, 500_000);
+        assert!((cfg.nominal.sample_point - 0.8).abs() < 1e-9);
 
-        assert_eq!(cfg.data_bitrate, Some(2_000_000));
-        assert!(cfg.data_timing.is_some());
-        assert!((cfg.data_sample_point.unwrap() - 0.75).abs() < 1e-9);
+        assert_eq!(cfg.data.map(|data| data.bitrate), Some(2_000_000));
+        assert!(cfg.data.is_some());
+        assert!((cfg.data.unwrap().sample_point - 0.75).abs() < 1e-9);
     }
 
     #[test]
@@ -1229,14 +1208,20 @@ mod tests {
             .unwrap();
 
         let cfg_from_direct = BitrateBuilder::new::<DummyTimingAdapter>()
-            .brp(cfg_from_bitrate.timing.brp)
-            .tseg1(cfg_from_bitrate.timing.tseg1)
-            .tseg2(cfg_from_bitrate.timing.tseg2)
-            .sjw(cfg_from_bitrate.timing.sjw)
+            .brp(cfg_from_bitrate.nominal.brp)
+            .tseg1(cfg_from_bitrate.nominal.tseg1)
+            .tseg2(cfg_from_bitrate.nominal.tseg2)
+            .sjw(cfg_from_bitrate.nominal.sjw)
             .build()
             .unwrap();
 
-        assert_eq!(cfg_from_direct.bitrate, cfg_from_bitrate.bitrate);
-        assert!((cfg_from_direct.sample_point - cfg_from_bitrate.sample_point).abs() < 1e-9);
+        assert_eq!(
+            cfg_from_direct.nominal.bitrate,
+            cfg_from_bitrate.nominal.bitrate
+        );
+        assert!(
+            (cfg_from_direct.nominal.sample_point - cfg_from_bitrate.nominal.sample_point).abs()
+                < 1e-9
+        );
     }
 }

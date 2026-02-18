@@ -124,18 +124,18 @@ impl Eq for XLcanFdConf {}
 
 impl From<BitrateConfig> for XLcanFdConf {
     fn from(config: BitrateConfig) -> Self {
-        let data_timing = config.data_timing.unwrap_or(config.timing);
-        let data_bitrate = config.data_bitrate.unwrap_or(config.bitrate);
+        let nominal = config.nominal;
+        let data = config.data.unwrap_or(nominal);
 
         Self {
-            arbitrationBitRate: config.bitrate,
-            sjwAbr: config.timing.sjw,
-            tseg1Abr: config.timing.tseg1,
-            tseg2Abr: config.timing.tseg2,
-            dataBitRate: data_bitrate,
-            sjwDbr: data_timing.sjw,
-            tseg1Dbr: data_timing.tseg1,
-            tseg2Dbr: data_timing.tseg2,
+            arbitrationBitRate: nominal.bitrate,
+            sjwAbr: nominal.sjw,
+            tseg1Abr: nominal.tseg1,
+            tseg2Abr: nominal.tseg2,
+            dataBitRate: data.bitrate,
+            sjwDbr: data.sjw,
+            tseg1Dbr: data.tseg1,
+            tseg2Dbr: data.tseg2,
             reserved: 0,
             options: 0,
             reserved1: [0, 0],
