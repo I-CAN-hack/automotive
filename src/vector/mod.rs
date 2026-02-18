@@ -20,8 +20,8 @@ use tracing::info;
 pub const CONFIG_500K_2M_80: XLcanFdConf = XLcanFdConf {
     arbitrationBitRate: 500_000,
     sjwAbr: 1,
-    tseg1Abr: 15,
-    tseg2Abr: 4,
+    tseg1Abr: 127,
+    tseg2Abr: 32,
     dataBitRate: 2_000_000,
     sjwDbr: 1,
     tseg1Dbr: 31,
@@ -161,9 +161,8 @@ mod tests {
     #[test]
     fn bitrate_builder_matches_predefined_config() {
         let bitrate_cfg = BitrateBuilder::new::<VectorCan>()
-            .brp(8)
-            .tseg1(15)
-            .tseg2(4)
+            .bitrate(500_000)
+            .sample_point(0.8)
             .sjw(1)
             .data_bitrate(2_000_000)
             .data_sample_point(0.8)
