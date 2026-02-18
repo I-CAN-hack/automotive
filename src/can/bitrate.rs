@@ -612,4 +612,24 @@ mod tests {
 
         assert_eq!(err, BitrateError::InvalidSamplePoint);
     }
+
+    #[test]
+    fn round_trip_bitrate_to_direct_keeps_bitrate_and_sample_point() {
+        let cfg_from_bitrate = BitrateBuilder::new(80_000_000, BTC)
+            .bitrate(625_000)
+            .sample_point(0.82)
+            .build()
+            .unwrap();
+
+        let cfg_from_direct = BitrateBuilder::new(80_000_000, BTC)
+            .brp(cfg_from_bitrate.timing.brp)
+            .tseg1(cfg_from_bitrate.timing.tseg1)
+            .tseg2(cfg_from_bitrate.timing.tseg2)
+            .sjw(cfg_from_bitrate.timing.sjw)
+            .build()
+            .unwrap();
+
+        assert_eq!(cfg_from_direct.bitrate, cfg_from_bitrate.bitrate);
+        assert!((cfg_from_direct.sample_point - cfg_from_bitrate.sample_point).abs() < 1e-9);
+    }
 }
