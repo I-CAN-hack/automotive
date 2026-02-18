@@ -20,7 +20,8 @@ use thiserror::Error;
 
 const CAN_SYNC_SEG: u32 = 1;
 const CAN_CALC_MAX_ERROR: u32 = 50; // 0.50% in one-hundredth percent units
-const SAMPLE_POINT_SCALE: f64 = 1000.0;
+const SAMPLE_POINT_SCALE_INT: u32 = 1000;
+const SAMPLE_POINT_SCALE: f64 = SAMPLE_POINT_SCALE_INT as f64;
 const DEFAULT_SAMPLE_POINT_HIGH_BITRATE_THRESHOLD: u32 = 800_000;
 const DEFAULT_SAMPLE_POINT_MEDIUM_BITRATE_THRESHOLD: u32 = 500_000;
 const DEFAULT_SAMPLE_POINT_HIGH_BITRATE: u32 = 750;
@@ -85,13 +86,13 @@ pub struct BitrateConfig {
     pub timing: AdapterBitTiming,
     /// Actual bitrate in bits per second.
     pub bitrate: u32,
-    /// Actual sample point in normalized form (`0.0..1.0`).
+    /// Actual sample point in normalized form (`0.0 < sample_point < 1.0`).
     pub sample_point: f64,
     /// Optional CAN-FD data phase adapter-facing timing values.
     pub data_timing: Option<AdapterBitTiming>,
     /// Optional CAN-FD data phase bitrate in bits per second.
     pub data_bitrate: Option<u32>,
-    /// Optional CAN-FD data phase sample point in normalized form (`0.0..1.0`).
+    /// Optional CAN-FD data phase sample point in normalized form (`0.0 < sample_point < 1.0`).
     pub data_sample_point: Option<f64>,
 }
 
@@ -140,7 +141,7 @@ pub enum BitrateError {
     InvalidSjwMax,
     #[error("bitrate must be greater than 0")]
     InvalidBitrate,
-    #[error("sample_point must be in range [0.0, 1.0)")]
+    #[error("sample_point must be in range (0.0, 1.0)")]
     InvalidSamplePoint,
     #[error("cannot mix bitrate-based and direct timing configuration")]
     MixedConfiguration,
@@ -395,7 +396,7 @@ impl BitrateBuilder {
         self
     }
 
-    /// Target sample point in normalized form (`0.0..1.0`).
+    /// Target sample point in normalized form (`0.0 < sample_point < 1.0`).
     ///
     /// If omitted, the default depends on bitrate:
     /// - `bitrate > 800_000`: `0.750`
@@ -442,7 +443,7 @@ impl BitrateBuilder {
         self
     }
 
-    /// Optional CAN-FD data phase sample point in normalized form (`0.0..1.0`).
+    /// Optional CAN-FD data phase sample point in normalized form (`0.0 < sample_point < 1.0`).
     ///
     /// If omitted, the default depends on `data_bitrate`:
     /// - `data_bitrate > 800_000`: `0.750`
@@ -805,11 +806,19 @@ fn calc_default_sample_point_nrz(bitrate: u32) -> u32 {
 }
 
 fn sample_point_to_int(sample_point: f64) -> Result<u32, BitrateError> {
-    if !sample_point.is_finite() || !(0.0..1.0).contains(&sample_point) {
+    if !sample_point.is_finite() || !(0.0..1.0).contains(&sample_point) || sample_point == 0.0 {
         return Err(BitrateError::InvalidSamplePoint);
     }
 
-    Ok((sample_point * SAMPLE_POINT_SCALE) as u32)
+    let mut sample_point_quantized = (sample_point * SAMPLE_POINT_SCALE).round() as u32;
+    if sample_point_quantized == 0 {
+        return Err(BitrateError::InvalidSamplePoint);
+    }
+    if sample_point_quantized >= SAMPLE_POINT_SCALE_INT {
+        sample_point_quantized = SAMPLE_POINT_SCALE_INT - 1;
+    }
+
+    Ok(sample_point_quantized)
 }
 
 fn sample_point_to_float(sample_point: u32) -> f64 {
@@ -827,9 +836,14 @@ fn update_sample_point(
     let mut best_tseg2 = 0;
 
     for i in 0..=1 {
+        let tsegall = tseg + CAN_SYNC_SEG;
         let mut tseg2 =
-            tseg + CAN_SYNC_SEG - (sample_point_reference * (tseg + CAN_SYNC_SEG)) / 1000 - i;
+            tsegall.saturating_sub((sample_point_reference * tsegall) / SAMPLE_POINT_SCALE_INT + i);
         tseg2 = tseg2.clamp(btc.tseg2_min, btc.tseg2_max);
+
+        if tseg2 > tseg {
+            continue;
+        }
 
         let mut tseg1 = tseg - tseg2;
         if tseg1 > btc.tseg1_max {
@@ -837,7 +851,7 @@ fn update_sample_point(
             tseg2 = tseg - tseg1;
         }
 
-        let sample_point = 1000 * (tseg + CAN_SYNC_SEG - tseg2) / (tseg + CAN_SYNC_SEG);
+        let sample_point = SAMPLE_POINT_SCALE_INT * (tsegall - tseg2) / tsegall;
         let sample_point_error = sample_point_reference.abs_diff(sample_point);
 
         if sample_point <= sample_point_reference && sample_point_error < best_sample_point_error {
@@ -1040,6 +1054,35 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err, BitrateError::InvalidSamplePoint);
+    }
+
+    #[test]
+    fn zero_sample_point_rejected() {
+        let err = BitrateBuilder::new::<DummyTimingAdapter>()
+            .bitrate(500_000)
+            .sample_point(0.0)
+            .build()
+            .unwrap_err();
+
+        assert_eq!(err, BitrateError::InvalidSamplePoint);
+    }
+
+    #[test]
+    fn too_small_sample_point_rejected() {
+        let err = BitrateBuilder::new::<DummyTimingAdapter>()
+            .bitrate(500_000)
+            .sample_point(0.0001)
+            .build()
+            .unwrap_err();
+
+        assert_eq!(err, BitrateError::InvalidSamplePoint);
+    }
+
+    #[test]
+    fn sample_point_conversion_rounds_and_clamps() {
+        assert_eq!(sample_point_to_int(0.8004).unwrap(), 800);
+        assert_eq!(sample_point_to_int(0.8005).unwrap(), 801);
+        assert_eq!(sample_point_to_int(0.9999).unwrap(), 999);
     }
 
     #[test]
