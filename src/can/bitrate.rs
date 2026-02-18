@@ -21,14 +21,23 @@ const SAMPLE_POINT_SCALE: f64 = 1000.0;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BitTimingConst {
+    /// CAN controller input clock in Hz.
     pub clock_hz: u32,
+    /// Minimum value of `tseg1`.
     pub tseg1_min: u32,
+    /// Maximum value of `tseg1`.
     pub tseg1_max: u32,
+    /// Minimum value of `tseg2`.
     pub tseg2_min: u32,
+    /// Maximum value of `tseg2`.
     pub tseg2_max: u32,
+    /// Maximum supported SJW.
     pub sjw_max: u32,
+    /// Minimum bitrate prescaler.
     pub brp_min: u32,
+    /// Maximum bitrate prescaler.
     pub brp_max: u32,
+    /// Prescaler increment step.
     pub brp_inc: u32,
 }
 
@@ -36,7 +45,11 @@ pub struct BitTimingConst {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AdapterTimingConst {
+    /// Nominal/arbitration phase timing limits.
     pub nominal: BitTimingConst,
+    /// Optional CAN-FD data phase timing limits.
+    ///
+    /// If this is `None`, the adapter does not support setting a data bitrate.
     pub data: Option<BitTimingConst>,
 }
 
@@ -44,9 +57,13 @@ pub struct AdapterTimingConst {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AdapterBitTiming {
+    /// Bitrate prescaler.
     pub brp: u32,
+    /// Time segment 1 (`prop_seg + phase_seg1`).
     pub tseg1: u32,
+    /// Time segment 2 (`phase_seg2`).
     pub tseg2: u32,
+    /// Synchronization jump width.
     pub sjw: u32,
 }
 
@@ -214,6 +231,49 @@ pub enum BitrateError {
 /// assert_eq!(cfg.bitrate, 500_000);
 /// assert!((cfg.sample_point - 0.8).abs() < 1e-9);
 /// ```
+///
+/// ## CAN-FD data phase
+///
+/// ```rust
+/// use automotive::can::bitrate::{AdapterTimingConst, BitrateBuilder, BitTimingConst};
+///
+/// let nominal = BitTimingConst {
+///     clock_hz: 80_000_000,
+///     tseg1_min: 1,
+///     tseg1_max: 256,
+///     tseg2_min: 1,
+///     tseg2_max: 128,
+///     sjw_max: 128,
+///     brp_min: 1,
+///     brp_max: 1024,
+///     brp_inc: 1,
+/// };
+///
+/// let data = BitTimingConst {
+///     clock_hz: 80_000_000,
+///     tseg1_min: 1,
+///     tseg1_max: 32,
+///     tseg2_min: 1,
+///     tseg2_max: 16,
+///     sjw_max: 16,
+///     brp_min: 1,
+///     brp_max: 1024,
+///     brp_inc: 1,
+/// };
+///
+/// let timing = AdapterTimingConst {
+///     nominal,
+///     data: Some(data),
+/// };
+///
+/// let cfg = BitrateBuilder::new(timing)
+///     .bitrate(500_000)
+///     .data_bitrate(2_000_000)
+///     .build()
+///     .unwrap();
+///
+/// assert_eq!(cfg.data_bitrate, Some(2_000_000));
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct BitrateBuilder {
     timing_const: AdapterTimingConst,
@@ -281,6 +341,8 @@ impl BitrateBuilder {
     }
 
     /// Optional CAN-FD data phase target bitrate in bits per second.
+    ///
+    /// Requires [`AdapterTimingConst::data`] to be present.
     pub fn data_bitrate(mut self, bitrate: u32) -> Self {
         self.data_bitrate = Some(bitrate);
         self
