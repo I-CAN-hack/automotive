@@ -8,6 +8,7 @@ pub use error::Error;
 
 use std::collections::VecDeque;
 
+use crate::can::bitrate::{AdapterTimingConst, BitTimingConst};
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
 pub use crate::vector::types::XLcanFdConf;
 use crate::vector::types::{PortHandle, XLaccess, XLcanTxEvent};
@@ -19,8 +20,8 @@ use tracing::info;
 pub const CONFIG_500K_2M_80: XLcanFdConf = XLcanFdConf {
     arbitrationBitRate: 500_000,
     sjwAbr: 1,
-    tseg1Abr: 15,
-    tseg2Abr: 4,
+    tseg1Abr: 127,
+    tseg2Abr: 32,
     dataBitRate: 2_000_000,
     sjwDbr: 1,
     tseg1Dbr: 31,
@@ -29,6 +30,32 @@ pub const CONFIG_500K_2M_80: XLcanFdConf = XLcanFdConf {
     options: 0,
     reserved1: [0, 0],
     reserved2: 0,
+};
+
+/// Vector XL timing capabilities used for bitrate helper calculations.
+pub const VECTOR_TIMING_CONST: AdapterTimingConst = AdapterTimingConst {
+    nominal: BitTimingConst {
+        clock_hz: 80_000_000,
+        tseg1_min: 2,
+        tseg1_max: 254,
+        tseg2_min: 2,
+        tseg2_max: 254,
+        sjw_max: 128,
+        brp_min: 1,
+        brp_max: 64,
+        brp_inc: 1,
+    },
+    data: Some(BitTimingConst {
+        clock_hz: 80_000_000,
+        tseg1_min: 2,
+        tseg1_max: 126,
+        tseg2_min: 2,
+        tseg2_max: 126,
+        sjw_max: 64,
+        brp_min: 1,
+        brp_max: 64,
+        brp_inc: 1,
+    }),
 };
 
 #[derive(Clone)]
@@ -116,5 +143,34 @@ impl CanAdapter for VectorCan {
         }
 
         Ok(frames)
+    }
+
+    fn timing_const() -> crate::can::bitrate::AdapterTimingConst
+    where
+        Self: Sized,
+    {
+        VECTOR_TIMING_CONST
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::can::bitrate::BitrateBuilder;
+
+    #[test]
+    fn bitrate_builder_matches_predefined_config() {
+        let bitrate_cfg = BitrateBuilder::new::<VectorCan>()
+            .bitrate(500_000)
+            .sample_point(0.8)
+            .sjw(1)
+            .data_bitrate(2_000_000)
+            .data_sample_point(0.8)
+            .data_sjw(1)
+            .build()
+            .unwrap();
+
+        let conf: XLcanFdConf = bitrate_cfg.into();
+        assert_eq!(conf, CONFIG_500K_2M_80);
     }
 }

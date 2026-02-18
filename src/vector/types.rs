@@ -1,5 +1,6 @@
 use strum_macros::FromRepr;
 
+use crate::can::bitrate::BitrateConfig;
 use crate::vector::bindings as xl;
 pub use crate::vector::bindings::{
     XLaccess, XLcanFdConf, XLcanRxEvent, XLcanTxEvent, XLportHandle,
@@ -100,6 +101,47 @@ pub struct ChannelConfig {
 pub struct PortHandle {
     pub port_handle: XLportHandle,
     pub permission_mask: XLaccess,
+}
+
+impl PartialEq for XLcanFdConf {
+    fn eq(&self, other: &Self) -> bool {
+        self.arbitrationBitRate == other.arbitrationBitRate
+            && self.sjwAbr == other.sjwAbr
+            && self.tseg1Abr == other.tseg1Abr
+            && self.tseg2Abr == other.tseg2Abr
+            && self.dataBitRate == other.dataBitRate
+            && self.sjwDbr == other.sjwDbr
+            && self.tseg1Dbr == other.tseg1Dbr
+            && self.tseg2Dbr == other.tseg2Dbr
+            && self.reserved == other.reserved
+            && self.options == other.options
+            && self.reserved1 == other.reserved1
+            && self.reserved2 == other.reserved2
+    }
+}
+
+impl Eq for XLcanFdConf {}
+
+impl From<BitrateConfig> for XLcanFdConf {
+    fn from(config: BitrateConfig) -> Self {
+        let nominal = config.nominal;
+        let data = config.data.unwrap_or(nominal);
+
+        Self {
+            arbitrationBitRate: nominal.bitrate,
+            sjwAbr: nominal.sjw,
+            tseg1Abr: nominal.tseg1,
+            tseg2Abr: nominal.tseg2,
+            dataBitRate: data.bitrate,
+            sjwDbr: data.sjw,
+            tseg1Dbr: data.tseg1,
+            tseg2Dbr: data.tseg2,
+            reserved: 0,
+            options: 0,
+            reserved1: [0, 0],
+            reserved2: 0,
+        }
+    }
 }
 
 impl From<crate::can::Frame> for XLcanTxEvent {
