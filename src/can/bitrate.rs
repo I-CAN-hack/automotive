@@ -7,6 +7,11 @@
 //! Optionally, a CAN-FD data phase can be configured with
 //! `data_bitrate` (+ optional `data_sample_point`, `data_sjw`).
 //!
+//! If no sample point is provided in bitrate mode, the Linux-style defaults are used:
+//! - bitrate > 800_000: sample point 0.750
+//! - bitrate > 500_000: sample point 0.800
+//! - otherwise: sample point 0.875
+//!
 //! The resulting [`BitrateConfig`] contains:
 //! - the adapter-facing values (`brp`, `tseg1`, `tseg2`, `sjw`)
 //! - the resulting `bitrate` and `sample_point`
@@ -16,6 +21,11 @@ use thiserror::Error;
 const CAN_SYNC_SEG: u32 = 1;
 const CAN_CALC_MAX_ERROR: u32 = 50; // 0.50% in one-hundredth percent units
 const SAMPLE_POINT_SCALE: f64 = 1000.0;
+const DEFAULT_SAMPLE_POINT_HIGH_BITRATE_THRESHOLD: u32 = 800_000;
+const DEFAULT_SAMPLE_POINT_MEDIUM_BITRATE_THRESHOLD: u32 = 500_000;
+const DEFAULT_SAMPLE_POINT_HIGH_BITRATE: u32 = 750;
+const DEFAULT_SAMPLE_POINT_MEDIUM_BITRATE: u32 = 800;
+const DEFAULT_SAMPLE_POINT_LOW_BITRATE: u32 = 875;
 
 /// Hardware limits used to calculate and validate CAN bit timing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -376,6 +386,11 @@ impl BitrateBuilder {
     }
 
     /// Target sample point in normalized form (`0.0..1.0`).
+    ///
+    /// If omitted, the default depends on bitrate:
+    /// - `bitrate > 800_000`: `0.750`
+    /// - `bitrate > 500_000`: `0.800`
+    /// - otherwise: `0.875`
     pub fn sample_point(mut self, sample_point: f64) -> Self {
         self.sample_point = Some(sample_point);
         self
@@ -418,6 +433,11 @@ impl BitrateBuilder {
     }
 
     /// Optional CAN-FD data phase sample point in normalized form (`0.0..1.0`).
+    ///
+    /// If omitted, the default depends on `data_bitrate`:
+    /// - `data_bitrate > 800_000`: `0.750`
+    /// - `data_bitrate > 500_000`: `0.800`
+    /// - otherwise: `0.875`
     pub fn data_sample_point(mut self, sample_point: f64) -> Self {
         self.data_sample_point = Some(sample_point);
         self
@@ -744,12 +764,12 @@ fn calc_default_sjw(tseg1: u32, tseg2: u32) -> u32 {
 }
 
 fn calc_default_sample_point_nrz(bitrate: u32) -> u32 {
-    if bitrate > 800_000 {
-        750
-    } else if bitrate > 500_000 {
-        800
+    if bitrate > DEFAULT_SAMPLE_POINT_HIGH_BITRATE_THRESHOLD {
+        DEFAULT_SAMPLE_POINT_HIGH_BITRATE
+    } else if bitrate > DEFAULT_SAMPLE_POINT_MEDIUM_BITRATE_THRESHOLD {
+        DEFAULT_SAMPLE_POINT_MEDIUM_BITRATE
     } else {
-        875
+        DEFAULT_SAMPLE_POINT_LOW_BITRATE
     }
 }
 
@@ -908,13 +928,39 @@ mod tests {
 
     #[test]
     fn bitrate_mode_default_sample_point() {
-        let cfg = BitrateBuilder::new::<DummyTimingAdapter>()
+        let cfg_high_default = BitrateBuilder::new::<DummyTimingAdapter>()
             .bitrate(2_000_000)
             .build()
             .unwrap();
+        let cfg_high_explicit = BitrateBuilder::new::<DummyTimingAdapter>()
+            .bitrate(2_000_000)
+            .sample_point(0.75)
+            .build()
+            .unwrap();
 
-        assert_eq!(cfg.bitrate, 2_000_000);
-        assert!((cfg.sample_point - 0.75).abs() < 1e-9);
+        let cfg_medium_default = BitrateBuilder::new::<DummyTimingAdapter>()
+            .bitrate(625_000)
+            .build()
+            .unwrap();
+        let cfg_medium_explicit = BitrateBuilder::new::<DummyTimingAdapter>()
+            .bitrate(625_000)
+            .sample_point(0.8)
+            .build()
+            .unwrap();
+
+        let cfg_low_default = BitrateBuilder::new::<DummyTimingAdapter>()
+            .bitrate(500_000)
+            .build()
+            .unwrap();
+        let cfg_low_explicit = BitrateBuilder::new::<DummyTimingAdapter>()
+            .bitrate(500_000)
+            .sample_point(0.875)
+            .build()
+            .unwrap();
+
+        assert_eq!(cfg_high_default, cfg_high_explicit);
+        assert_eq!(cfg_medium_default, cfg_medium_explicit);
+        assert_eq!(cfg_low_default, cfg_low_explicit);
     }
 
     #[test]
