@@ -128,6 +128,11 @@ impl fmt::Debug for Frame {
 pub trait CanAdapter {
     fn send(&mut self, frames: &mut VecDeque<crate::can::Frame>) -> crate::Result<()>;
     fn recv(&mut self) -> crate::Result<Vec<Frame>>;
+
+    /// Adapter timing constants for bitrate configuration helpers.
+    fn timing_const() -> crate::can::bitrate::AdapterTimingConst
+    where
+        Self: Sized;
 }
 
 #[cfg(test)]

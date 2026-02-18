@@ -5,7 +5,7 @@
 //! - direct timing parameters (`brp`, `tseg1`, `tseg2`, optional `sjw`)
 //!
 //! Optionally, a CAN-FD data phase can be configured with
-//! `data_bitrate` (+ optional `data_sample_point`).
+//! `data_bitrate` (+ optional `data_sample_point`, `data_sjw`).
 //!
 //! The resulting [`BitrateConfig`] contains:
 //! - the adapter-facing values (`brp`, `tseg1`, `tseg2`, `sjw`)
@@ -128,6 +128,8 @@ pub enum BitrateError {
     SamplePointRequiresBitrate,
     #[error("data_sample_point can only be used with data_bitrate")]
     DataSamplePointRequiresDataBitrate,
+    #[error("data_sjw can only be used with data_bitrate")]
+    DataSjwRequiresDataBitrate,
     #[error("no bitrate configuration provided")]
     MissingConfiguration,
     #[error("missing direct timing field: {0}")]
@@ -171,25 +173,44 @@ pub enum BitrateError {
 /// ## Bitrate mode
 ///
 /// ```rust
-/// use automotive::can::bitrate::{AdapterTimingConst, BitrateBuilder, BitTimingConst};
+/// use automotive::can::bitrate::{AdapterTimingConst, BitTimingConst, BitrateBuilder};
+/// use automotive::can::{CanAdapter, Frame};
+/// use std::collections::VecDeque;
 ///
-/// let btc = BitTimingConst {
-///     clock_hz: 80_000_000,
-///     tseg1_min: 1,
-///     tseg1_max: 16,
-///     tseg2_min: 1,
-///     tseg2_max: 8,
-///     sjw_max: 4,
-///     brp_min: 1,
-///     brp_max: 1024,
-///     brp_inc: 1,
-/// };
-/// let timing = AdapterTimingConst {
-///     nominal: btc,
+/// const TIMING: AdapterTimingConst = AdapterTimingConst {
+///     nominal: BitTimingConst {
+///         clock_hz: 80_000_000,
+///         tseg1_min: 1,
+///         tseg1_max: 16,
+///         tseg2_min: 1,
+///         tseg2_max: 8,
+///         sjw_max: 4,
+///         brp_min: 1,
+///         brp_max: 1024,
+///         brp_inc: 1,
+///     },
 ///     data: None,
 /// };
 ///
-/// let cfg = BitrateBuilder::new(timing)
+/// struct DummyAdapter;
+/// impl CanAdapter for DummyAdapter {
+///     fn send(&mut self, _frames: &mut VecDeque<Frame>) -> automotive::Result<()> {
+///         unreachable!()
+///     }
+///
+///     fn recv(&mut self) -> automotive::Result<Vec<Frame>> {
+///         unreachable!()
+///     }
+///
+///     fn timing_const() -> AdapterTimingConst
+///     where
+///         Self: Sized,
+///     {
+///         TIMING
+///     }
+/// }
+///
+/// let cfg = BitrateBuilder::new::<DummyAdapter>()
 ///     .bitrate(500_000)
 ///     .sample_point(0.8)
 ///     .build()
@@ -202,25 +223,44 @@ pub enum BitrateError {
 /// ## Direct timing mode
 ///
 /// ```rust
-/// use automotive::can::bitrate::{AdapterTimingConst, BitrateBuilder, BitTimingConst};
+/// use automotive::can::bitrate::{AdapterTimingConst, BitTimingConst, BitrateBuilder};
+/// use automotive::can::{CanAdapter, Frame};
+/// use std::collections::VecDeque;
 ///
-/// let btc = BitTimingConst {
-///     clock_hz: 80_000_000,
-///     tseg1_min: 1,
-///     tseg1_max: 16,
-///     tseg2_min: 1,
-///     tseg2_max: 8,
-///     sjw_max: 4,
-///     brp_min: 1,
-///     brp_max: 1024,
-///     brp_inc: 1,
-/// };
-/// let timing = AdapterTimingConst {
-///     nominal: btc,
+/// const TIMING: AdapterTimingConst = AdapterTimingConst {
+///     nominal: BitTimingConst {
+///         clock_hz: 80_000_000,
+///         tseg1_min: 1,
+///         tseg1_max: 16,
+///         tseg2_min: 1,
+///         tseg2_max: 8,
+///         sjw_max: 4,
+///         brp_min: 1,
+///         brp_max: 1024,
+///         brp_inc: 1,
+///     },
 ///     data: None,
 /// };
 ///
-/// let cfg = BitrateBuilder::new(timing)
+/// struct DummyAdapter;
+/// impl CanAdapter for DummyAdapter {
+///     fn send(&mut self, _frames: &mut VecDeque<Frame>) -> automotive::Result<()> {
+///         unreachable!()
+///     }
+///
+///     fn recv(&mut self) -> automotive::Result<Vec<Frame>> {
+///         unreachable!()
+///     }
+///
+///     fn timing_const() -> AdapterTimingConst
+///     where
+///         Self: Sized,
+///     {
+///         TIMING
+///     }
+/// }
+///
+/// let cfg = BitrateBuilder::new::<DummyAdapter>()
 ///     .brp(8)
 ///     .tseg1(15)
 ///     .tseg2(4)
@@ -235,38 +275,54 @@ pub enum BitrateError {
 /// ## CAN-FD data phase
 ///
 /// ```rust
-/// use automotive::can::bitrate::{AdapterTimingConst, BitrateBuilder, BitTimingConst};
+/// use automotive::can::bitrate::{AdapterTimingConst, BitTimingConst, BitrateBuilder};
+/// use automotive::can::{CanAdapter, Frame};
+/// use std::collections::VecDeque;
 ///
-/// let nominal = BitTimingConst {
-///     clock_hz: 80_000_000,
-///     tseg1_min: 1,
-///     tseg1_max: 256,
-///     tseg2_min: 1,
-///     tseg2_max: 128,
-///     sjw_max: 128,
-///     brp_min: 1,
-///     brp_max: 1024,
-///     brp_inc: 1,
+/// const TIMING: AdapterTimingConst = AdapterTimingConst {
+///     nominal: BitTimingConst {
+///         clock_hz: 80_000_000,
+///         tseg1_min: 1,
+///         tseg1_max: 256,
+///         tseg2_min: 1,
+///         tseg2_max: 128,
+///         sjw_max: 128,
+///         brp_min: 1,
+///         brp_max: 1024,
+///         brp_inc: 1,
+///     },
+///     data: Some(BitTimingConst {
+///         clock_hz: 80_000_000,
+///         tseg1_min: 1,
+///         tseg1_max: 32,
+///         tseg2_min: 1,
+///         tseg2_max: 16,
+///         sjw_max: 16,
+///         brp_min: 1,
+///         brp_max: 1024,
+///         brp_inc: 1,
+///     }),
 /// };
 ///
-/// let data = BitTimingConst {
-///     clock_hz: 80_000_000,
-///     tseg1_min: 1,
-///     tseg1_max: 32,
-///     tseg2_min: 1,
-///     tseg2_max: 16,
-///     sjw_max: 16,
-///     brp_min: 1,
-///     brp_max: 1024,
-///     brp_inc: 1,
-/// };
+/// struct DummyAdapter;
+/// impl CanAdapter for DummyAdapter {
+///     fn send(&mut self, _frames: &mut VecDeque<Frame>) -> automotive::Result<()> {
+///         unreachable!()
+///     }
 ///
-/// let timing = AdapterTimingConst {
-///     nominal,
-///     data: Some(data),
-/// };
+///     fn recv(&mut self) -> automotive::Result<Vec<Frame>> {
+///         unreachable!()
+///     }
 ///
-/// let cfg = BitrateBuilder::new(timing)
+///     fn timing_const() -> AdapterTimingConst
+///     where
+///         Self: Sized,
+///     {
+///         TIMING
+///     }
+/// }
+///
+/// let cfg = BitrateBuilder::new::<DummyAdapter>()
 ///     .bitrate(500_000)
 ///     .data_bitrate(2_000_000)
 ///     .build()
@@ -285,11 +341,19 @@ pub struct BitrateBuilder {
     sjw: Option<u32>,
     data_bitrate: Option<u32>,
     data_sample_point: Option<f64>,
+    data_sjw: Option<u32>,
     max_bitrate_error: u32,
 }
 
 impl BitrateBuilder {
-    pub fn new(timing_const: AdapterTimingConst) -> Self {
+    /// Create a builder using static timing metadata from a blocking CAN adapter type.
+    ///
+    /// This does not require constructing an adapter instance.
+    pub fn new<T: crate::can::CanAdapter>() -> Self {
+        Self::with_timing_const(T::timing_const())
+    }
+
+    fn with_timing_const(timing_const: AdapterTimingConst) -> Self {
         Self {
             timing_const,
             bitrate: None,
@@ -300,6 +364,7 @@ impl BitrateBuilder {
             sjw: None,
             data_bitrate: None,
             data_sample_point: None,
+            data_sjw: None,
             max_bitrate_error: CAN_CALC_MAX_ERROR,
         }
     }
@@ -334,7 +399,11 @@ impl BitrateBuilder {
         self
     }
 
-    /// Optional direct SJW override.
+    /// Optional SJW override for nominal phase.
+    ///
+    /// This can be used both in bitrate mode and direct timing mode.
+    /// If omitted, SJW is derived using the Linux default heuristic:
+    /// `max(1, min(phase_seg1, phase_seg2 / 2))`.
     pub fn sjw(mut self, sjw: u32) -> Self {
         self.sjw = Some(sjw);
         self
@@ -354,6 +423,16 @@ impl BitrateBuilder {
         self
     }
 
+    /// Optional CAN-FD data phase SJW override.
+    ///
+    /// If omitted, the same Linux default heuristic is used for the data phase:
+    /// `max(1, min(phase_seg1, phase_seg2 / 2))`, with `phase_seg*` derived
+    /// from the resolved data-phase `tseg1`/`tseg2`.
+    pub fn data_sjw(mut self, sjw: u32) -> Self {
+        self.data_sjw = Some(sjw);
+        self
+    }
+
     /// Maximum allowed bitrate error in one-hundredth of a percent.
     ///
     /// Default is `0.50%`
@@ -368,12 +447,13 @@ impl BitrateBuilder {
         if self.data_sample_point.is_some() && self.data_bitrate.is_none() {
             return Err(BitrateError::DataSamplePointRequiresDataBitrate);
         }
+        if self.data_sjw.is_some() && self.data_bitrate.is_none() {
+            return Err(BitrateError::DataSjwRequiresDataBitrate);
+        }
 
         let has_bitrate_mode = self.bitrate.is_some();
-        let has_direct_timing_fields = self.brp.is_some()
-            || self.tseg1.is_some()
-            || self.tseg2.is_some()
-            || self.sjw.is_some();
+        let has_direct_timing_fields =
+            self.brp.is_some() || self.tseg1.is_some() || self.tseg2.is_some();
 
         if has_bitrate_mode && has_direct_timing_fields {
             return Err(BitrateError::MixedConfiguration);
@@ -397,6 +477,7 @@ impl BitrateBuilder {
                     &data_timing_const,
                     data_bitrate_target,
                     self.data_sample_point,
+                    self.data_sjw,
                     self.max_bitrate_error,
                 )?;
 
@@ -433,6 +514,7 @@ impl BitrateBuilder {
             &self.timing_const.nominal,
             bitrate,
             self.sample_point,
+            self.sjw,
             self.max_bitrate_error,
         )
     }
@@ -476,6 +558,7 @@ fn solve_bitrate_mode(
     btc: &BitTimingConst,
     bitrate: u32,
     sample_point: Option<f64>,
+    sjw: Option<u32>,
     max_bitrate_error: u32,
 ) -> Result<PhaseBitrateConfig, BitrateError> {
     if bitrate == 0 {
@@ -553,7 +636,7 @@ fn solve_bitrate_mode(
     }
 
     let candidate = update_sample_point(btc, sample_point_reference, best_tseg);
-    let sjw = calc_default_sjw(candidate.tseg1, candidate.tseg2);
+    let sjw = sjw.unwrap_or_else(|| calc_default_sjw(candidate.tseg1, candidate.tseg2));
     check_ranges(btc, best_brp, candidate.tseg1, candidate.tseg2)?;
     check_sjw(btc, sjw, candidate.tseg1, candidate.tseg2)?;
 
@@ -725,6 +808,8 @@ fn update_sample_point(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::can::{CanAdapter, Frame};
+    use std::collections::VecDeque;
 
     const PEAK_NOMINAL_BTC: BitTimingConst = BitTimingConst {
         clock_hz: 80_000_000,
@@ -760,9 +845,45 @@ mod tests {
         data: None,
     };
 
+    struct DummyTimingAdapter;
+    impl CanAdapter for DummyTimingAdapter {
+        fn send(&mut self, _frames: &mut VecDeque<Frame>) -> crate::Result<()> {
+            unreachable!()
+        }
+
+        fn recv(&mut self) -> crate::Result<Vec<Frame>> {
+            unreachable!()
+        }
+
+        fn timing_const() -> AdapterTimingConst
+        where
+            Self: Sized,
+        {
+            PEAK_TIMING_WITH_FD
+        }
+    }
+
+    struct DummyNoFdTimingAdapter;
+    impl CanAdapter for DummyNoFdTimingAdapter {
+        fn send(&mut self, _frames: &mut VecDeque<Frame>) -> crate::Result<()> {
+            unreachable!()
+        }
+
+        fn recv(&mut self) -> crate::Result<Vec<Frame>> {
+            unreachable!()
+        }
+
+        fn timing_const() -> AdapterTimingConst
+        where
+            Self: Sized,
+        {
+            PEAK_TIMING_NO_FD
+        }
+    }
+
     #[test]
     fn bitrate_mode_500k_800() {
-        let cfg = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
+        let cfg = BitrateBuilder::new::<DummyTimingAdapter>()
             .bitrate(500_000)
             .sample_point(0.8)
             .build()
@@ -775,8 +896,19 @@ mod tests {
     }
 
     #[test]
+    fn from_adapter_type_constructor() {
+        let cfg = BitrateBuilder::new::<DummyTimingAdapter>()
+            .bitrate(500_000)
+            .sample_point(0.8)
+            .build()
+            .unwrap();
+
+        assert_eq!(cfg.bitrate, 500_000);
+    }
+
+    #[test]
     fn bitrate_mode_default_sample_point() {
-        let cfg = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
+        let cfg = BitrateBuilder::new::<DummyTimingAdapter>()
             .bitrate(2_000_000)
             .build()
             .unwrap();
@@ -786,8 +918,20 @@ mod tests {
     }
 
     #[test]
+    fn bitrate_mode_allows_sjw_override() {
+        let cfg = BitrateBuilder::new::<DummyTimingAdapter>()
+            .bitrate(500_000)
+            .sample_point(0.8)
+            .sjw(1)
+            .build()
+            .unwrap();
+
+        assert_eq!(cfg.timing.sjw, 1);
+    }
+
+    #[test]
     fn direct_mode() {
-        let cfg = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
+        let cfg = BitrateBuilder::new::<DummyTimingAdapter>()
             .brp(8)
             .tseg1(15)
             .tseg2(4)
@@ -801,7 +945,7 @@ mod tests {
 
     #[test]
     fn mixed_modes_fail() {
-        let err = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
+        let err = BitrateBuilder::new::<DummyTimingAdapter>()
             .bitrate(500_000)
             .tseg1(15)
             .build()
@@ -812,7 +956,7 @@ mod tests {
 
     #[test]
     fn invalid_sample_point_rejected() {
-        let err = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
+        let err = BitrateBuilder::new::<DummyTimingAdapter>()
             .bitrate(500_000)
             .sample_point(1.0)
             .build()
@@ -823,7 +967,7 @@ mod tests {
 
     #[test]
     fn can_fd_data_phase_bitrate_and_sample_point() {
-        let cfg = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
+        let cfg = BitrateBuilder::new::<DummyTimingAdapter>()
             .bitrate(500_000)
             .sample_point(0.8)
             .data_bitrate(2_000_000)
@@ -841,7 +985,7 @@ mod tests {
 
     #[test]
     fn data_sample_point_requires_data_bitrate() {
-        let err = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
+        let err = BitrateBuilder::new::<DummyTimingAdapter>()
             .bitrate(500_000)
             .data_sample_point(0.75)
             .build()
@@ -851,8 +995,19 @@ mod tests {
     }
 
     #[test]
+    fn data_sjw_requires_data_bitrate() {
+        let err = BitrateBuilder::new::<DummyTimingAdapter>()
+            .bitrate(500_000)
+            .data_sjw(1)
+            .build()
+            .unwrap_err();
+
+        assert_eq!(err, BitrateError::DataSjwRequiresDataBitrate);
+    }
+
+    #[test]
     fn data_bitrate_must_not_be_lower_than_nominal() {
-        let err = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
+        let err = BitrateBuilder::new::<DummyTimingAdapter>()
             .bitrate(500_000)
             .data_bitrate(250_000)
             .build()
@@ -872,7 +1027,7 @@ mod tests {
 
     #[test]
     fn data_bitrate_not_supported_by_adapter() {
-        let err = BitrateBuilder::new(PEAK_TIMING_NO_FD)
+        let err = BitrateBuilder::new::<DummyNoFdTimingAdapter>()
             .bitrate(500_000)
             .data_bitrate(2_000_000)
             .build()
@@ -883,13 +1038,13 @@ mod tests {
 
     #[test]
     fn round_trip_bitrate_to_direct_keeps_bitrate_and_sample_point() {
-        let cfg_from_bitrate = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
+        let cfg_from_bitrate = BitrateBuilder::new::<DummyTimingAdapter>()
             .bitrate(625_000)
             .sample_point(0.82)
             .build()
             .unwrap();
 
-        let cfg_from_direct = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
+        let cfg_from_direct = BitrateBuilder::new::<DummyTimingAdapter>()
             .brp(cfg_from_bitrate.timing.brp)
             .tseg1(cfg_from_bitrate.timing.tseg1)
             .tseg2(cfg_from_bitrate.timing.tseg2)

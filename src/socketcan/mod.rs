@@ -1,4 +1,5 @@
 //! This module provides a [`CanAdapter`] implementation for SocketCAN interfaces
+use crate::can::bitrate::{AdapterTimingConst, BitTimingConst};
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
 use crate::socketcan::socket::CanFdSocket;
 use crate::Result;
@@ -9,6 +10,20 @@ mod frame;
 mod socket;
 
 const IFF_ECHO: u64 = 1 << 18; // include/uapi/linux/if.h
+const SOCKETCAN_DUMMY_TIMING: AdapterTimingConst = AdapterTimingConst {
+    nominal: BitTimingConst {
+        clock_hz: 80_000_000,
+        tseg1_min: 1,
+        tseg1_max: 256,
+        tseg2_min: 1,
+        tseg2_max: 128,
+        sjw_max: 128,
+        brp_min: 1,
+        brp_max: 1024,
+        brp_inc: 1,
+    },
+    data: None,
+};
 
 /// SocketCAN Adapter
 pub struct SocketCan {
@@ -120,5 +135,12 @@ impl CanAdapter for SocketCan {
         frames.extend(self.loopback_queue.drain(..));
 
         Ok(frames)
+    }
+
+    fn timing_const() -> AdapterTimingConst
+    where
+        Self: Sized,
+    {
+        SOCKETCAN_DUMMY_TIMING
     }
 }
