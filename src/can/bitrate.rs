@@ -18,6 +18,7 @@ const SAMPLE_POINT_SCALE: f64 = 1000.0;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BitTimingConst {
+    pub clock_hz: u32,
     pub tseg1_min: u32,
     pub tseg1_max: u32,
     pub tseg2_min: u32,
@@ -117,6 +118,7 @@ pub enum BitrateError {
 /// use automotive::can::bitrate::{BitrateBuilder, BitTimingConst};
 ///
 /// let btc = BitTimingConst {
+///     clock_hz: 80_000_000,
 ///     tseg1_min: 1,
 ///     tseg1_max: 16,
 ///     tseg2_min: 1,
@@ -127,7 +129,7 @@ pub enum BitrateError {
 ///     brp_inc: 1,
 /// };
 ///
-/// let cfg = BitrateBuilder::new(80_000_000, btc)
+/// let cfg = BitrateBuilder::new(btc)
 ///     .bitrate(500_000)
 ///     .sample_point(0.8)
 ///     .build()
@@ -143,6 +145,7 @@ pub enum BitrateError {
 /// use automotive::can::bitrate::{BitrateBuilder, BitTimingConst};
 ///
 /// let btc = BitTimingConst {
+///     clock_hz: 80_000_000,
 ///     tseg1_min: 1,
 ///     tseg1_max: 16,
 ///     tseg2_min: 1,
@@ -153,7 +156,7 @@ pub enum BitrateError {
 ///     brp_inc: 1,
 /// };
 ///
-/// let cfg = BitrateBuilder::new(80_000_000, btc)
+/// let cfg = BitrateBuilder::new(btc)
 ///     .brp(8)
 ///     .tseg1(15)
 ///     .tseg2(4)
@@ -166,7 +169,6 @@ pub enum BitrateError {
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct BitrateBuilder {
-    clock_hz: u32,
     timing_const: BitTimingConst,
     bitrate: Option<u32>,
     sample_point: Option<f64>,
@@ -178,9 +180,8 @@ pub struct BitrateBuilder {
 }
 
 impl BitrateBuilder {
-    pub fn new(clock_hz: u32, timing_const: BitTimingConst) -> Self {
+    pub fn new(timing_const: BitTimingConst) -> Self {
         Self {
-            clock_hz,
             timing_const,
             bitrate: None,
             sample_point: None,
@@ -237,7 +238,7 @@ impl BitrateBuilder {
     }
 
     pub fn build(self) -> Result<BitrateConfig, BitrateError> {
-        if self.clock_hz == 0 {
+        if self.timing_const.clock_hz == 0 {
             return Err(BitrateError::InvalidClock);
         }
         if self.timing_const.brp_inc == 0 {
@@ -289,13 +290,13 @@ impl BitrateBuilder {
                 continue;
             }
 
-            let mut brp = (self.clock_hz as u64 / denom) as u32 + tseg % 2;
+            let mut brp = (btc.clock_hz as u64 / denom) as u32 + tseg % 2;
             brp = (brp / btc.brp_inc) * btc.brp_inc;
             if brp < btc.brp_min || brp > btc.brp_max {
                 continue;
             }
 
-            let calc_bitrate = self.clock_hz / (brp * tsegall);
+            let calc_bitrate = btc.clock_hz / (brp * tsegall);
             let bitrate_error = bitrate.abs_diff(calc_bitrate);
 
             if bitrate_error > best_bitrate_error {
@@ -344,8 +345,8 @@ impl BitrateBuilder {
         check_sjw(&btc, sjw, candidate.tseg1, candidate.tseg2)?;
 
         let bit_time_tq = CAN_SYNC_SEG + candidate.tseg1 + candidate.tseg2;
-        let actual_bitrate = self.clock_hz / (best_brp * bit_time_tq);
-        let tq_ns = ((best_brp as u64) * 1_000_000_000 / (self.clock_hz as u64)) as u32;
+        let actual_bitrate = btc.clock_hz / (best_brp * bit_time_tq);
+        let tq_ns = ((best_brp as u64) * 1_000_000_000 / (btc.clock_hz as u64)) as u32;
 
         Ok(BitrateConfig {
             timing: AdapterBitTiming {
@@ -388,9 +389,9 @@ impl BitrateBuilder {
         check_sjw(&btc, sjw, tseg1, tseg2)?;
 
         let bit_time_tq = CAN_SYNC_SEG + tseg1 + tseg2;
-        let bitrate = self.clock_hz / (brp * bit_time_tq);
+        let bitrate = btc.clock_hz / (brp * bit_time_tq);
         let sample_point = sample_point_to_float(1000 * (CAN_SYNC_SEG + tseg1) / bit_time_tq);
-        let tq_ns = ((brp as u64) * 1_000_000_000 / (self.clock_hz as u64)) as u32;
+        let tq_ns = ((brp as u64) * 1_000_000_000 / (btc.clock_hz as u64)) as u32;
 
         Ok(BitrateConfig {
             timing: AdapterBitTiming {
@@ -535,6 +536,7 @@ mod tests {
     use super::*;
 
     const BTC: BitTimingConst = BitTimingConst {
+        clock_hz: 80_000_000,
         tseg1_min: 1,
         tseg1_max: 16,
         tseg2_min: 1,
@@ -547,7 +549,7 @@ mod tests {
 
     #[test]
     fn bitrate_mode_500k_800() {
-        let cfg = BitrateBuilder::new(80_000_000, BTC)
+        let cfg = BitrateBuilder::new(BTC)
             .bitrate(500_000)
             .sample_point(0.8)
             .build()
@@ -568,10 +570,7 @@ mod tests {
 
     #[test]
     fn bitrate_mode_default_sample_point() {
-        let cfg = BitrateBuilder::new(80_000_000, BTC)
-            .bitrate(2_000_000)
-            .build()
-            .unwrap();
+        let cfg = BitrateBuilder::new(BTC).bitrate(2_000_000).build().unwrap();
 
         assert_eq!(cfg.bitrate, 2_000_000);
         assert!((cfg.sample_point - 0.75).abs() < 1e-9);
@@ -579,7 +578,7 @@ mod tests {
 
     #[test]
     fn direct_mode() {
-        let cfg = BitrateBuilder::new(80_000_000, BTC)
+        let cfg = BitrateBuilder::new(BTC)
             .brp(8)
             .tseg1(15)
             .tseg2(4)
@@ -593,7 +592,7 @@ mod tests {
 
     #[test]
     fn mixed_modes_fail() {
-        let err = BitrateBuilder::new(80_000_000, BTC)
+        let err = BitrateBuilder::new(BTC)
             .bitrate(500_000)
             .tseg1(15)
             .build()
@@ -604,7 +603,7 @@ mod tests {
 
     #[test]
     fn invalid_sample_point_rejected() {
-        let err = BitrateBuilder::new(80_000_000, BTC)
+        let err = BitrateBuilder::new(BTC)
             .bitrate(500_000)
             .sample_point(1.0)
             .build()
@@ -615,13 +614,13 @@ mod tests {
 
     #[test]
     fn round_trip_bitrate_to_direct_keeps_bitrate_and_sample_point() {
-        let cfg_from_bitrate = BitrateBuilder::new(80_000_000, BTC)
+        let cfg_from_bitrate = BitrateBuilder::new(BTC)
             .bitrate(625_000)
             .sample_point(0.82)
             .build()
             .unwrap();
 
-        let cfg_from_direct = BitrateBuilder::new(80_000_000, BTC)
+        let cfg_from_direct = BitrateBuilder::new(BTC)
             .brp(cfg_from_bitrate.timing.brp)
             .tseg1(cfg_from_bitrate.timing.tseg1)
             .tseg2(cfg_from_bitrate.timing.tseg2)
