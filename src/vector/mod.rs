@@ -42,7 +42,7 @@ pub const VECTOR_TIMING_CONST: AdapterTimingConst = AdapterTimingConst {
         tseg2_max: 254,
         sjw_max: 128,
         brp_min: 1,
-        brp_max: 1024,
+        brp_max: 64,
         brp_inc: 1,
     },
     data: Some(BitTimingConst {
@@ -53,7 +53,7 @@ pub const VECTOR_TIMING_CONST: AdapterTimingConst = AdapterTimingConst {
         tseg2_max: 126,
         sjw_max: 64,
         brp_min: 1,
-        brp_max: 1024,
+        brp_max: 64,
         brp_inc: 1,
     }),
 };
