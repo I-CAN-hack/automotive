@@ -4,6 +4,9 @@
 //! - target `bitrate` (+ optional `sample_point`)
 //! - direct timing parameters (`brp`, `tseg1`, `tseg2`, optional `sjw`)
 //!
+//! Optionally, a CAN-FD data phase can be configured with
+//! `data_bitrate` (+ optional `data_sample_point`).
+//!
 //! The resulting [`BitrateConfig`] contains:
 //! - the adapter-facing values (`brp`, `tseg1`, `tseg2`, `sjw`)
 //! - the resulting `bitrate` and `sample_point`
@@ -29,6 +32,14 @@ pub struct BitTimingConst {
     pub brp_inc: u32,
 }
 
+/// Adapter timing constants for nominal CAN and optional CAN-FD data phase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct AdapterTimingConst {
+    pub nominal: BitTimingConst,
+    pub data: Option<BitTimingConst>,
+}
+
 /// Generic timing values typically needed by CAN adapter drivers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -49,14 +60,24 @@ pub struct BitrateConfig {
     pub bitrate: u32,
     /// Actual sample point in normalized form (`0.0..1.0`).
     pub sample_point: f64,
-    /// Time quantum in nanoseconds.
-    pub tq_ns: u32,
+    /// Optional CAN-FD data phase adapter-facing timing values.
+    pub data_timing: Option<AdapterBitTiming>,
+    /// Optional CAN-FD data phase bitrate in bits per second.
+    pub data_bitrate: Option<u32>,
+    /// Optional CAN-FD data phase sample point in normalized form (`0.0..1.0`).
+    pub data_sample_point: Option<f64>,
 }
 
 impl BitrateConfig {
     /// Duration of one bit in time quanta.
     pub fn bit_time_tq(&self) -> u32 {
         CAN_SYNC_SEG + self.timing.tseg1 + self.timing.tseg2
+    }
+
+    /// Duration of one CAN-FD data phase bit in time quanta.
+    pub fn data_bit_time_tq(&self) -> Option<u32> {
+        self.data_timing
+            .map(|timing| CAN_SYNC_SEG + timing.tseg1 + timing.tseg2)
     }
 }
 
@@ -66,6 +87,13 @@ struct SamplePointCandidate {
     sample_point_error: u32,
     tseg1: u32,
     tseg2: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PhaseBitrateConfig {
+    timing: AdapterBitTiming,
+    bitrate: u32,
+    sample_point: f64,
 }
 
 /// Error type returned by [`BitrateBuilder::build`].
@@ -81,6 +109,8 @@ pub enum BitrateError {
     MixedConfiguration,
     #[error("sample_point can only be used in bitrate mode")]
     SamplePointRequiresBitrate,
+    #[error("data_sample_point can only be used with data_bitrate")]
+    DataSamplePointRequiresDataBitrate,
     #[error("no bitrate configuration provided")]
     MissingConfiguration,
     #[error("missing direct timing field: {0}")]
@@ -108,6 +138,15 @@ pub enum BitrateError {
     },
     #[error("unable to find a valid timing solution for bitrate {bitrate}")]
     NoSolution { bitrate: u32 },
+    #[error(
+        "CAN-FD data bitrate {data_bitrate} must be >= arbitration bitrate {arbitration_bitrate}"
+    )]
+    DataBitrateLowerThanNominal {
+        data_bitrate: u32,
+        arbitration_bitrate: u32,
+    },
+    #[error("CAN-FD data bitrate requested, but adapter does not provide CAN-FD timing constants")]
+    DataBitrateNotSupported,
 }
 
 /// Builder for CAN bitrate settings.
@@ -115,7 +154,7 @@ pub enum BitrateError {
 /// ## Bitrate mode
 ///
 /// ```rust
-/// use automotive::can::bitrate::{BitrateBuilder, BitTimingConst};
+/// use automotive::can::bitrate::{AdapterTimingConst, BitrateBuilder, BitTimingConst};
 ///
 /// let btc = BitTimingConst {
 ///     clock_hz: 80_000_000,
@@ -128,8 +167,12 @@ pub enum BitrateError {
 ///     brp_max: 1024,
 ///     brp_inc: 1,
 /// };
+/// let timing = AdapterTimingConst {
+///     nominal: btc,
+///     data: None,
+/// };
 ///
-/// let cfg = BitrateBuilder::new(btc)
+/// let cfg = BitrateBuilder::new(timing)
 ///     .bitrate(500_000)
 ///     .sample_point(0.8)
 ///     .build()
@@ -142,7 +185,7 @@ pub enum BitrateError {
 /// ## Direct timing mode
 ///
 /// ```rust
-/// use automotive::can::bitrate::{BitrateBuilder, BitTimingConst};
+/// use automotive::can::bitrate::{AdapterTimingConst, BitrateBuilder, BitTimingConst};
 ///
 /// let btc = BitTimingConst {
 ///     clock_hz: 80_000_000,
@@ -155,8 +198,12 @@ pub enum BitrateError {
 ///     brp_max: 1024,
 ///     brp_inc: 1,
 /// };
+/// let timing = AdapterTimingConst {
+///     nominal: btc,
+///     data: None,
+/// };
 ///
-/// let cfg = BitrateBuilder::new(btc)
+/// let cfg = BitrateBuilder::new(timing)
 ///     .brp(8)
 ///     .tseg1(15)
 ///     .tseg2(4)
@@ -169,18 +216,20 @@ pub enum BitrateError {
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct BitrateBuilder {
-    timing_const: BitTimingConst,
+    timing_const: AdapterTimingConst,
     bitrate: Option<u32>,
     sample_point: Option<f64>,
     brp: Option<u32>,
     tseg1: Option<u32>,
     tseg2: Option<u32>,
     sjw: Option<u32>,
+    data_bitrate: Option<u32>,
+    data_sample_point: Option<f64>,
     max_bitrate_error: u32,
 }
 
 impl BitrateBuilder {
-    pub fn new(timing_const: BitTimingConst) -> Self {
+    pub fn new(timing_const: AdapterTimingConst) -> Self {
         Self {
             timing_const,
             bitrate: None,
@@ -189,6 +238,8 @@ impl BitrateBuilder {
             tseg1: None,
             tseg2: None,
             sjw: None,
+            data_bitrate: None,
+            data_sample_point: None,
             max_bitrate_error: CAN_CALC_MAX_ERROR,
         }
     }
@@ -229,6 +280,18 @@ impl BitrateBuilder {
         self
     }
 
+    /// Optional CAN-FD data phase target bitrate in bits per second.
+    pub fn data_bitrate(mut self, bitrate: u32) -> Self {
+        self.data_bitrate = Some(bitrate);
+        self
+    }
+
+    /// Optional CAN-FD data phase sample point in normalized form (`0.0..1.0`).
+    pub fn data_sample_point(mut self, sample_point: f64) -> Self {
+        self.data_sample_point = Some(sample_point);
+        self
+    }
+
     /// Maximum allowed bitrate error in one-hundredth of a percent.
     ///
     /// Default is `0.50%`
@@ -238,11 +301,10 @@ impl BitrateBuilder {
     }
 
     pub fn build(self) -> Result<BitrateConfig, BitrateError> {
-        if self.timing_const.clock_hz == 0 {
-            return Err(BitrateError::InvalidClock);
-        }
-        if self.timing_const.brp_inc == 0 {
-            return Err(BitrateError::InvalidBrpIncrement { brp: 0, brp_inc: 0 });
+        validate_timing_const(&self.timing_const.nominal)?;
+
+        if self.data_sample_point.is_some() && self.data_bitrate.is_none() {
+            return Err(BitrateError::DataSamplePointRequiresDataBitrate);
         }
 
         let has_bitrate_mode = self.bitrate.is_some();
@@ -255,113 +317,65 @@ impl BitrateBuilder {
             return Err(BitrateError::MixedConfiguration);
         }
 
-        if has_bitrate_mode {
-            self.build_from_bitrate_mode()
+        let nominal = if has_bitrate_mode {
+            self.build_from_bitrate_mode()?
         } else {
-            self.build_from_direct_mode()
-        }
-    }
-
-    fn build_from_bitrate_mode(self) -> Result<BitrateConfig, BitrateError> {
-        let bitrate = self.bitrate.ok_or(BitrateError::MissingConfiguration)?;
-        if bitrate == 0 {
-            return Err(BitrateError::InvalidBitrate);
-        }
-
-        let btc = self.timing_const;
-        let sample_point_reference = if let Some(sample_point) = self.sample_point {
-            sample_point_to_int(sample_point)?
-        } else {
-            calc_default_sample_point_nrz(bitrate)
+            self.build_from_direct_mode()?
         };
 
-        let mut best_bitrate_error = u32::MAX;
-        let mut best_sample_point_error = u32::MAX;
-        let mut best_tseg = 0;
-        let mut best_brp = 0;
+        let (data_timing, data_bitrate, data_sample_point) =
+            if let Some(data_bitrate_target) = self.data_bitrate {
+                let data_timing_const = self
+                    .timing_const
+                    .data
+                    .ok_or(BitrateError::DataBitrateNotSupported)?;
+                validate_timing_const(&data_timing_const)?;
 
-        let max_tseg = (btc.tseg1_max + btc.tseg2_max) * 2 + 1;
-        let min_tseg = (btc.tseg1_min + btc.tseg2_min) * 2;
+                let data = solve_bitrate_mode(
+                    &data_timing_const,
+                    data_bitrate_target,
+                    self.data_sample_point,
+                    self.max_bitrate_error,
+                )?;
 
-        for tseg in (min_tseg..=max_tseg).rev() {
-            let tsegall = CAN_SYNC_SEG + tseg / 2;
-            let denom = (tsegall as u64) * (bitrate as u64);
-            if denom == 0 {
-                continue;
-            }
+                if data.bitrate < nominal.bitrate {
+                    return Err(BitrateError::DataBitrateLowerThanNominal {
+                        data_bitrate: data.bitrate,
+                        arbitration_bitrate: nominal.bitrate,
+                    });
+                }
 
-            let mut brp = (btc.clock_hz as u64 / denom) as u32 + tseg % 2;
-            brp = (brp / btc.brp_inc) * btc.brp_inc;
-            if brp < btc.brp_min || brp > btc.brp_max {
-                continue;
-            }
-
-            let calc_bitrate = btc.clock_hz / (brp * tsegall);
-            let bitrate_error = bitrate.abs_diff(calc_bitrate);
-
-            if bitrate_error > best_bitrate_error {
-                continue;
-            }
-
-            if bitrate_error < best_bitrate_error {
-                best_sample_point_error = u32::MAX;
-            }
-
-            let candidate = update_sample_point(&btc, sample_point_reference, tseg / 2);
-            if candidate.sample_point_error >= best_sample_point_error {
-                continue;
-            }
-
-            best_bitrate_error = bitrate_error;
-            best_sample_point_error = candidate.sample_point_error;
-            best_tseg = tseg / 2;
-            best_brp = brp;
-
-            if bitrate_error == 0 && candidate.sample_point_error == 0 {
-                break;
-            }
-        }
-
-        if best_brp == 0 {
-            return Err(BitrateError::NoSolution { bitrate });
-        }
-
-        if best_bitrate_error != 0 {
-            let mut bitrate_error_hundredth_percent =
-                ((best_bitrate_error as u64) * 10_000 / (bitrate as u64)) as u32;
-            bitrate_error_hundredth_percent = bitrate_error_hundredth_percent.max(1);
-
-            if bitrate_error_hundredth_percent > self.max_bitrate_error {
-                return Err(BitrateError::BitrateErrorTooHigh {
-                    error_hundredth_percent: bitrate_error_hundredth_percent,
-                    max_hundredth_percent: self.max_bitrate_error,
-                });
-            }
-        }
-
-        let candidate = update_sample_point(&btc, sample_point_reference, best_tseg);
-        let sjw = calc_default_sjw(candidate.tseg1, candidate.tseg2);
-        check_ranges(&btc, best_brp, candidate.tseg1, candidate.tseg2)?;
-        check_sjw(&btc, sjw, candidate.tseg1, candidate.tseg2)?;
-
-        let bit_time_tq = CAN_SYNC_SEG + candidate.tseg1 + candidate.tseg2;
-        let actual_bitrate = btc.clock_hz / (best_brp * bit_time_tq);
-        let tq_ns = ((best_brp as u64) * 1_000_000_000 / (btc.clock_hz as u64)) as u32;
+                (
+                    Some(data.timing),
+                    Some(data.bitrate),
+                    Some(data.sample_point),
+                )
+            } else {
+                (None, None, None)
+            };
 
         Ok(BitrateConfig {
-            timing: AdapterBitTiming {
-                brp: best_brp,
-                tseg1: candidate.tseg1,
-                tseg2: candidate.tseg2,
-                sjw,
-            },
-            bitrate: actual_bitrate,
-            sample_point: sample_point_to_float(candidate.sample_point),
-            tq_ns,
+            timing: nominal.timing,
+            bitrate: nominal.bitrate,
+            sample_point: nominal.sample_point,
+            data_timing,
+            data_bitrate,
+            data_sample_point,
         })
     }
 
-    fn build_from_direct_mode(self) -> Result<BitrateConfig, BitrateError> {
+    fn build_from_bitrate_mode(self) -> Result<PhaseBitrateConfig, BitrateError> {
+        let bitrate = self.bitrate.ok_or(BitrateError::MissingConfiguration)?;
+
+        solve_bitrate_mode(
+            &self.timing_const.nominal,
+            bitrate,
+            self.sample_point,
+            self.max_bitrate_error,
+        )
+    }
+
+    fn build_from_direct_mode(self) -> Result<PhaseBitrateConfig, BitrateError> {
         if self.sample_point.is_some() {
             return Err(BitrateError::SamplePointRequiresBitrate);
         }
@@ -382,29 +396,144 @@ impl BitrateBuilder {
             .tseg2
             .ok_or(BitrateError::MissingDirectField("tseg2"))?;
 
-        let btc = self.timing_const;
-        check_ranges(&btc, brp, tseg1, tseg2)?;
-
-        let sjw = self.sjw.unwrap_or_else(|| calc_default_sjw(tseg1, tseg2));
-        check_sjw(&btc, sjw, tseg1, tseg2)?;
-
-        let bit_time_tq = CAN_SYNC_SEG + tseg1 + tseg2;
-        let bitrate = btc.clock_hz / (brp * bit_time_tq);
-        let sample_point = sample_point_to_float(1000 * (CAN_SYNC_SEG + tseg1) / bit_time_tq);
-        let tq_ns = ((brp as u64) * 1_000_000_000 / (btc.clock_hz as u64)) as u32;
-
-        Ok(BitrateConfig {
-            timing: AdapterBitTiming {
-                brp,
-                tseg1,
-                tseg2,
-                sjw,
-            },
-            bitrate,
-            sample_point,
-            tq_ns,
-        })
+        solve_direct_mode(&self.timing_const.nominal, brp, tseg1, tseg2, self.sjw)
     }
+}
+
+fn validate_timing_const(btc: &BitTimingConst) -> Result<(), BitrateError> {
+    if btc.clock_hz == 0 {
+        return Err(BitrateError::InvalidClock);
+    }
+    if btc.brp_inc == 0 {
+        return Err(BitrateError::InvalidBrpIncrement { brp: 0, brp_inc: 0 });
+    }
+    Ok(())
+}
+
+fn solve_bitrate_mode(
+    btc: &BitTimingConst,
+    bitrate: u32,
+    sample_point: Option<f64>,
+    max_bitrate_error: u32,
+) -> Result<PhaseBitrateConfig, BitrateError> {
+    if bitrate == 0 {
+        return Err(BitrateError::InvalidBitrate);
+    }
+
+    let sample_point_reference = if let Some(sample_point) = sample_point {
+        sample_point_to_int(sample_point)?
+    } else {
+        calc_default_sample_point_nrz(bitrate)
+    };
+
+    let mut best_bitrate_error = u32::MAX;
+    let mut best_sample_point_error = u32::MAX;
+    let mut best_tseg = 0;
+    let mut best_brp = 0;
+
+    let max_tseg = (btc.tseg1_max + btc.tseg2_max) * 2 + 1;
+    let min_tseg = (btc.tseg1_min + btc.tseg2_min) * 2;
+
+    for tseg in (min_tseg..=max_tseg).rev() {
+        let tsegall = CAN_SYNC_SEG + tseg / 2;
+        let denom = (tsegall as u64) * (bitrate as u64);
+        if denom == 0 {
+            continue;
+        }
+
+        let mut brp = (btc.clock_hz as u64 / denom) as u32 + tseg % 2;
+        brp = (brp / btc.brp_inc) * btc.brp_inc;
+        if brp < btc.brp_min || brp > btc.brp_max {
+            continue;
+        }
+
+        let calc_bitrate = btc.clock_hz / (brp * tsegall);
+        let bitrate_error = bitrate.abs_diff(calc_bitrate);
+
+        if bitrate_error > best_bitrate_error {
+            continue;
+        }
+
+        if bitrate_error < best_bitrate_error {
+            best_sample_point_error = u32::MAX;
+        }
+
+        let candidate = update_sample_point(btc, sample_point_reference, tseg / 2);
+        if candidate.sample_point_error >= best_sample_point_error {
+            continue;
+        }
+
+        best_bitrate_error = bitrate_error;
+        best_sample_point_error = candidate.sample_point_error;
+        best_tseg = tseg / 2;
+        best_brp = brp;
+
+        if bitrate_error == 0 && candidate.sample_point_error == 0 {
+            break;
+        }
+    }
+
+    if best_brp == 0 {
+        return Err(BitrateError::NoSolution { bitrate });
+    }
+
+    if best_bitrate_error != 0 {
+        let mut bitrate_error_hundredth_percent =
+            ((best_bitrate_error as u64) * 10_000 / (bitrate as u64)) as u32;
+        bitrate_error_hundredth_percent = bitrate_error_hundredth_percent.max(1);
+
+        if bitrate_error_hundredth_percent > max_bitrate_error {
+            return Err(BitrateError::BitrateErrorTooHigh {
+                error_hundredth_percent: bitrate_error_hundredth_percent,
+                max_hundredth_percent: max_bitrate_error,
+            });
+        }
+    }
+
+    let candidate = update_sample_point(btc, sample_point_reference, best_tseg);
+    let sjw = calc_default_sjw(candidate.tseg1, candidate.tseg2);
+    check_ranges(btc, best_brp, candidate.tseg1, candidate.tseg2)?;
+    check_sjw(btc, sjw, candidate.tseg1, candidate.tseg2)?;
+
+    let bit_time_tq = CAN_SYNC_SEG + candidate.tseg1 + candidate.tseg2;
+    let actual_bitrate = btc.clock_hz / (best_brp * bit_time_tq);
+    Ok(PhaseBitrateConfig {
+        timing: AdapterBitTiming {
+            brp: best_brp,
+            tseg1: candidate.tseg1,
+            tseg2: candidate.tseg2,
+            sjw,
+        },
+        bitrate: actual_bitrate,
+        sample_point: sample_point_to_float(candidate.sample_point),
+    })
+}
+
+fn solve_direct_mode(
+    btc: &BitTimingConst,
+    brp: u32,
+    tseg1: u32,
+    tseg2: u32,
+    sjw: Option<u32>,
+) -> Result<PhaseBitrateConfig, BitrateError> {
+    check_ranges(btc, brp, tseg1, tseg2)?;
+
+    let sjw = sjw.unwrap_or_else(|| calc_default_sjw(tseg1, tseg2));
+    check_sjw(btc, sjw, tseg1, tseg2)?;
+
+    let bit_time_tq = CAN_SYNC_SEG + tseg1 + tseg2;
+    let bitrate = btc.clock_hz / (brp * bit_time_tq);
+    let sample_point = sample_point_to_float(1000 * (CAN_SYNC_SEG + tseg1) / bit_time_tq);
+    Ok(PhaseBitrateConfig {
+        timing: AdapterBitTiming {
+            brp,
+            tseg1,
+            tseg2,
+            sjw,
+        },
+        bitrate,
+        sample_point,
+    })
 }
 
 fn check_ranges(
@@ -535,42 +664,60 @@ fn update_sample_point(
 mod tests {
     use super::*;
 
-    const BTC: BitTimingConst = BitTimingConst {
+    const PEAK_NOMINAL_BTC: BitTimingConst = BitTimingConst {
         clock_hz: 80_000_000,
         tseg1_min: 1,
-        tseg1_max: 16,
+        tseg1_max: 1 << 8,
         tseg2_min: 1,
-        tseg2_max: 8,
-        sjw_max: 4,
+        tseg2_max: 1 << 7,
+        sjw_max: 1 << 7,
         brp_min: 1,
-        brp_max: 1024,
+        brp_max: 1 << 10,
         brp_inc: 1,
+    };
+
+    const PEAK_FD_DATA_BTC: BitTimingConst = BitTimingConst {
+        clock_hz: 80_000_000,
+        tseg1_min: 1,
+        tseg1_max: 1 << 5,
+        tseg2_min: 1,
+        tseg2_max: 1 << 4,
+        sjw_max: 1 << 4,
+        brp_min: 1,
+        brp_max: 1 << 10,
+        brp_inc: 1,
+    };
+
+    const PEAK_TIMING_WITH_FD: AdapterTimingConst = AdapterTimingConst {
+        nominal: PEAK_NOMINAL_BTC,
+        data: Some(PEAK_FD_DATA_BTC),
+    };
+
+    const PEAK_TIMING_NO_FD: AdapterTimingConst = AdapterTimingConst {
+        nominal: PEAK_NOMINAL_BTC,
+        data: None,
     };
 
     #[test]
     fn bitrate_mode_500k_800() {
-        let cfg = BitrateBuilder::new(BTC)
+        let cfg = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
             .bitrate(500_000)
             .sample_point(0.8)
             .build()
             .unwrap();
 
-        assert_eq!(
-            cfg.timing,
-            AdapterBitTiming {
-                brp: 8,
-                tseg1: 15,
-                tseg2: 4,
-                sjw: 2,
-            }
-        );
         assert_eq!(cfg.bitrate, 500_000);
         assert!((cfg.sample_point - 0.8).abs() < 1e-9);
+        assert!(cfg.timing.brp >= PEAK_NOMINAL_BTC.brp_min);
+        assert!(cfg.timing.brp <= PEAK_NOMINAL_BTC.brp_max);
     }
 
     #[test]
     fn bitrate_mode_default_sample_point() {
-        let cfg = BitrateBuilder::new(BTC).bitrate(2_000_000).build().unwrap();
+        let cfg = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
+            .bitrate(2_000_000)
+            .build()
+            .unwrap();
 
         assert_eq!(cfg.bitrate, 2_000_000);
         assert!((cfg.sample_point - 0.75).abs() < 1e-9);
@@ -578,7 +725,7 @@ mod tests {
 
     #[test]
     fn direct_mode() {
-        let cfg = BitrateBuilder::new(BTC)
+        let cfg = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
             .brp(8)
             .tseg1(15)
             .tseg2(4)
@@ -592,7 +739,7 @@ mod tests {
 
     #[test]
     fn mixed_modes_fail() {
-        let err = BitrateBuilder::new(BTC)
+        let err = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
             .bitrate(500_000)
             .tseg1(15)
             .build()
@@ -603,7 +750,7 @@ mod tests {
 
     #[test]
     fn invalid_sample_point_rejected() {
-        let err = BitrateBuilder::new(BTC)
+        let err = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
             .bitrate(500_000)
             .sample_point(1.0)
             .build()
@@ -613,14 +760,74 @@ mod tests {
     }
 
     #[test]
+    fn can_fd_data_phase_bitrate_and_sample_point() {
+        let cfg = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
+            .bitrate(500_000)
+            .sample_point(0.8)
+            .data_bitrate(2_000_000)
+            .data_sample_point(0.75)
+            .build()
+            .unwrap();
+
+        assert_eq!(cfg.bitrate, 500_000);
+        assert!((cfg.sample_point - 0.8).abs() < 1e-9);
+
+        assert_eq!(cfg.data_bitrate, Some(2_000_000));
+        assert!(cfg.data_timing.is_some());
+        assert!((cfg.data_sample_point.unwrap() - 0.75).abs() < 1e-9);
+    }
+
+    #[test]
+    fn data_sample_point_requires_data_bitrate() {
+        let err = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
+            .bitrate(500_000)
+            .data_sample_point(0.75)
+            .build()
+            .unwrap_err();
+
+        assert_eq!(err, BitrateError::DataSamplePointRequiresDataBitrate);
+    }
+
+    #[test]
+    fn data_bitrate_must_not_be_lower_than_nominal() {
+        let err = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
+            .bitrate(500_000)
+            .data_bitrate(250_000)
+            .build()
+            .unwrap_err();
+
+        match err {
+            BitrateError::DataBitrateLowerThanNominal {
+                data_bitrate,
+                arbitration_bitrate,
+            } => {
+                assert_eq!(arbitration_bitrate, 500_000);
+                assert!(data_bitrate < arbitration_bitrate);
+            }
+            _ => panic!("unexpected error: {err:?}"),
+        }
+    }
+
+    #[test]
+    fn data_bitrate_not_supported_by_adapter() {
+        let err = BitrateBuilder::new(PEAK_TIMING_NO_FD)
+            .bitrate(500_000)
+            .data_bitrate(2_000_000)
+            .build()
+            .unwrap_err();
+
+        assert_eq!(err, BitrateError::DataBitrateNotSupported);
+    }
+
+    #[test]
     fn round_trip_bitrate_to_direct_keeps_bitrate_and_sample_point() {
-        let cfg_from_bitrate = BitrateBuilder::new(BTC)
+        let cfg_from_bitrate = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
             .bitrate(625_000)
             .sample_point(0.82)
             .build()
             .unwrap();
 
-        let cfg_from_direct = BitrateBuilder::new(BTC)
+        let cfg_from_direct = BitrateBuilder::new(PEAK_TIMING_WITH_FD)
             .brp(cfg_from_bitrate.timing.brp)
             .tseg1(cfg_from_bitrate.timing.tseg1)
             .tseg2(cfg_from_bitrate.timing.tseg2)
