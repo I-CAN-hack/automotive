@@ -130,9 +130,19 @@ pub trait CanAdapter {
     fn recv(&mut self) -> crate::Result<Vec<Frame>>;
 
     /// Adapter timing constants for bitrate configuration helpers.
+    ///
+    /// Adapters that support [`crate::can::bitrate::BitrateBuilder`] should override this.
+    /// The default implementation panics to preserve backward compatibility for existing
+    /// downstream trait implementations that do not provide timing metadata.
     fn timing_const() -> crate::can::bitrate::AdapterTimingConst
     where
-        Self: Sized;
+        Self: Sized,
+    {
+        panic!(
+            "CanAdapter::timing_const is not implemented for adapter type {}",
+            std::any::type_name::<Self>()
+        )
+    }
 }
 
 #[cfg(test)]

@@ -7,7 +7,6 @@ mod usb_protocol;
 pub use error::Error;
 use std::collections::VecDeque;
 
-use crate::can::bitrate::{AdapterTimingConst, BitTimingConst};
 use crate::can::AsyncCanAdapter;
 use crate::can::CanAdapter;
 use crate::can::Frame;
@@ -20,22 +19,6 @@ const USB_PIDS: &[u16] = &[0xddee, 0xddcc];
 const EXPECTED_CAN_PACKET_VERSION: u8 = 4;
 const MAX_BULK_SIZE: usize = 16384;
 const PANDA_BUS_CNT: usize = 3;
-
-// Dummy timing metadata to support generic bitrate helper APIs.
-const PANDA_DUMMY_TIMING: AdapterTimingConst = AdapterTimingConst {
-    nominal: BitTimingConst {
-        clock_hz: 80_000_000,
-        tseg1_min: 1,
-        tseg1_max: 256,
-        tseg2_min: 1,
-        tseg2_max: 128,
-        sjw_max: 128,
-        brp_min: 1,
-        brp_max: 1024,
-        brp_inc: 1,
-    },
-    data: None,
-};
 
 /// Blocking implementation of the panda CAN adapter
 pub struct Panda {
@@ -233,12 +216,5 @@ impl CanAdapter for Panda {
                 Ok(vec![])
             }
         }
-    }
-
-    fn timing_const() -> crate::can::bitrate::AdapterTimingConst
-    where
-        Self: Sized,
-    {
-        PANDA_DUMMY_TIMING
     }
 }
