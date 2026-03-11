@@ -19,6 +19,7 @@ mod types;
 
 pub use constants::{FlowStatus, FrameType, FLOW_SATUS_MASK, FRAME_TYPE_MASK};
 pub use error::Error;
+// IsoTpTransport is declared later in this file and is re-exported implicitly.
 
 use crate::can::AsyncCanAdapter;
 use crate::can::{Frame, Identifier, DLC_TO_LEN};
@@ -30,6 +31,34 @@ use tracing::debug;
 use self::types::FlowControlConfig;
 
 const DEFAULT_TIMEOUT_MS: u64 = 100;
+
+// ── IsoTpTransport trait ───────────────────────────────────────────────────
+
+/// Abstraction over anything that can exchange ISO-TP PDUs.
+///
+/// Two implementations ship with this workspace:
+/// * [`IsoTPAdapter`] — software ISO-TP framing on top of any [`crate::can::CanAdapter`].
+/// * `J2534NativeIsoTpTransport` — hardware ISO 15765 via a J2534 PassThru device; the
+///   adapter firmware handles all framing, flow-control, and STmin timing.
+pub trait IsoTpTransport {
+    /// Transmit a single UDS PDU. Resolves once the transport has accepted the
+    /// payload for transmission (not necessarily once it has been ACKed on the bus).
+    fn send<'a>(&'a self, data: &'a [u8]) -> impl std::future::Future<Output = crate::Result<()>> + 'a;
+
+    /// Infinite stream of received UDS PDUs. Each item is one complete PDU.
+    fn recv(&self) -> impl crate::Stream<Item = crate::Result<Vec<u8>>> + Unpin + '_;
+}
+
+impl IsoTpTransport for IsoTPAdapter<'_> {
+    fn send<'a>(&'a self, data: &'a [u8]) -> impl std::future::Future<Output = crate::Result<()>> + 'a {
+        IsoTPAdapter::send(self, data)
+    }
+
+    fn recv(&self) -> impl crate::Stream<Item = crate::Result<Vec<u8>>> + Unpin + '_ {
+        IsoTPAdapter::recv(self)
+    }
+}
+
 const DEFAULT_PADDING_BYTE: u8 = 0xAA;
 
 /// N_WFTmax in ISO 15765-2
@@ -39,7 +68,7 @@ const CAN_MAX_DLEN: usize = 8;
 const CAN_FD_MAX_DLEN: usize = 64;
 
 const ISO_TP_MAX_DLEN: usize = (1 << 12) - 1;
-const ISO_TP_FD_MAX_DLEN: usize = (1 << 32) - 1;
+const ISO_TP_FD_MAX_DLEN: usize = u32::MAX as usize;
 
 /// Configuring passed to the IsoTPAdapter.
 #[derive(Debug, Clone, Copy)]

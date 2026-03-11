@@ -16,7 +16,7 @@ mod constants;
 mod error;
 mod types;
 
-use crate::isotp::IsoTPAdapter;
+use crate::isotp::IsoTpTransport;
 use crate::Result;
 use crate::StreamExt;
 pub use constants::*;
@@ -25,13 +25,15 @@ pub use types::*;
 
 use tracing::info;
 
-/// UDS Client. Wraps an IsoTPAdapter to provide a simple interface for making UDS calls.
-pub struct UDSClient<'a> {
-    adapter: &'a IsoTPAdapter<'a>,
+/// UDS Client. Generic over any [`IsoTpTransport`] implementation so that it
+/// works equally with software ISO-TP ([`crate::isotp::IsoTPAdapter`]) and
+/// hardware ISO 15765 (e.g. `J2534NativeIsoTpTransport`).
+pub struct UDSClient<'a, T: IsoTpTransport> {
+    adapter: &'a T,
 }
 
-impl<'a> UDSClient<'a> {
-    pub fn new(adapter: &'a IsoTPAdapter) -> Self {
+impl<'a, T: IsoTpTransport> UDSClient<'a, T> {
+    pub fn new(adapter: &'a T) -> Self {
         Self { adapter }
     }
 

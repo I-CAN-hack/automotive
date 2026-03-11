@@ -12,7 +12,12 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::debug;
 
 const CAN_TX_BUFFER_SIZE: usize = 128;
-const CAN_RX_BUFFER_SIZE: usize = 1024;
+// Must be large enough to absorb all CAN frames generated during a
+// multi-frame ISO-TP transfer without the recv subscriber being polled.
+// A 4 KiB UDS payload at 7 bytes/CF ≈ 585 CFs; each produces a loopback
+// echo plus the real frame.  Back-to-back transfers or mixed TX/RX traffic
+// can double that.  8192 gives ample headroom.
+const CAN_RX_BUFFER_SIZE: usize = 8192;
 const DEBUG: bool = false;
 
 type BusIdentifier = (u8, Identifier);
@@ -28,7 +33,13 @@ fn process<T: CanAdapter>(
     let mut callbacks: HashMap<BusIdentifier, VecDeque<FrameCallback>> = HashMap::new();
 
     while shutdown_receiver.try_recv().is_err() {
-        let frames: Vec<Frame> = adapter.recv().expect("Failed to Receive CAN Frames");
+        let frames: Vec<Frame> = match adapter.recv() {
+            Ok(f) => f,
+            Err(e) => {
+                debug!("Adapter recv error: {:?} — shutting down process loop", e);
+                break;
+            }
+        };
 
         for frame in frames {
             if DEBUG {
@@ -98,7 +109,7 @@ pub struct AsyncCanAdapter {
 }
 
 impl AsyncCanAdapter {
-    pub fn new<T: CanAdapter + Send + Sync + 'static>(adapter: T) -> Self {
+    pub fn new<T: CanAdapter + Send + 'static>(adapter: T) -> Self {
         let (shutdown_sender, shutdown_receiver) = oneshot::channel();
         let (send_sender, send_receiver) = mpsc::channel(CAN_TX_BUFFER_SIZE);
         let (recv_sender, recv_receiver) = broadcast::channel(CAN_RX_BUFFER_SIZE);
@@ -145,7 +156,10 @@ impl AsyncCanAdapter {
                             yield frame
                         }
                     },
-                    Err(RecvError::Closed) => panic!("Adapter thread has exited"),
+                    Err(RecvError::Closed) => {
+                        tracing::debug!("Adapter broadcast closed — ending recv stream");
+                        return;
+                    },
                     Err(RecvError::Lagged(n)) => {
                         tracing::warn!("Receive too slow, dropping {} frame(s).", n)
                     },
@@ -158,9 +172,15 @@ impl AsyncCanAdapter {
 impl Drop for AsyncCanAdapter {
     fn drop(&mut self) {
         if let Some(handle) = self.processing_handle.take() {
-            // Send shutdown signal to background tread
-            self.shutdown.take().unwrap().send(()).unwrap();
-            handle.join().unwrap();
+            // Send shutdown signal to background thread.
+            // Use `ok()` instead of `unwrap()` because the receiver may already
+            // be dropped if the process thread exited early (e.g. adapter error).
+            if let Some(shutdown) = self.shutdown.take() {
+                let _ = shutdown.send(());
+            }
+            // Join the thread; use `ok()` to avoid panicking inside Drop if the
+            // process thread panicked (double-panic would abort the process).
+            let _ = handle.join();
         }
     }
 }
