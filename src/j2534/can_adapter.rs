@@ -25,13 +25,12 @@ use super::common::{
     parse_can_id,
 };
 
-// ── Protocol / filter constants ────────────────────────────────────────────
+// Protocol / filter constants
 
 const PROTOCOL_CAN: u32 = 5;
 const FILTER_PASS: u32 = 1;
 
-// ── Internal channel types ─────────────────────────────────────────────────
-
+// Internal channel types
 enum J2534Cmd {
     Send { id: Identifier, data: Vec<u8> },
 }
@@ -42,7 +41,7 @@ enum J2534CanEvt {
     Disconnected,
 }
 
-// ── Public adapter struct ──────────────────────────────────────────────────
+// Public adapter struct
 
 /// CAN adapter backed by a SAE J2534 PassThru device.
 ///
@@ -103,7 +102,7 @@ impl J2534CanAdapter {
         let pass_thru_write = device.write;
         let pass_thru_filter = device.filter;
 
-        // ── Open CAN channel ───────────────────────────────────────────────
+        // Open CAN channel
         let mut channel_id: u32 = 0;
         let ret = unsafe {
             pass_thru_connect(device_id, PROTOCOL_CAN, 0, bitrate, &mut channel_id)
@@ -116,7 +115,7 @@ impl J2534CanAdapter {
             ), device));
         }
 
-        // ── Install pass-all receive filter ───────────────────────────────
+        // Install pass-all receive filter
         // Mask and pattern both all-zero: every frame passes regardless of ID.
         let zero_msg = PassThruMsg::new_raw(PROTOCOL_CAN, 0, &[]);
         let mut filter_id: u32 = 0;
@@ -139,7 +138,7 @@ impl J2534CanAdapter {
             ), device));
         }
 
-        // ── Create channels and spawn threads ─────────────────────────────
+        // Create channels and spawn threads
         let (tx_cmd, rx_cmd) = mpsc::sync_channel::<J2534Cmd>(64);
         let (bcast_tx, bcast_rx) = broadcast::channel::<J2534CanEvt>(1024);
         let stop_rx = Arc::new(AtomicBool::new(false));
@@ -259,7 +258,7 @@ impl CanAdapter for J2534CanAdapter {
     }
 }
 
-// ── TX background thread ───────────────────────────────────────────────────
+// TX background thread
 
 /// Transmit thread: dequeues [`J2534Cmd`] items and writes them to the CAN
 /// channel.  Synthesises a software loopback frame after each successful send.
@@ -297,7 +296,7 @@ fn can_tx_thread(
     stop_rx.store(true, Ordering::Release);
 }
 
-// ── RX background thread ───────────────────────────────────────────────────
+// RX background thread
 
 /// Receive thread: blocks on `PassThruReadMsgs` waiting for one CAN frame at
 /// a time and broadcasts each frame.

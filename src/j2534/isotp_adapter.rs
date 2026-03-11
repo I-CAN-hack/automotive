@@ -40,7 +40,7 @@ use super::common::{
     parse_can_id,
 };
 
-// ── Protocol / filter constants ────────────────────────────────────────────
+// J2534 protcol and filter constants
 
 const PROTOCOL_ISO15765: u32 = 6;
 
@@ -84,7 +84,7 @@ pub fn us_to_stmin_byte(us: u32) -> u8 {
     }
 }
 
-// ── Internal channel types ─────────────────────────────────────────────────
+// Internal channel types
 
 enum J2534IsoTpCmd {
     Send(Vec<u8>, oneshot::Sender<Result<(), String>>),
@@ -95,8 +95,6 @@ enum J2534IsoTpEvt {
     Pdu(Vec<u8>),
     Disconnected,
 }
-
-// ── Public transport struct ────────────────────────────────────────────────
 
 /// J2534 ISO 15765 (native ISO-TP) transport.
 ///
@@ -153,7 +151,7 @@ impl J2534NativeIsoTpTransport {
         let pass_thru_filter = device.filter;
         let pass_thru_ioctl = device.ioctl;
 
-        // ── Open ISO 15765 channel ─────────────────────────────────────────
+        // Connect using the ISO15765 protocol specifier
         let mut channel_id: u32 = 0;
         let ret = unsafe {
             pass_thru_connect(device_id, PROTOCOL_ISO15765, 0, bitrate, &mut channel_id)
@@ -171,7 +169,6 @@ impl J2534NativeIsoTpTransport {
             ), device));
         }
 
-        // ── Set up flow-control filter ─────────────────────────────────────
         let mut mask_msg    = PassThruMsg::new_raw(PROTOCOL_ISO15765, 0xFFFF_FFFF, &[]);
         let mut pattern_msg = PassThruMsg::new(PROTOCOL_ISO15765, rx_id, &[]);
         let mut fc_msg      = PassThruMsg::new(PROTOCOL_ISO15765, tx_id, &[]);
@@ -207,7 +204,7 @@ impl J2534NativeIsoTpTransport {
             ), device));
         }
 
-        // ── Clear RX buffer after filter setup ─────────────────────────────
+        // Clear receive buffer to ensure filter is applied correctly
         let ret = unsafe {
             pass_thru_ioctl(
                 channel_id,
@@ -218,7 +215,7 @@ impl J2534NativeIsoTpTransport {
         };
         tracing::debug!(ret = common::status_str(ret), "PassThruIoctl CLEAR_RX_BUFFER");
 
-        // ── Set ISO15765_STMIN = 0 ─────────────────────────────────────────
+        // Set receive ISO15765_STMIN = 0 to get fastest allowed by the module
         let ret = common::set_config(
             pass_thru_ioctl,
             channel_id,
@@ -230,30 +227,32 @@ impl J2534NativeIsoTpTransport {
             "PassThruIoctl SET_CONFIG ISO15765_STMIN=0"
         );
 
-        // ── STMIN_TX ioctl ─────────────────────────────────────────────────
-        let stmin_us = stmin_tx_us.unwrap_or(500);
-        let stmin_byte = us_to_stmin_byte(stmin_us) as u32;
-        let ret = common::set_config(
-            pass_thru_ioctl,
-            channel_id,
-            IOCTL_PARAM_STMIN_TX,
-            stmin_byte,
-        );
-        tracing::debug!(
-            ret = common::status_str(ret),
-            stmin_us,
-            stmin_byte,
-            "PassThruIoctl SET_CONFIG STMIN_TX"
-        );
-        if ret != STATUS_NOERROR {
-            tracing::warn!(
-                "STMIN_TX ioctl failed: 0x{ret:02X} ({}) — \
-                 adapter will use its default separation time",
-                common::status_str(ret)
+        // STMIN_TX ioctl; if stmin_tx is not specified, do not invoke ioctl
+        // (which allows the adapter to choose based on the control flow frames)
+        if let Some(stmin_us) = stmin_tx_us {
+            let stmin_byte = us_to_stmin_byte(stmin_us) as u32;
+            let ret = common::set_config(
+                pass_thru_ioctl,
+                channel_id,
+                IOCTL_PARAM_STMIN_TX,
+                stmin_byte,
             );
+            tracing::debug!(
+                ret = common::status_str(ret),
+                stmin_us,
+                stmin_byte,
+                "PassThruIoctl SET_CONFIG STMIN_TX"
+            );
+            if ret != STATUS_NOERROR {
+                tracing::warn!(
+                    "STMIN_TX ioctl failed: 0x{ret:02X} ({}) — \
+                    adapter will use its default separation time",
+                    common::status_str(ret)
+                );
+            }
         }
 
-        // ── Create channels and spawn threads ─────────────────────────────
+        // Create channels and spawn threads
         let (tx_cmd, rx_cmd) = mpsc::sync_channel::<J2534IsoTpCmd>(64);
         let (bcast_tx, bcast_rx) = broadcast::channel::<J2534IsoTpEvt>(256);
         let stop_rx = Arc::new(AtomicBool::new(false));
@@ -370,7 +369,7 @@ impl IsoTpTransport for J2534NativeIsoTpTransport {
     }
 }
 
-// ── TX background thread ───────────────────────────────────────────────────
+// TX background thread
 
 fn isotp_tx_thread(
     channel_id: u32,
@@ -404,7 +403,7 @@ fn isotp_tx_thread(
     stop_rx.store(true, Ordering::Release);
 }
 
-// ── RX background thread ───────────────────────────────────────────────────
+// RX background thread
 
 fn isotp_rx_thread(
     channel_id: u32,

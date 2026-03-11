@@ -4,9 +4,7 @@
 
 use crate::can::Identifier;
 
-// ── PASSTHRU_MSG ───────────────────────────────────────────────────────────
-
-/// Identical layout to `PASSTHRU_MSG` in the SAE J2534 04.04 specification.
+/// `PASSTHRU_MSG` from the SAE J2534 04.04 specification.
 ///
 /// `repr(C)` with natural alignment.  Because every field before `data` is a
 /// `u32` at a 4-byte-aligned offset the binary layout is the same as
@@ -92,7 +90,7 @@ pub fn parse_can_id(data: &[u8]) -> Identifier {
     }
 }
 
-// ── SCONFIG / SCONFIG_LIST ─────────────────────────────────────────────────
+// SCONFIG / SCONFIG_LIST
 
 /// Single parameter entry passed to `PassThruIoctl(SET_CONFIG, …)`.
 #[repr(C)]
@@ -108,16 +106,12 @@ pub struct SConfigList {
     pub config_ptr: *mut SConfig,
 }
 
-// ── Constants ──────────────────────────────────────────────────────────────
-
 pub const STATUS_NOERROR: i32 = 0x00;
 pub const ERR_BUFFER_EMPTY: i32 = 0x10;
 pub const ERR_TIMEOUT: i32 = 0x09;
 
 /// `PassThruIoctl` IOCTL ID for writing channel configuration.
 pub const IOCTL_SET_CONFIG: u32 = 0x02;
-
-// ── Helper ─────────────────────────────────────────────────────────────────
 
 /// Call `PassThruIoctl(SET_CONFIG)` with a single `(parameter, value)` pair.
 ///
@@ -140,7 +134,7 @@ pub fn set_config(
     }
 }
 
-// ── Function-pointer signatures ────────────────────────────────────────────
+// Function-pointer signatures
 
 pub type FnPassThruOpen =
     unsafe extern "system" fn(*const u8, *mut u32) -> i32;
@@ -166,7 +160,7 @@ pub type FnPassThruStartMsgFilter =
 pub type FnPassThruIoctl =
     unsafe extern "system" fn(u32, u32, *mut std::ffi::c_void, *mut std::ffi::c_void) -> i32;
 
-// ── J2534 device handle ───────────────────────────────────────────────────
+// J2534 device handle
 
 /// Owns a J2534 device (the `PassThruOpen` handle) and all resolved DLL
 /// function pointers.  On [`Drop`], calls `PassThruClose` to release the
@@ -252,7 +246,7 @@ pub fn open_device(dll_path: Option<&str>) -> Result<J2534Device, String> {
     })
 }
 
-// ── DLL path resolution ────────────────────────────────────────────────────
+// DLL path resolution
 
 /// Resolve the PassThru DLL path.
 ///
@@ -331,7 +325,7 @@ fn read_passthru_paths(hklm: &winreg::RegKey, key: &str) -> Result<Vec<String>, 
     Ok(paths)
 }
 
-// ── PE header architecture check ──────────────────────────────────────────
+// PE header architecture check
 
 #[derive(Debug, PartialEq, Eq)]
 enum DllMachine {
@@ -413,7 +407,7 @@ fn check_dll_architecture(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-// ── Diagnostics ────────────────────────────────────────────────────────────
+// Errors from J2534 spec
 
 pub fn status_str(ret: i32) -> &'static str {
     match ret {
