@@ -47,7 +47,7 @@ libc = "0.2.154"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 libloading = { version = "0.8", optional = true }
-winreg = { version = "0.10", optional = true }
+winreg = { version = "0.55", optional = true }
 
 [dev-dependencies]
 futures = "0.3.30"
