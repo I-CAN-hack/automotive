@@ -27,6 +27,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 
 use async_stream::stream;
 use tokio::sync::{broadcast, oneshot};
@@ -65,6 +66,7 @@ enum J2534IsoTpEvt {
 pub struct J2534NativeIsoTpTransport {
     tx_cmd: Option<SyncSender<J2534IsoTpCmd>>,
     rx_bcast: broadcast::Sender<J2534IsoTpEvt>,
+    timeout: Duration,
     stop_rx: Arc<AtomicBool>,
     tx_thread: Option<thread::JoinHandle<()>>,
     rx_thread: Option<thread::JoinHandle<()>>,
@@ -96,6 +98,7 @@ impl J2534NativeIsoTpTransport {
         let tx_id = config.tx_id;
         let rx_id = config.rx_id;
         let ext_address = config.ext_address;
+        let timeout = config.timeout;
         let tx_flags = isotp_tx_flags(config.padding, ext_address, tx_id);
         let connect_flags = isotp_connect_flags(ext_address, tx_id, rx_id);
         let stmin_tx = config.separation_time_min;
@@ -173,6 +176,7 @@ impl J2534NativeIsoTpTransport {
         Ok(Self {
             tx_cmd: Some(tx_cmd),
             rx_bcast: bcast_tx,
+            timeout,
             stop_rx,
             tx_thread: Some(tx_thread),
             rx_thread: Some(rx_thread),
@@ -230,19 +234,21 @@ impl IsoTpTransport for J2534NativeIsoTpTransport {
 
     fn recv(&self) -> impl crate::Stream<Item = crate::Result<Vec<u8>>> + Unpin + '_ {
         let mut rx = self.rx_bcast.subscribe();
+        let timeout = self.timeout;
         Box::pin(stream! {
             loop {
-                match rx.recv().await {
-                    Ok(J2534IsoTpEvt::Pdu(pdu)) => yield Ok(pdu),
-                    Ok(J2534IsoTpEvt::Disconnected) => {
+                match tokio::time::timeout(timeout, rx.recv()).await {
+                    Err(_) => yield Err(crate::Error::Timeout),
+                    Ok(Ok(J2534IsoTpEvt::Pdu(pdu))) => yield Ok(pdu),
+                    Ok(Ok(J2534IsoTpEvt::Disconnected)) => {
                         yield Err(crate::Error::Disconnected);
                         return;
                     }
-                    Err(broadcast::error::RecvError::Closed) => {
+                    Ok(Err(broadcast::error::RecvError::Closed)) => {
                         yield Err(crate::Error::Disconnected);
                         return;
                     }
-                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                    Ok(Err(broadcast::error::RecvError::Lagged(n))) => {
                         tracing::warn!(
                             dropped = n,
                             "J2534 ISO15765 RX lagged — PDU(s) dropped"
