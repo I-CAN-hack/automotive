@@ -34,7 +34,7 @@ mod app {
         let dll_path = None;
         let bitrate = 500_000;
 
-        let standard_ids = 0x700..=0x7ff;
+        let standard_ids = 0x700..=0x7f7;
         let extended_ids = (0x00..=0xff).map(|i| 0x18da0000 + (i << 8) + 0xf1);
         let mut ids = standard_ids.chain(extended_ids);
 
