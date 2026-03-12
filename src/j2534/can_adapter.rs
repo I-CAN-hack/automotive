@@ -1,23 +1,12 @@
 //! SAE J2534 PassThru CAN adapter.
 //!
-//! Two dedicated background threads — one for transmit, one for receive —
-//! call `PassThruWriteMsgs` and `PassThruReadMsgs` concurrently on the same
-//! channel.  Modern J2534 DLLs support concurrent read/write on the same
-//! channel; this is documented as a precondition for using this adapter.
-//!
-//! On [`Drop`], `PassThruDisconnect` is called first to interrupt any
-//! in-flight DLL calls, then both threads are joined before `PassThruClose`
-//! releases the device.  This avoids use-after-free in the DLL.
+//! Implements [`CanAdapter`] directly on top of a J2534 CAN channel and relies
+//! on [`crate::can::AsyncCanAdapter`] for background polling, retry logic, and
+//! async send/receive orchestration.
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, SyncSender};
-use std::sync::Arc;
-use std::thread;
 
-use tokio::sync::broadcast;
-
-use crate::can::{CanAdapter, Frame, Identifier};
+use crate::can::{CanAdapter, Frame};
 
 use super::common::{
     self, parse_can_id, FnPassThruDisconnect, FnPassThruReadMsgs, FnPassThruWriteMsgs, J2534Device,
@@ -25,51 +14,27 @@ use super::common::{
 };
 use super::constants::{FilterType, Protocol, Status};
 
-enum J2534Cmd {
-    Send { id: Identifier, data: Vec<u8> },
-}
-
-#[derive(Clone)]
-enum J2534CanEvt {
-    Frame {
-        id: Identifier,
-        data: Vec<u8>,
-        loopback: bool,
-    },
-    Disconnected,
-}
+/// Poll the J2534 channel without blocking the `AsyncCanAdapter` process loop.
+const IO_TIMEOUT_MS: u32 = 0;
 
 /// CAN adapter backed by a SAE J2534 PassThru device.
 ///
-/// Two dedicated background threads handle transmit and receive concurrently.
-/// The struct is [`Send`] (not [`Sync`]) so it can be moved into the
-/// [`crate::can::AsyncCanAdapter`] processing thread.
-///
-/// Loopback frames are synthesised in software after each successful
-/// `PassThruWriteMsgs` call.  Hardware loopback (`SET_CONFIG(LOOPBACK=1)`)
-/// is intentionally avoided because many target devices do not support it.
+/// The adapter performs non-blocking `PassThruReadMsgs` / `PassThruWriteMsgs`
+/// calls from the existing `AsyncCanAdapter` background thread. Successful
+/// writes enqueue a synthetic loopback frame, matching the behaviour expected
+/// by the generic async wrapper.
 pub struct J2534CanAdapter {
-    /// Commands to the TX thread.
-    tx_cmd: Option<SyncSender<J2534Cmd>>,
-
-    /// Subscription to the RX broadcast channel.  Stored directly (not in a
-    /// `Mutex`) because `CanAdapter::recv` takes `&mut self`.
-    rx_sub: broadcast::Receiver<J2534CanEvt>,
-
-    /// Signals the RX thread to exit.
-    stop_rx: Arc<AtomicBool>,
-    tx_thread: Option<thread::JoinHandle<()>>,
-    rx_thread: Option<thread::JoinHandle<()>>,
-
+    loopback_queue: VecDeque<Frame>,
     channel_id: u32,
+    connected: bool,
+    read: FnPassThruReadMsgs,
+    write: FnPassThruWriteMsgs,
     pass_thru_disconnect: FnPassThruDisconnect,
-
-    /// The underlying device handle; taken by `into_device()`.
     device: Option<J2534Device>,
 }
 
 impl J2534CanAdapter {
-    /// Open a J2534 CAN channel and start the TX/RX background threads.
+    /// Open a J2534 CAN channel.
     ///
     /// Opens a new device via [`open_device`](super::open_device).  To reuse
     /// an already-open device, use [`open_on_device`](Self::open_on_device).
@@ -137,43 +102,12 @@ impl J2534CanAdapter {
             ));
         }
 
-        // Create channels and spawn threads
-        let (tx_cmd, rx_cmd) = mpsc::sync_channel::<J2534Cmd>(64);
-        let (bcast_tx, bcast_rx) = broadcast::channel::<J2534CanEvt>(1024);
-        let stop_rx = Arc::new(AtomicBool::new(false));
-
-        let tx_thread = {
-            let bcast = bcast_tx.clone();
-            let stop = stop_rx.clone();
-            thread::Builder::new()
-                .name("j2534-can-tx".to_owned())
-                .spawn(move || can_tx_thread(channel_id, pass_thru_write, rx_cmd, bcast, stop))
-                .map_err(|e| format!("Failed to spawn J2534 CAN TX thread: {e}"))
-        };
-        let tx_thread = match tx_thread {
-            Ok(h) => h,
-            Err(e) => return Err((e, device)),
-        };
-
-        let rx_thread = {
-            let stop = stop_rx.clone();
-            thread::Builder::new()
-                .name("j2534-can-rx".to_owned())
-                .spawn(move || can_rx_thread(channel_id, pass_thru_read, bcast_tx, stop))
-                .map_err(|e| format!("Failed to spawn J2534 CAN RX thread: {e}"))
-        };
-        let rx_thread = match rx_thread {
-            Ok(h) => h,
-            Err(e) => return Err((e, device)),
-        };
-
         Ok(Self {
-            tx_cmd: Some(tx_cmd),
-            rx_sub: bcast_rx,
-            stop_rx,
-            tx_thread: Some(tx_thread),
-            rx_thread: Some(rx_thread),
+            loopback_queue: VecDeque::new(),
             channel_id,
+            connected: true,
+            read: pass_thru_read,
+            write: pass_thru_write,
             pass_thru_disconnect,
             device: Some(device),
         })
@@ -187,26 +121,15 @@ impl J2534CanAdapter {
     }
 
     fn shutdown_channel(&mut self) {
-        // Signal TX thread to stop (its recv() will return Err).
-        drop(self.tx_cmd.take());
-
-        // Signal RX thread to stop.
-        self.stop_rx.store(true, Ordering::Release);
+        if !self.connected {
+            return;
+        }
+        self.connected = false;
 
         // Disconnect invalidates the channel, causing in-flight
-        // PassThruReadMsgs / PassThruWriteMsgs to return an error.
+        // PassThruReadMsgs / PassThruWriteMsgs to fail on subsequent polls.
         let status = Status::from(unsafe { (self.pass_thru_disconnect)(self.channel_id) });
         tracing::trace!(ret = %status, "PassThruDisconnect");
-
-        // Join threads BEFORE PassThruClose — the threads may still be inside
-        // a DLL call that references device-level structures.  Closing the
-        // device while a read/write is in-flight causes a use-after-free.
-        if let Some(h) = self.tx_thread.take() {
-            let _ = h.join();
-        }
-        if let Some(h) = self.rx_thread.take() {
-            let _ = h.join();
-        }
     }
 }
 
@@ -220,156 +143,105 @@ impl Drop for J2534CanAdapter {
 
 impl CanAdapter for J2534CanAdapter {
     fn send(&mut self, frames: &mut VecDeque<Frame>) -> crate::Result<()> {
-        let Some(tx) = &self.tx_cmd else {
+        if !self.connected {
             return Ok(());
-        };
+        }
+
         while let Some(frame) = frames.pop_front() {
-            match tx.try_send(J2534Cmd::Send {
-                id: frame.id,
-                data: frame.data.clone(),
-            }) {
-                Ok(()) => {}
-                Err(_) => {
-                    // TX queue full — restore frame and retry next cycle.
-                    frames.push_front(frame);
-                    return Ok(());
-                }
+            let arb_id: u32 = frame.id.into();
+            tracing::debug!(
+                id = format_args!("{arb_id:08X}"),
+                payload = %hex::encode(&frame.data),
+                "J2534 TX"
+            );
+
+            let mut msg = PassThruMsg::new(Protocol::Can.into(), frame.id, &frame.data);
+            let mut count: u32 = 1;
+
+            let status = Status::from(unsafe {
+                (self.write)(self.channel_id, &mut msg, &mut count, IO_TIMEOUT_MS)
+            });
+            tracing::trace!(ret = %status, count, "PassThruWriteMsgs");
+
+            if status == Status::NoError && count == 1 {
+                let mut loopback = frame.clone();
+                loopback.loopback = true;
+                self.loopback_queue.push_back(loopback);
+            } else if matches!(
+                status,
+                Status::NoError | Status::Timeout | Status::BufferFull
+            ) {
+                // Anything short of a confirmed single-frame write is treated
+                // as backpressure and retried on the next process iteration.
+                frames.push_front(frame);
+                break;
+            } else {
+                tracing::debug!(
+                    ret = %status,
+                    "J2534 TX error — channel disconnected, stopping adapter"
+                );
+                self.connected = false;
+                frames.push_front(frame);
+                return Ok(());
             }
         }
         Ok(())
     }
 
     fn recv(&mut self) -> crate::Result<Vec<Frame>> {
+        if !self.connected {
+            return Err(crate::Error::Disconnected);
+        }
+
         let mut frames = Vec::new();
         loop {
-            match self.rx_sub.try_recv() {
-                Ok(J2534CanEvt::Frame { id, data, loopback }) => {
-                    if let Ok(mut frame) = Frame::new(0, id, &data) {
-                        frame.loopback = loopback;
-                        frames.push(frame);
+            let mut msg = PassThruMsg::default();
+            let mut count: u32 = 1;
+            let status = Status::from(unsafe {
+                (self.read)(self.channel_id, &mut msg, &mut count, IO_TIMEOUT_MS)
+            });
+
+            match status {
+                Status::NoError if count > 0 => {
+                    let len = msg.data_size as usize;
+                    if len < 4 {
+                        tracing::trace!(
+                            rx_status = format_args!("0x{:04X}", msg.rx_status),
+                            data_size = msg.data_size,
+                            "J2534 RX skipped (frame too short)"
+                        );
+                    } else {
+                        let id = parse_can_id(&msg.data);
+                        let data = msg.data[4..len].to_vec();
+                        let arb_id: u32 = id.into();
+                        tracing::debug!(
+                            id = format_args!("{arb_id:08X}"),
+                            payload = %hex::encode(&data),
+                            "J2534 RX"
+                        );
+
+                        if let Ok(frame) = Frame::new(0, id, &data) {
+                            frames.push(frame);
+                        }
                     }
                 }
-                Ok(J2534CanEvt::Disconnected) => return Err(crate::Error::Disconnected),
-                Err(broadcast::error::TryRecvError::Empty) => break,
-                Err(broadcast::error::TryRecvError::Closed) => {
-                    return Err(crate::Error::Disconnected)
-                }
-                Err(broadcast::error::TryRecvError::Lagged(n)) => {
-                    tracing::warn!(
-                        dropped = n,
-                        "J2534 CAN RX broadcast lagged — frames dropped"
-                    );
-                }
-            }
-        }
-        Ok(frames)
-    }
-}
-
-/// Transmit thread: dequeues [`J2534Cmd`] items and writes them to the CAN
-/// channel.  Synthesises a software loopback frame after each successful send.
-fn can_tx_thread(
-    channel_id: u32,
-    write: FnPassThruWriteMsgs,
-    rx_cmds: std::sync::mpsc::Receiver<J2534Cmd>,
-    bcast: broadcast::Sender<J2534CanEvt>,
-    stop_rx: Arc<AtomicBool>,
-) {
-    while let Ok(J2534Cmd::Send { id, data }) = rx_cmds.recv() {
-        let arb_id: u32 = id.into();
-        tracing::debug!(
-            id = format_args!("{arb_id:08X}"),
-            payload = %hex::encode(&data),
-            "J2534 TX"
-        );
-        let mut msg = PassThruMsg::new(Protocol::Can.into(), id, &data);
-        let mut count: u32 = 1;
-
-        // 100 ms timeout: short enough that Drop's PassThruDisconnect
-        // will interrupt us promptly.
-        let status = Status::from(unsafe { write(channel_id, &mut msg, &mut count, 100) });
-        tracing::trace!(ret = %status, count, "PassThruWriteMsgs");
-
-        if status == Status::NoError {
-            // Software loopback: hardware loopback is unreliable on many adapters.
-            bcast
-                .send(J2534CanEvt::Frame {
-                    id,
-                    data,
-                    loopback: true,
-                })
-                .ok();
-        } else {
-            tracing::debug!(
-                ret = %status,
-                "J2534 TX error (channel may be disconnected)"
-            );
-        }
-    }
-    // Tell the RX thread to stop.
-    stop_rx.store(true, Ordering::Release);
-}
-
-/// Receive thread: blocks on `PassThruReadMsgs` waiting for one CAN frame at
-/// a time and broadcasts each frame.
-///
-/// Using count=1 with a long blocking timeout means the thread sleeps
-/// efficiently in the DLL when the bus is quiet, rather than spinning.
-/// `Drop` calls `PassThruDisconnect` which interrupts any blocked read
-/// immediately.  The 500 ms fallback timeout handles DLLs that do not
-/// properly interrupt on disconnect.
-fn can_rx_thread(
-    channel_id: u32,
-    read: FnPassThruReadMsgs,
-    bcast: broadcast::Sender<J2534CanEvt>,
-    stop: Arc<AtomicBool>,
-) {
-    let mut msg = PassThruMsg::default();
-
-    loop {
-        let mut count: u32 = 1;
-        let status = Status::from(unsafe { read(channel_id, &mut msg, &mut count, 500) });
-
-        match status {
-            Status::NoError if count > 0 => {
-                let len = msg.data_size as usize;
-                if len < 4 {
-                    tracing::trace!(
-                        rx_status = format_args!("0x{:04X}", msg.rx_status),
-                        data_size = msg.data_size,
-                        "J2534 RX skipped (frame too short)"
-                    );
-                } else {
-                    let id = parse_can_id(&msg.data);
-                    let data = msg.data[4..len].to_vec();
-                    let arb_id: u32 = id.into();
+                Status::NoError | Status::Timeout | Status::BufferEmpty => break,
+                _ => {
                     tracing::debug!(
-                        id = format_args!("{arb_id:08X}"),
-                        payload = %hex::encode(&data),
-                        "J2534 RX"
+                        ret = %status,
+                        "J2534 RX error — channel disconnected, stopping adapter"
                     );
-                    bcast
-                        .send(J2534CanEvt::Frame {
-                            id,
-                            data,
-                            loopback: false,
-                        })
-                        .ok();
+                    self.connected = false;
+                    return Err(crate::Error::Disconnected);
                 }
-            }
-            Status::Timeout | Status::BufferEmpty | Status::NoError => {
-                if stop.load(Ordering::Acquire) {
-                    return;
-                }
-            }
-            _ => {
-                tracing::debug!(
-                    ret = %status,
-                    "J2534 RX error — channel disconnected, exiting"
-                );
-                bcast.send(J2534CanEvt::Disconnected).ok();
-                return;
             }
         }
+
+        for mut frame in self.loopback_queue.drain(..) {
+            frame.loopback = true;
+            frames.push(frame);
+        }
+
+        Ok(frames)
     }
 }
