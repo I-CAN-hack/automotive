@@ -19,3 +19,5 @@ jobs:
           sudo apt-get -y install clang gcc-mingw-w64-x86-64 libclang-dev
       - name: Build
         run: cargo build --verbose --target=x86_64-pc-windows-gnu --features=all
+      - name: Build Examples
+        run: cargo build --verbose --target=x86_64-pc-windows-gnu --features=all --examples
