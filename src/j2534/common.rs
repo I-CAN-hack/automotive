@@ -142,12 +142,18 @@ impl J2534Channel {
         &self,
         tx_id: Identifier,
         rx_id: Identifier,
+        ext_address: Option<u8>,
         tx_flags: u32,
     ) -> Status {
         let proto: u32 = Protocol::Iso15765.into();
         let mut mask_msg = PassThruMsg::new_raw(proto, 0xFFFF_FFFF, &[]);
-        let mut pattern_msg = PassThruMsg::new(proto, rx_id, &[]);
-        let mut fc_msg = PassThruMsg::new(proto, tx_id, &[]);
+        if ext_address.is_some() {
+            mask_msg.data[4] = 0xFF;
+            mask_msg.data_size = 5;
+            mask_msg.extra_data_index = 5;
+        }
+        let mut pattern_msg = PassThruMsg::new_with_ext_address(proto, rx_id, ext_address, &[]);
+        let mut fc_msg = PassThruMsg::new_with_ext_address(proto, tx_id, ext_address, &[]);
         mask_msg.tx_flags = tx_flags;
         pattern_msg.tx_flags = tx_flags;
         fc_msg.tx_flags = tx_flags;
@@ -165,6 +171,7 @@ impl J2534Channel {
             filter_id,
             tx_id = format_args!("{tx_raw:08X}"),
             rx_id = format_args!("{rx_raw:08X}"),
+            ext_address,
             "PassThruStartMsgFilter (FLOW_CONTROL)"
         );
         status
@@ -224,12 +231,22 @@ pub(crate) fn connect_channel(
     protocol: Protocol,
     bitrate: u32,
 ) -> Result<J2534Channel, String> {
+    connect_channel_with_flags(device, protocol, 0, bitrate)
+}
+
+/// Call `PassThruConnect` for `protocol` with the provided `flags`.
+pub(crate) fn connect_channel_with_flags(
+    device: &J2534Device,
+    protocol: Protocol,
+    flags: u32,
+    bitrate: u32,
+) -> Result<J2534Channel, String> {
     let mut channel_id: u32 = 0;
     let status = Status::from(unsafe {
         (device.connect)(
             device.device_id,
             protocol.into(),
-            0,
+            flags,
             bitrate,
             &mut channel_id,
         )
@@ -237,6 +254,7 @@ pub(crate) fn connect_channel(
     tracing::debug!(
         ret = %status,
         protocol = protocol_name(protocol),
+        flags = format_args!("0x{flags:08X}"),
         channel_id,
         bitrate,
         "PassThruConnect"
@@ -269,22 +287,22 @@ impl PassThruMsg {
     /// For [`Identifier::Extended`], bit 31 (`CAN_29BIT_ID`) is set in the
     /// ID field as required by the J2534 specification.
     pub fn new(protocol_id: u32, id: Identifier, payload: &[u8]) -> Self {
+        Self::new_with_ext_address(protocol_id, id, None, payload)
+    }
+
+    /// Build a message carrying an optional ISO 15765 extended address
+    /// between the CAN ID and payload.
+    pub fn new_with_ext_address(
+        protocol_id: u32,
+        id: Identifier,
+        ext_address: Option<u8>,
+        payload: &[u8],
+    ) -> Self {
         let raw_id: u32 = match id {
             Identifier::Extended(v) => v | CAN_29BIT_ID,
             Identifier::Standard(v) => v,
         };
-        let id_bytes = raw_id.to_be_bytes();
-        let mut data = [0u8; 4128];
-        data[..4].copy_from_slice(&id_bytes);
-        data[4..4 + payload.len()].copy_from_slice(payload);
-        let data_size = (4 + payload.len()) as u32;
-        Self {
-            protocol_id,
-            data,
-            data_size,
-            extra_data_index: data_size,
-            ..Default::default()
-        }
+        Self::new_raw_with_ext_address(protocol_id, raw_id, ext_address, payload)
     }
 
     /// Build a message from a raw `u32` CAN ID (no extended-ID flag logic).
@@ -292,11 +310,27 @@ impl PassThruMsg {
     /// Useful for filter masks (e.g. `0xFFFF_FFFF`) where the value is not a
     /// real CAN arbitration ID.
     pub fn new_raw(protocol_id: u32, raw_can_id: u32, payload: &[u8]) -> Self {
+        Self::new_raw_with_ext_address(protocol_id, raw_can_id, None, payload)
+    }
+
+    /// Build a message from a raw `u32` CAN ID with an optional ISO 15765
+    /// extended address byte before `payload`.
+    pub fn new_raw_with_ext_address(
+        protocol_id: u32,
+        raw_can_id: u32,
+        ext_address: Option<u8>,
+        payload: &[u8],
+    ) -> Self {
         let id_bytes = raw_can_id.to_be_bytes();
         let mut data = [0u8; 4128];
         data[..4].copy_from_slice(&id_bytes);
-        data[4..4 + payload.len()].copy_from_slice(payload);
-        let data_size = (4 + payload.len()) as u32;
+        let mut offset = 4;
+        if let Some(ext_address) = ext_address {
+            data[offset] = ext_address;
+            offset += 1;
+        }
+        data[offset..offset + payload.len()].copy_from_slice(payload);
+        let data_size = (offset + payload.len()) as u32;
         Self {
             protocol_id,
             data,

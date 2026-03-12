@@ -2,6 +2,12 @@
 
 /// `TxFlags` flag: pad outbound ISO 15765 CAN frames to DLC = 8.
 pub const ISO15765_FRAME_PAD: u32 = 0x0040;
+/// `TxFlags` / `Connect` flag: ISO 15765 extended addressing.
+pub const ISO15765_ADDR_TYPE: u32 = 0x0080;
+/// `RxStatus` / `TxFlags` flag: message uses a 29-bit CAN ID.
+pub const CAN_29BIT_ID_FLAG: u32 = 0x0100;
+/// `RxStatus` flag: received ISO 15765 frame had a padding error.
+pub const ISO15765_PADDING_ERROR: u32 = 0x0010;
 
 /// J2534 status / error codes returned by all PassThru functions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

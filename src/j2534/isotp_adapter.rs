@@ -36,7 +36,10 @@ use crate::isotp::{duration_to_stmin_byte, IsoTPConfig};
 use crate::IsoTpTransport;
 
 use super::common::{self, parse_can_id, J2534Channel, J2534Device, PassThruMsg};
-use super::constants::{IoctlParam, Protocol, Status, ISO15765_FRAME_PAD};
+use super::constants::{
+    IoctlParam, Protocol, Status, CAN_29BIT_ID_FLAG, ISO15765_ADDR_TYPE, ISO15765_FRAME_PAD,
+    ISO15765_PADDING_ERROR,
+};
 
 /// Timeout for blocking ISO 15765 TX writes.
 const ISO15765_TX_TIMEOUT_MS: u32 = 60_000;
@@ -83,8 +86,8 @@ impl J2534NativeIsoTpTransport {
     ///
     /// This avoids closing and reopening the physical device when switching
     /// channels (e.g. from OBD DTC-clear to the main flash channel).
-    /// Only `tx_id`, `rx_id`, `padding`, and `separation_time_min` from
-    /// `config` are used.
+    /// Uses `tx_id`, `rx_id`, `padding`, `separation_time_min`, and
+    /// `ext_address` from `config`.
     /// The remaining [`IsoTPConfig`] fields are ignored by the native J2534
     /// transport.
     ///
@@ -97,15 +100,23 @@ impl J2534NativeIsoTpTransport {
     ) -> Result<Self, (String, J2534Device)> {
         let tx_id = config.tx_id;
         let rx_id = config.rx_id;
-        let tx_flags = isotp_tx_flags(config.padding);
+        let ext_address = config.ext_address;
+        let tx_flags = isotp_tx_flags(config.padding, ext_address);
+        let connect_flags = isotp_connect_flags(ext_address);
         let stmin_tx = config.separation_time_min;
 
-        let channel = match common::connect_channel(&device, Protocol::Iso15765, bitrate) {
+        let channel = match common::connect_channel_with_flags(
+            &device,
+            Protocol::Iso15765,
+            connect_flags,
+            bitrate,
+        ) {
             Ok(channel) => channel,
             Err(msg) => return Err((msg, device)),
         };
 
-        let status = channel.install_iso15765_flow_control_filter(tx_id, rx_id, tx_flags);
+        let status =
+            channel.install_iso15765_flow_control_filter(tx_id, rx_id, ext_address, tx_flags);
         if status != Status::NoError {
             let _ = channel.disconnect();
             return Err((format!("PassThruStartMsgFilter failed: {status}"), device));
@@ -146,7 +157,9 @@ impl J2534NativeIsoTpTransport {
             let stop = stop_rx.clone();
             thread::Builder::new()
                 .name("j2534-isotp-tx".to_owned())
-                .spawn(move || isotp_tx_thread(channel, tx_id, tx_flags, rx_cmd, bcast, stop))
+                .spawn(move || {
+                    isotp_tx_thread(channel, tx_id, ext_address, tx_flags, rx_cmd, bcast, stop)
+                })
                 .map_err(|e| format!("Failed to spawn J2534 ISO-TP TX thread: {e}"))
         };
         let tx_thread = match tx_thread {
@@ -159,7 +172,7 @@ impl J2534NativeIsoTpTransport {
             let stop = stop_rx.clone();
             thread::Builder::new()
                 .name("j2534-isotp-rx".to_owned())
-                .spawn(move || isotp_rx_thread(channel, bcast, stop))
+                .spawn(move || isotp_rx_thread(channel, ext_address, bcast, stop))
                 .map_err(|e| format!("Failed to spawn J2534 ISO-TP RX thread: {e}"))
         };
         let rx_thread = match rx_thread {
@@ -254,17 +267,29 @@ impl IsoTpTransport for J2534NativeIsoTpTransport {
     }
 }
 
-fn isotp_tx_flags(padding: Option<u8>) -> u32 {
-    if padding.is_some() {
-        ISO15765_FRAME_PAD
+fn isotp_connect_flags(ext_address: Option<u8>) -> u32 {
+    if ext_address.is_some() {
+        ISO15765_ADDR_TYPE
     } else {
         0
     }
 }
 
+fn isotp_tx_flags(padding: Option<u8>, ext_address: Option<u8>) -> u32 {
+    let mut flags = 0;
+    if padding.is_some() {
+        flags |= ISO15765_FRAME_PAD;
+    }
+    if ext_address.is_some() {
+        flags |= ISO15765_ADDR_TYPE;
+    }
+    flags
+}
+
 fn isotp_tx_thread(
     channel: J2534Channel,
     tx_id: Identifier,
+    ext_address: Option<u8>,
     tx_flags: u32,
     rx_cmds: Receiver<J2534IsoTpCmd>,
     _bcast: broadcast::Sender<J2534IsoTpEvt>,
@@ -277,7 +302,8 @@ fn isotp_tx_thread(
             "J2534 ISO15765 TX"
         );
 
-        let mut msg = PassThruMsg::new(Protocol::Iso15765.into(), tx_id, &pdu);
+        let mut msg =
+            PassThruMsg::new_with_ext_address(Protocol::Iso15765.into(), tx_id, ext_address, &pdu);
         msg.tx_flags = tx_flags;
 
         let (status, count) = channel.write_message(&mut msg, ISO15765_TX_TIMEOUT_MS);
@@ -295,6 +321,7 @@ fn isotp_tx_thread(
 
 fn isotp_rx_thread(
     channel: J2534Channel,
+    ext_address: Option<u8>,
     bcast: broadcast::Sender<J2534IsoTpEvt>,
     stop: Arc<AtomicBool>,
 ) {
@@ -306,15 +333,31 @@ fn isotp_rx_thread(
         match status {
             Status::NoError if count > 0 => {
                 let len = msg.data_size as usize;
-                if len < 4 {
+                let header_len = 4 + usize::from(ext_address.is_some());
+                if len < header_len {
                     continue;
                 }
 
                 let src_id = parse_can_id(&msg.data);
                 let src_raw: u32 = src_id.into();
-                let payload = &msg.data[4..len];
+                if let Some(ext_address) = ext_address {
+                    let actual_ext_address = msg.data[4];
+                    if actual_ext_address != ext_address {
+                        tracing::debug!(
+                            expected_ext_address = format_args!("0x{ext_address:02X}"),
+                            actual_ext_address = format_args!("0x{actual_ext_address:02X}"),
+                            src_id = format_args!("{src_raw:08X}"),
+                            "J2534 ISO15765 skipping frame with mismatched extended address"
+                        );
+                        continue;
+                    }
+                }
+                let payload = &msg.data[header_len..len];
+                let informational_rx_status = msg.rx_status
+                    & (ISO15765_ADDR_TYPE | ISO15765_PADDING_ERROR | CAN_29BIT_ID_FLAG);
+                let non_data_rx_status = msg.rx_status & !informational_rx_status;
 
-                if msg.rx_status != 0 {
+                if non_data_rx_status != 0 {
                     tracing::debug!(
                         rx_status = format_args!("0x{:04X}", msg.rx_status),
                         src_id = format_args!("{src_raw:08X}"),
@@ -323,6 +366,13 @@ fn isotp_rx_thread(
                         "J2534 ISO15765 skipping non-data frame"
                     );
                     continue;
+                }
+                if informational_rx_status & ISO15765_PADDING_ERROR != 0 {
+                    tracing::warn!(
+                        rx_status = format_args!("0x{:04X}", msg.rx_status),
+                        src_id = format_args!("{src_raw:08X}"),
+                        "J2534 ISO15765 RX padding error"
+                    );
                 }
 
                 let pdu = payload.to_vec();
