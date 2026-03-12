@@ -20,9 +20,8 @@ use tokio::sync::broadcast;
 use crate::can::{CanAdapter, Frame, Identifier};
 
 use super::common::{
-    self, FnPassThruDisconnect, FnPassThruReadMsgs, FnPassThruWriteMsgs,
-    J2534Device, PassThruMsg, STATUS_NOERROR, ERR_BUFFER_EMPTY, ERR_TIMEOUT,
-    parse_can_id,
+    self, parse_can_id, FnPassThruDisconnect, FnPassThruReadMsgs, FnPassThruWriteMsgs, J2534Device,
+    PassThruMsg, ERR_BUFFER_EMPTY, ERR_TIMEOUT, STATUS_NOERROR,
 };
 
 // Protocol / filter constants
@@ -37,7 +36,11 @@ enum J2534Cmd {
 
 #[derive(Clone)]
 enum J2534CanEvt {
-    Frame { id: Identifier, data: Vec<u8>, loopback: bool },
+    Frame {
+        id: Identifier,
+        data: Vec<u8>,
+        loopback: bool,
+    },
     Disconnected,
 }
 
@@ -79,8 +82,7 @@ impl J2534CanAdapter {
     /// * `bitrate` — CAN bitrate in bits/sec (e.g. `500_000`).
     pub fn open(dll_path: Option<&str>, bitrate: u32) -> Result<Self, String> {
         let device = common::open_device(dll_path)?;
-        Self::open_on_device(device, bitrate)
-            .map_err(|(msg, _device)| msg)
+        Self::open_on_device(device, bitrate).map_err(|(msg, _device)| msg)
     }
 
     /// Open a CAN channel on an already-open [`J2534Device`].
@@ -104,15 +106,22 @@ impl J2534CanAdapter {
 
         // Open CAN channel
         let mut channel_id: u32 = 0;
-        let ret = unsafe {
-            pass_thru_connect(device_id, PROTOCOL_CAN, 0, bitrate, &mut channel_id)
-        };
-        tracing::debug!(ret = common::status_str(ret), channel_id, bitrate, "PassThruConnect CAN");
+        let ret =
+            unsafe { pass_thru_connect(device_id, PROTOCOL_CAN, 0, bitrate, &mut channel_id) };
+        tracing::debug!(
+            ret = common::status_str(ret),
+            channel_id,
+            bitrate,
+            "PassThruConnect CAN"
+        );
         if ret != STATUS_NOERROR {
-            return Err((format!(
-                "PassThruConnect (CAN, {bitrate} bps) failed: 0x{ret:02X} ({})",
-                common::status_str(ret)
-            ), device));
+            return Err((
+                format!(
+                    "PassThruConnect (CAN, {bitrate} bps) failed: 0x{ret:02X} ({})",
+                    common::status_str(ret)
+                ),
+                device,
+            ));
         }
 
         // Install pass-all receive filter
@@ -129,13 +138,20 @@ impl J2534CanAdapter {
                 &mut filter_id,
             )
         };
-        tracing::debug!(ret = common::status_str(ret), filter_id, "PassThruStartMsgFilter");
+        tracing::debug!(
+            ret = common::status_str(ret),
+            filter_id,
+            "PassThruStartMsgFilter"
+        );
         if ret != STATUS_NOERROR {
             unsafe { pass_thru_disconnect(channel_id) };
-            return Err((format!(
-                "PassThruStartMsgFilter (PASS, pass-all) failed: 0x{ret:02X} ({})",
-                common::status_str(ret)
-            ), device));
+            return Err((
+                format!(
+                    "PassThruStartMsgFilter (PASS, pass-all) failed: 0x{ret:02X} ({})",
+                    common::status_str(ret)
+                ),
+                device,
+            ));
         }
 
         // Create channels and spawn threads
@@ -222,7 +238,10 @@ impl CanAdapter for J2534CanAdapter {
             return Ok(());
         };
         while let Some(frame) = frames.pop_front() {
-            match tx.try_send(J2534Cmd::Send { id: frame.id, data: frame.data.clone() }) {
+            match tx.try_send(J2534Cmd::Send {
+                id: frame.id,
+                data: frame.data.clone(),
+            }) {
                 Ok(()) => {}
                 Err(_) => {
                     // TX queue full — restore frame and retry next cycle.
@@ -250,7 +269,10 @@ impl CanAdapter for J2534CanAdapter {
                     return Err(crate::Error::Disconnected)
                 }
                 Err(broadcast::error::TryRecvError::Lagged(n)) => {
-                    tracing::warn!(dropped = n, "J2534 CAN RX broadcast lagged — frames dropped");
+                    tracing::warn!(
+                        dropped = n,
+                        "J2534 CAN RX broadcast lagged — frames dropped"
+                    );
                 }
             }
         }
@@ -284,7 +306,13 @@ fn can_tx_thread(
         tracing::trace!(ret = common::status_str(ret), count, "PassThruWriteMsgs");
         if ret == STATUS_NOERROR {
             // Software loopback: hardware loopback is unreliable on many adapters.
-            bcast.send(J2534CanEvt::Frame { id, data, loopback: true }).ok();
+            bcast
+                .send(J2534CanEvt::Frame {
+                    id,
+                    data,
+                    loopback: true,
+                })
+                .ok();
         } else {
             tracing::debug!(
                 ret = common::status_str(ret),
@@ -336,7 +364,13 @@ fn can_rx_thread(
                         payload = %hex::encode(&data),
                         "J2534 RX"
                     );
-                    bcast.send(J2534CanEvt::Frame { id, data, loopback: false }).ok();
+                    bcast
+                        .send(J2534CanEvt::Frame {
+                            id,
+                            data,
+                            loopback: false,
+                        })
+                        .ok();
                 }
             }
             ERR_TIMEOUT | ERR_BUFFER_EMPTY | STATUS_NOERROR => {

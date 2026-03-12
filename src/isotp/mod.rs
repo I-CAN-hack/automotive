@@ -43,14 +43,20 @@ const DEFAULT_TIMEOUT_MS: u64 = 100;
 pub trait IsoTpTransport {
     /// Transmit a single UDS PDU. Resolves once the transport has accepted the
     /// payload for transmission (not necessarily once it has been ACKed on the bus).
-    fn send<'a>(&'a self, data: &'a [u8]) -> impl std::future::Future<Output = crate::Result<()>> + 'a;
+    fn send<'a>(
+        &'a self,
+        data: &'a [u8],
+    ) -> impl std::future::Future<Output = crate::Result<()>> + 'a;
 
     /// Infinite stream of received UDS PDUs. Each item is one complete PDU.
     fn recv(&self) -> impl crate::Stream<Item = crate::Result<Vec<u8>>> + Unpin + '_;
 }
 
 impl IsoTpTransport for IsoTPAdapter<'_> {
-    fn send<'a>(&'a self, data: &'a [u8]) -> impl std::future::Future<Output = crate::Result<()>> + 'a {
+    fn send<'a>(
+        &'a self,
+        data: &'a [u8],
+    ) -> impl std::future::Future<Output = crate::Result<()>> + 'a {
         IsoTPAdapter::send(self, data)
     }
 

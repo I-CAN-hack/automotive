@@ -35,9 +35,8 @@ use crate::can::Identifier;
 use crate::IsoTpTransport;
 
 use super::common::{
-    self, FnPassThruDisconnect, FnPassThruReadMsgs, FnPassThruWriteMsgs,
-    J2534Device, PassThruMsg, STATUS_NOERROR, ERR_BUFFER_EMPTY, ERR_TIMEOUT,
-    parse_can_id,
+    self, parse_can_id, FnPassThruDisconnect, FnPassThruReadMsgs, FnPassThruWriteMsgs, J2534Device,
+    PassThruMsg, ERR_BUFFER_EMPTY, ERR_TIMEOUT, STATUS_NOERROR,
 };
 
 // J2534 protcol and filter constants
@@ -153,9 +152,8 @@ impl J2534NativeIsoTpTransport {
 
         // Connect using the ISO15765 protocol specifier
         let mut channel_id: u32 = 0;
-        let ret = unsafe {
-            pass_thru_connect(device_id, PROTOCOL_ISO15765, 0, bitrate, &mut channel_id)
-        };
+        let ret =
+            unsafe { pass_thru_connect(device_id, PROTOCOL_ISO15765, 0, bitrate, &mut channel_id) };
         tracing::debug!(
             ret = common::status_str(ret),
             channel_id,
@@ -163,18 +161,21 @@ impl J2534NativeIsoTpTransport {
             "PassThruConnect ISO15765"
         );
         if ret != STATUS_NOERROR {
-            return Err((format!(
-                "PassThruConnect (ISO15765, {bitrate} bps) failed: 0x{ret:02X} ({})",
-                common::status_str(ret)
-            ), device));
+            return Err((
+                format!(
+                    "PassThruConnect (ISO15765, {bitrate} bps) failed: 0x{ret:02X} ({})",
+                    common::status_str(ret)
+                ),
+                device,
+            ));
         }
 
-        let mut mask_msg    = PassThruMsg::new_raw(PROTOCOL_ISO15765, 0xFFFF_FFFF, &[]);
+        let mut mask_msg = PassThruMsg::new_raw(PROTOCOL_ISO15765, 0xFFFF_FFFF, &[]);
         let mut pattern_msg = PassThruMsg::new(PROTOCOL_ISO15765, rx_id, &[]);
-        let mut fc_msg      = PassThruMsg::new(PROTOCOL_ISO15765, tx_id, &[]);
-        mask_msg.tx_flags    = ISO15765_FRAME_PAD;
+        let mut fc_msg = PassThruMsg::new(PROTOCOL_ISO15765, tx_id, &[]);
+        mask_msg.tx_flags = ISO15765_FRAME_PAD;
         pattern_msg.tx_flags = ISO15765_FRAME_PAD;
-        fc_msg.tx_flags      = ISO15765_FRAME_PAD;
+        fc_msg.tx_flags = ISO15765_FRAME_PAD;
 
         let mut filter_id: u32 = 0;
         let ret = unsafe {
@@ -198,10 +199,13 @@ impl J2534NativeIsoTpTransport {
         );
         if ret != STATUS_NOERROR {
             unsafe { pass_thru_disconnect(channel_id) };
-            return Err((format!(
-                "PassThruStartMsgFilter failed: 0x{ret:02X} ({})",
-                common::status_str(ret)
-            ), device));
+            return Err((
+                format!(
+                    "PassThruStartMsgFilter failed: 0x{ret:02X} ({})",
+                    common::status_str(ret)
+                ),
+                device,
+            ));
         }
 
         // Clear receive buffer to ensure filter is applied correctly
@@ -213,15 +217,13 @@ impl J2534NativeIsoTpTransport {
                 std::ptr::null_mut(),
             )
         };
-        tracing::debug!(ret = common::status_str(ret), "PassThruIoctl CLEAR_RX_BUFFER");
+        tracing::debug!(
+            ret = common::status_str(ret),
+            "PassThruIoctl CLEAR_RX_BUFFER"
+        );
 
         // Set receive ISO15765_STMIN = 0 to get fastest allowed by the module
-        let ret = common::set_config(
-            pass_thru_ioctl,
-            channel_id,
-            IOCTL_PARAM_ISO15765_STMIN,
-            0,
-        );
+        let ret = common::set_config(pass_thru_ioctl, channel_id, IOCTL_PARAM_ISO15765_STMIN, 0);
         tracing::debug!(
             ret = common::status_str(ret),
             "PassThruIoctl SET_CONFIG ISO15765_STMIN=0"
@@ -265,7 +267,9 @@ impl J2534NativeIsoTpTransport {
             let stop = stop_rx.clone();
             thread::Builder::new()
                 .name("j2534-isotp-tx".to_owned())
-                .spawn(move || isotp_tx_thread(channel_id, tx_id, pass_thru_write, rx_cmd, bcast, stop))
+                .spawn(move || {
+                    isotp_tx_thread(channel_id, tx_id, pass_thru_write, rx_cmd, bcast, stop)
+                })
                 .map_err(|e| format!("Failed to spawn J2534 ISO-TP TX thread: {e}"))
         };
         let tx_thread = match tx_thread {
@@ -327,7 +331,10 @@ impl Drop for J2534NativeIsoTpTransport {
 }
 
 impl IsoTpTransport for J2534NativeIsoTpTransport {
-    fn send<'a>(&'a self, data: &'a [u8]) -> impl std::future::Future<Output = crate::Result<()>> + 'a {
+    fn send<'a>(
+        &'a self,
+        data: &'a [u8],
+    ) -> impl std::future::Future<Output = crate::Result<()>> + 'a {
         let pdu = data.to_vec();
         async move {
             let Some(tx) = &self.tx_cmd else {

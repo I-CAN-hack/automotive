@@ -16,10 +16,10 @@
 //!
 //! This module is only available on Windows with the `j2534` feature enabled.
 
-mod common;
 mod can_adapter;
+mod common;
 mod isotp_adapter;
 
-pub use common::{J2534Device, open_device, resolve_dll_path};
 pub use can_adapter::J2534CanAdapter;
-pub use isotp_adapter::{J2534NativeIsoTpTransport, us_to_stmin_byte};
+pub use common::{open_device, resolve_dll_path, J2534Device};
+pub use isotp_adapter::{us_to_stmin_byte, J2534NativeIsoTpTransport};

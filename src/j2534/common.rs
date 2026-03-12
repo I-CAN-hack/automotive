@@ -116,14 +116,12 @@ pub const IOCTL_SET_CONFIG: u32 = 0x02;
 /// Call `PassThruIoctl(SET_CONFIG)` with a single `(parameter, value)` pair.
 ///
 /// Returns the raw J2534 status code.
-pub fn set_config(
-    ioctl_fn: FnPassThruIoctl,
-    channel_id: u32,
-    parameter: u32,
-    value: u32,
-) -> i32 {
+pub fn set_config(ioctl_fn: FnPassThruIoctl, channel_id: u32, parameter: u32, value: u32) -> i32 {
     let mut cfg = SConfig { parameter, value };
-    let mut list = SConfigList { num_of_params: 1, config_ptr: &mut cfg };
+    let mut list = SConfigList {
+        num_of_params: 1,
+        config_ptr: &mut cfg,
+    };
     unsafe {
         ioctl_fn(
             channel_id,
@@ -136,27 +134,22 @@ pub fn set_config(
 
 // Function-pointer signatures
 
-pub type FnPassThruOpen =
-    unsafe extern "system" fn(*const u8, *mut u32) -> i32;
-pub type FnPassThruClose =
-    unsafe extern "system" fn(u32) -> i32;
-pub type FnPassThruConnect =
-    unsafe extern "system" fn(u32, u32, u32, u32, *mut u32) -> i32;
-pub type FnPassThruDisconnect =
-    unsafe extern "system" fn(u32) -> i32;
+pub type FnPassThruOpen = unsafe extern "system" fn(*const u8, *mut u32) -> i32;
+pub type FnPassThruClose = unsafe extern "system" fn(u32) -> i32;
+pub type FnPassThruConnect = unsafe extern "system" fn(u32, u32, u32, u32, *mut u32) -> i32;
+pub type FnPassThruDisconnect = unsafe extern "system" fn(u32) -> i32;
 pub type FnPassThruReadMsgs =
     unsafe extern "system" fn(u32, *mut PassThruMsg, *mut u32, u32) -> i32;
 pub type FnPassThruWriteMsgs =
     unsafe extern "system" fn(u32, *mut PassThruMsg, *mut u32, u32) -> i32;
-pub type FnPassThruStartMsgFilter =
-    unsafe extern "system" fn(
-        u32,
-        u32,
-        *const PassThruMsg,
-        *const PassThruMsg,
-        *const PassThruMsg,
-        *mut u32,
-    ) -> i32;
+pub type FnPassThruStartMsgFilter = unsafe extern "system" fn(
+    u32,
+    u32,
+    *const PassThruMsg,
+    *const PassThruMsg,
+    *const PassThruMsg,
+    *mut u32,
+) -> i32;
 pub type FnPassThruIoctl =
     unsafe extern "system" fn(u32, u32, *mut std::ffi::c_void, *mut std::ffi::c_void) -> i32;
 
@@ -214,14 +207,14 @@ pub fn open_device(dll_path: Option<&str>) -> Result<J2534Device, String> {
         };
     }
 
-    let pass_thru_open   = sym!(b"PassThruOpen\0",           FnPassThruOpen);
-    let close            = sym!(b"PassThruClose\0",          FnPassThruClose);
-    let connect          = sym!(b"PassThruConnect\0",        FnPassThruConnect);
-    let disconnect       = sym!(b"PassThruDisconnect\0",     FnPassThruDisconnect);
-    let read             = sym!(b"PassThruReadMsgs\0",       FnPassThruReadMsgs);
-    let write            = sym!(b"PassThruWriteMsgs\0",      FnPassThruWriteMsgs);
-    let filter           = sym!(b"PassThruStartMsgFilter\0", FnPassThruStartMsgFilter);
-    let ioctl            = sym!(b"PassThruIoctl\0",          FnPassThruIoctl);
+    let pass_thru_open = sym!(b"PassThruOpen\0", FnPassThruOpen);
+    let close = sym!(b"PassThruClose\0", FnPassThruClose);
+    let connect = sym!(b"PassThruConnect\0", FnPassThruConnect);
+    let disconnect = sym!(b"PassThruDisconnect\0", FnPassThruDisconnect);
+    let read = sym!(b"PassThruReadMsgs\0", FnPassThruReadMsgs);
+    let write = sym!(b"PassThruWriteMsgs\0", FnPassThruWriteMsgs);
+    let filter = sym!(b"PassThruStartMsgFilter\0", FnPassThruStartMsgFilter);
+    let ioctl = sym!(b"PassThruIoctl\0", FnPassThruIoctl);
 
     let mut device_id: u32 = 0;
     let ret = unsafe { pass_thru_open(std::ptr::null(), &mut device_id) };
@@ -262,11 +255,9 @@ pub fn resolve_dll_path(dll_path: Option<&str>) -> Result<String, String> {
         if let Some(p) = native.into_iter().next() {
             p
         } else if wow32.is_empty() {
-            return Err(
-                "No J2534 PassThru drivers found in \
+            return Err("No J2534 PassThru drivers found in \
                  HKLM\\SOFTWARE\\PassThruSupport.04.04"
-                    .to_owned(),
-            );
+                .to_owned());
         } else {
             return Err(format!(
                 "No 64-bit J2534 drivers found. \
@@ -438,6 +429,6 @@ pub fn status_str(ret: i32) -> &'static str {
         0x18 => "ERR_NOT_UNIQUE",
         0x19 => "ERR_INVALID_BAUDRATE",
         0x1A => "ERR_INVALID_DEVICE_ID",
-        _    => "ERR_UNKNOWN",
+        _ => "ERR_UNKNOWN",
     }
 }
