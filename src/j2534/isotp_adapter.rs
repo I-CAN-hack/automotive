@@ -73,17 +73,17 @@ pub struct J2534NativeIsoTpTransport {
 }
 
 impl J2534NativeIsoTpTransport {
-    /// Open a J2534 ISO 15765 channel and start the TX/RX background threads.
+    /// Create a J2534 ISO 15765 channel and start the TX/RX background threads.
     ///
     /// Opens a new device via `PassThruOpen`.  To reuse an already-open
     /// device (e.g. after an OBD DTC-clear channel), use
-    /// [`open_on_device`](Self::open_on_device) instead.
-    pub fn open(dll_path: Option<&str>, bitrate: u32, config: IsoTPConfig) -> Result<Self> {
+    /// [`new_on_device`](Self::new_on_device) instead.
+    pub fn new(dll_path: Option<&str>, bitrate: u32, config: IsoTPConfig) -> Result<Self> {
         let device = common::open_device(dll_path)?;
-        Self::open_on_device(device, bitrate, config)
+        Self::new_on_device(device, bitrate, config)
     }
 
-    /// Open an ISO 15765 channel on an already-open [`J2534Device`].
+    /// Create an ISO 15765 channel on an already-open [`J2534Device`].
     ///
     /// This avoids closing and reopening the physical device when switching
     /// channels (e.g. from OBD DTC-clear to the main flash channel).
@@ -92,7 +92,7 @@ impl J2534NativeIsoTpTransport {
     /// The remaining [`IsoTPConfig`] fields are ignored by the native J2534
     /// transport.
     ///
-    pub fn open_on_device(device: J2534Device, bitrate: u32, config: IsoTPConfig) -> Result<Self> {
+    pub fn new_on_device(device: J2534Device, bitrate: u32, config: IsoTPConfig) -> Result<Self> {
         let tx_id = config.tx_id;
         let rx_id = config.rx_id;
         let ext_address = config.ext_address;
