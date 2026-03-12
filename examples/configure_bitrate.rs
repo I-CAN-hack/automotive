@@ -1,7 +1,9 @@
 #[cfg(all(target_os = "windows", feature = "vector-xl"))]
-pub async fn run() -> Result<()> {
+pub async fn run() -> automotive::Result<()> {
     use automotive::can::bitrate::BitrateBuilder;
     use automotive::vector::VectorCan;
+    use automotive::StreamExt;
+
     tracing_subscriber::fmt::init();
 
     let bitrate_cfg = BitrateBuilder::new::<VectorCan>()
