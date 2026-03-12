@@ -32,6 +32,7 @@ use async_stream::stream;
 use tokio::sync::{broadcast, oneshot};
 
 use crate::can::Identifier;
+use crate::isotp::us_to_stmin_byte;
 use crate::IsoTpTransport;
 
 use super::common::{self, parse_can_id, J2534Channel, J2534Device, PassThruMsg};
@@ -42,29 +43,6 @@ const ISO15765_TX_TIMEOUT_MS: u32 = 60_000;
 
 /// Timeout for blocking ISO 15765 RX reads.
 const ISO15765_RX_TIMEOUT_MS: u32 = 500;
-
-/// Encode a separation-time value in microseconds to the ISO 15765-2 STmin byte.
-///
-/// Encoding (ISO 15765-2 §9.6.5.4 / Table 5):
-/// - 0 µs → `0x00` (no delay)
-/// - 1 000–127 000 µs (1–127 ms, step 1 ms) → `0x01`–`0x7F`
-/// - 100–900 µs (step 100 µs) → `0xF1`–`0xF9`
-/// - Values below 100 µs (other than 0) or above 127 ms → nearest boundary.
-pub fn us_to_stmin_byte(us: u32) -> u8 {
-    if us == 0 {
-        0x00
-    } else if us < 1_000 {
-        let steps = us / 100;
-        if steps == 0 {
-            0x00
-        } else {
-            0xF0 + steps.min(9) as u8
-        }
-    } else {
-        let ms = us / 1_000;
-        ms.min(127) as u8
-    }
-}
 
 enum J2534IsoTpCmd {
     Send(Vec<u8>, oneshot::Sender<Result<(), String>>),
