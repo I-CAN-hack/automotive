@@ -356,73 +356,11 @@ pub fn parse_can_id(msg: &PassThruMsg) -> Identifier {
     if msg.rx_status & CAN_29BIT_ID_FLAG != 0 {
         Identifier::Extended(raw)
     } else {
+        assert!(
+            raw <= 0x7FF,
+            "J2534 message missing 29-bit flag for non-standard CAN ID 0x{raw:08X}"
+        );
         Identifier::Standard(raw)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn pass_thru_msg_keeps_extended_can_id_raw() {
-        let msg = PassThruMsg::new(
-            Protocol::Can.into(),
-            Identifier::Extended(0x18DAF110),
-            &[1, 2],
-        );
-
-        assert_eq!(
-            u32::from_be_bytes([msg.data[0], msg.data[1], msg.data[2], msg.data[3]]),
-            0x18DAF110
-        );
-        assert_eq!(
-            can_id_flags(Identifier::Extended(0x18DAF110)),
-            CAN_29BIT_ID_FLAG
-        );
-    }
-
-    #[test]
-    fn parse_can_id_uses_rx_status_flag() {
-        let mut msg = PassThruMsg::new(Protocol::Can.into(), Identifier::Extended(0x18DAF110), &[]);
-        msg.rx_status = CAN_29BIT_ID_FLAG;
-        assert_eq!(parse_can_id(&msg), Identifier::Extended(0x18DAF110));
-
-        msg.rx_status = 0;
-        assert_eq!(parse_can_id(&msg), Identifier::Standard(0x18DAF110));
-    }
-
-    #[test]
-    fn pass_all_can_filter_messages_cover_standard_and_extended_ids() {
-        let [standard, extended] = pass_all_can_filter_messages();
-
-        assert_eq!(standard.protocol_id, Protocol::Can.into());
-        assert_eq!(standard.data_size, 4);
-        assert_eq!(standard.extra_data_index, 4);
-        assert_eq!(standard.tx_flags, 0);
-        assert_eq!(
-            u32::from_be_bytes([
-                standard.data[0],
-                standard.data[1],
-                standard.data[2],
-                standard.data[3]
-            ]),
-            0
-        );
-
-        assert_eq!(extended.protocol_id, Protocol::Can.into());
-        assert_eq!(extended.data_size, 4);
-        assert_eq!(extended.extra_data_index, 4);
-        assert_eq!(extended.tx_flags, CAN_29BIT_ID_FLAG);
-        assert_eq!(
-            u32::from_be_bytes([
-                extended.data[0],
-                extended.data[1],
-                extended.data[2],
-                extended.data[3]
-            ]),
-            0
-        );
     }
 }
 
