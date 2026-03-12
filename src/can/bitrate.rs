@@ -15,6 +15,56 @@
 //! The resulting [`BitrateConfig`] contains:
 //! - nominal/arbitration phase settings as one [`AdapterBitTiming`]
 //! - optional CAN-FD data phase settings as one [`AdapterBitTiming`]
+//!
+//! ## Example
+//!
+//! Build a 500 kbit/s nominal bitrate configuration using the timing constants
+//! exposed by an adapter type:
+//!
+//! ```rust
+//! use automotive::can::bitrate::{AdapterTimingConst, BitTimingConst, BitrateBuilder};
+//! use automotive::can::{CanAdapter, Frame};
+//! use std::collections::VecDeque;
+//!
+//! # const TIMING: AdapterTimingConst = AdapterTimingConst {
+//! #     nominal: BitTimingConst {
+//! #         clock_hz: 80_000_000,
+//! #         tseg1_min: 1,
+//! #         tseg1_max: 16,
+//! #         tseg2_min: 1,
+//! #         tseg2_max: 8,
+//! #         sjw_max: 4,
+//! #         brp_min: 1,
+//! #         brp_max: 1024,
+//! #         brp_inc: 1,
+//! #     },
+//! #     data: None,
+//! # };
+//! # struct DummyAdapter;
+//! # impl CanAdapter for DummyAdapter {
+//! #     fn send(&mut self, _frames: &mut VecDeque<Frame>) -> automotive::Result<()> {
+//! #         unreachable!()
+//! #     }
+//! #
+//! #     fn recv(&mut self) -> automotive::Result<Vec<Frame>> {
+//! #         unreachable!()
+//! #     }
+//! #
+//! #     fn timing_const() -> AdapterTimingConst
+//! #     where
+//! #         Self: Sized,
+//! #     {
+//! #         TIMING
+//! #     }
+//! # }
+//! let bitrate_cfg = BitrateBuilder::new::<DummyAdapter>()
+//!     .bitrate(500_000)
+//!     .sample_point(0.8)
+//!     .build()?;
+//!
+//! assert_eq!(bitrate_cfg.nominal.bitrate, 500_000);
+//! # Ok::<(), automotive::can::bitrate::BitrateError>(())
+//! ```
 
 use thiserror::Error;
 
