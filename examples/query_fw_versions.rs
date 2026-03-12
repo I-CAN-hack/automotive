@@ -1,5 +1,7 @@
+use std::time::Duration;
+
 use automotive::can::AsyncCanAdapter;
-use automotive::isotp::IsoTPAdapter;
+use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
 use automotive::Result;
 
 use automotive::uds::DataIdentifier;
@@ -9,7 +11,13 @@ use bstr::ByteSlice;
 use strum::IntoEnumIterator;
 
 async fn get_version(adapter: &AsyncCanAdapter, identifier: u32) -> Result<()> {
-    let isotp = IsoTPAdapter::from_id(adapter, identifier);
+    let mut config = IsoTPConfig::new(0, identifier.into());
+
+    // Increased timeout for adapters not supporting real ACKs
+    // We send a lot of frames, so the timeout might start counting before the relevant frame is sent
+    config.timeout = Duration::from_secs(1);
+
+    let isotp = IsoTPAdapter::new(adapter, config);
     let uds = UDSClient::new(&isotp);
 
     uds.tester_present().await?;
