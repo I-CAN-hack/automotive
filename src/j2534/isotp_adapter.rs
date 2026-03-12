@@ -32,7 +32,7 @@ use async_stream::stream;
 use tokio::sync::{broadcast, oneshot};
 
 use crate::can::Identifier;
-use crate::isotp::us_to_stmin_byte;
+use crate::isotp::{duration_to_stmin_byte, IsoTPConfig};
 use crate::IsoTpTransport;
 
 use super::common::{self, parse_can_id, J2534Channel, J2534Device, PassThruMsg};
@@ -74,38 +74,38 @@ impl J2534NativeIsoTpTransport {
     /// Opens a new device via `PassThruOpen`.  To reuse an already-open
     /// device (e.g. after an OBD DTC-clear channel), use
     /// [`open_on_device`](Self::open_on_device) instead.
-    pub fn open(
-        dll_path: Option<&str>,
-        bitrate: u32,
-        tx_id: Identifier,
-        rx_id: Identifier,
-        stmin_tx_us: Option<u32>,
-    ) -> Result<Self, String> {
+    pub fn open(dll_path: Option<&str>, bitrate: u32, config: IsoTPConfig) -> Result<Self, String> {
         let device = common::open_device(dll_path)?;
-        Self::open_on_device(device, bitrate, tx_id, rx_id, stmin_tx_us)
-            .map_err(|(msg, _device)| msg)
+        Self::open_on_device(device, bitrate, config).map_err(|(msg, _device)| msg)
     }
 
     /// Open an ISO 15765 channel on an already-open [`J2534Device`].
     ///
     /// This avoids closing and reopening the physical device when switching
     /// channels (e.g. from OBD DTC-clear to the main flash channel).
+    /// Only `tx_id`, `rx_id`, `padding`, and `separation_time_min` from
+    /// `config` are used.
+    /// The remaining [`IsoTPConfig`] fields are ignored by the native J2534
+    /// transport.
     ///
     /// On error, the [`J2534Device`] is returned alongside the error message
     /// so the caller can reuse it.
     pub fn open_on_device(
         device: J2534Device,
         bitrate: u32,
-        tx_id: Identifier,
-        rx_id: Identifier,
-        stmin_tx_us: Option<u32>,
+        config: IsoTPConfig,
     ) -> Result<Self, (String, J2534Device)> {
+        let tx_id = config.tx_id;
+        let rx_id = config.rx_id;
+        let tx_flags = isotp_tx_flags(config.padding);
+        let stmin_tx = config.separation_time_min;
+
         let channel = match common::connect_channel(&device, Protocol::Iso15765, bitrate) {
             Ok(channel) => channel,
             Err(msg) => return Err((msg, device)),
         };
 
-        let status = channel.install_iso15765_flow_control_filter(tx_id, rx_id, ISO15765_FRAME_PAD);
+        let status = channel.install_iso15765_flow_control_filter(tx_id, rx_id, tx_flags);
         if status != Status::NoError {
             let _ = channel.disconnect();
             return Err((format!("PassThruStartMsgFilter failed: {status}"), device));
@@ -121,10 +121,10 @@ impl J2534NativeIsoTpTransport {
 
         // STMIN_TX ioctl; if stmin_tx is not specified, do not invoke ioctl
         // (which allows the adapter to choose based on the control flow frames)
-        if let Some(stmin_us) = stmin_tx_us {
-            let stmin_byte = us_to_stmin_byte(stmin_us) as u32;
+        if let Some(stmin_tx) = stmin_tx {
+            let stmin_byte = duration_to_stmin_byte(stmin_tx) as u32;
             let status = channel.set_config(IoctlParam::StminTx, stmin_byte);
-            tracing::debug!(ret = %status, stmin_us, stmin_byte, "PassThruIoctl SET_CONFIG STMIN_TX");
+            tracing::debug!(ret = %status, stmin = ?stmin_tx, stmin_byte, "PassThruIoctl SET_CONFIG STMIN_TX");
             if status != Status::NoError {
                 tracing::warn!(
                     "STMIN_TX ioctl failed: {status} — \
@@ -146,7 +146,7 @@ impl J2534NativeIsoTpTransport {
             let stop = stop_rx.clone();
             thread::Builder::new()
                 .name("j2534-isotp-tx".to_owned())
-                .spawn(move || isotp_tx_thread(channel, tx_id, rx_cmd, bcast, stop))
+                .spawn(move || isotp_tx_thread(channel, tx_id, tx_flags, rx_cmd, bcast, stop))
                 .map_err(|e| format!("Failed to spawn J2534 ISO-TP TX thread: {e}"))
         };
         let tx_thread = match tx_thread {
@@ -254,9 +254,18 @@ impl IsoTpTransport for J2534NativeIsoTpTransport {
     }
 }
 
+fn isotp_tx_flags(padding: Option<u8>) -> u32 {
+    if padding.is_some() {
+        ISO15765_FRAME_PAD
+    } else {
+        0
+    }
+}
+
 fn isotp_tx_thread(
     channel: J2534Channel,
     tx_id: Identifier,
+    tx_flags: u32,
     rx_cmds: Receiver<J2534IsoTpCmd>,
     _bcast: broadcast::Sender<J2534IsoTpEvt>,
     stop_rx: Arc<AtomicBool>,
@@ -269,7 +278,7 @@ fn isotp_tx_thread(
         );
 
         let mut msg = PassThruMsg::new(Protocol::Iso15765.into(), tx_id, &pdu);
-        msg.tx_flags = ISO15765_FRAME_PAD;
+        msg.tx_flags = tx_flags;
 
         let (status, count) = channel.write_message(&mut msg, ISO15765_TX_TIMEOUT_MS);
         tracing::debug!(ret = %status, count, "PassThruWriteMsgs ISO15765");

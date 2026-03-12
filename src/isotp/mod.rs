@@ -73,7 +73,7 @@ const CAN_FD_MAX_DLEN: usize = 64;
 const ISO_TP_MAX_DLEN: usize = (1 << 12) - 1;
 const ISO_TP_FD_MAX_DLEN: usize = u32::MAX as usize;
 
-/// Encode a separation-time value in microseconds to the ISO 15765-2 STmin byte.
+/// Encode a separation-time value to the ISO 15765-2 STmin byte.
 ///
 /// Values that do not land exactly on a representable STmin step round up to
 /// the next valid encoding so the requested delay is never undershot.
@@ -83,7 +83,8 @@ const ISO_TP_FD_MAX_DLEN: usize = u32::MAX as usize;
 /// - 1-900 µs -> `0xF1`-`0xF9` (100 µs steps, rounded up)
 /// - 901-127_000 µs -> `0x01`-`0x7F` (1 ms steps, rounded up)
 /// - Values above 127 ms clamp to `0x7F`
-pub fn us_to_stmin_byte(us: u32) -> u8 {
+pub fn duration_to_stmin_byte(duration: std::time::Duration) -> u8 {
+    let us = duration.as_micros().min(u128::from(u32::MAX)) as u32;
     if us == 0 {
         0x00
     } else if us < 1_000 {
@@ -598,32 +599,33 @@ impl<'a> IsoTPAdapter<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::us_to_stmin_byte;
+    use super::duration_to_stmin_byte;
+    use std::time::Duration;
 
     #[test]
-    fn us_to_stmin_byte_rounds_up_to_supported_microsecond_steps() {
-        assert_eq!(us_to_stmin_byte(0), 0x00);
-        assert_eq!(us_to_stmin_byte(1), 0xF1);
-        assert_eq!(us_to_stmin_byte(99), 0xF1);
-        assert_eq!(us_to_stmin_byte(100), 0xF1);
-        assert_eq!(us_to_stmin_byte(101), 0xF2);
-        assert_eq!(us_to_stmin_byte(900), 0xF9);
-        assert_eq!(us_to_stmin_byte(901), 0x01);
-        assert_eq!(us_to_stmin_byte(999), 0x01);
+    fn duration_to_stmin_byte_rounds_up_to_supported_microsecond_steps() {
+        assert_eq!(duration_to_stmin_byte(Duration::ZERO), 0x00);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(1)), 0xF1);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(99)), 0xF1);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(100)), 0xF1);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(101)), 0xF2);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(900)), 0xF9);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(901)), 0x01);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(999)), 0x01);
     }
 
     #[test]
-    fn us_to_stmin_byte_rounds_up_to_supported_millisecond_steps() {
-        assert_eq!(us_to_stmin_byte(1_000), 0x01);
-        assert_eq!(us_to_stmin_byte(1_001), 0x02);
-        assert_eq!(us_to_stmin_byte(1_999), 0x02);
-        assert_eq!(us_to_stmin_byte(2_000), 0x02);
+    fn duration_to_stmin_byte_rounds_up_to_supported_millisecond_steps() {
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(1_000)), 0x01);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(1_001)), 0x02);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(1_999)), 0x02);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(2_000)), 0x02);
     }
 
     #[test]
-    fn us_to_stmin_byte_clamps_to_maximum_supported_delay() {
-        assert_eq!(us_to_stmin_byte(127_000), 0x7F);
-        assert_eq!(us_to_stmin_byte(127_001), 0x7F);
-        assert_eq!(us_to_stmin_byte(u32::MAX), 0x7F);
+    fn duration_to_stmin_byte_clamps_to_maximum_supported_delay() {
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(127_000)), 0x7F);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(127_001)), 0x7F);
+        assert_eq!(duration_to_stmin_byte(Duration::from_secs(u64::MAX)), 0x7F);
     }
 }

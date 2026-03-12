@@ -22,7 +22,7 @@ mod constants;
 mod dll;
 mod isotp_adapter;
 
-pub use crate::isotp::us_to_stmin_byte;
+pub use crate::isotp::duration_to_stmin_byte;
 pub use can_adapter::J2534CanAdapter;
 pub use common::{open_device, J2534Device};
 pub use constants::{FilterType, IoctlId, IoctlParam, Protocol, Status};
