@@ -2,6 +2,7 @@
 
 pub mod adapter;
 pub mod async_can;
+pub mod bitrate;
 
 use std::collections::VecDeque;
 use std::fmt;
@@ -127,6 +128,21 @@ impl fmt::Debug for Frame {
 pub trait CanAdapter {
     fn send(&mut self, frames: &mut VecDeque<crate::can::Frame>) -> crate::Result<()>;
     fn recv(&mut self) -> crate::Result<Vec<Frame>>;
+
+    /// Adapter timing constants for bitrate configuration helpers.
+    ///
+    /// Adapters that support [`crate::can::bitrate::BitrateBuilder`] should override this.
+    /// The default implementation panics to preserve backward compatibility for existing
+    /// downstream trait implementations that do not provide timing metadata.
+    fn timing_const() -> crate::can::bitrate::AdapterTimingConst
+    where
+        Self: Sized,
+    {
+        panic!(
+            "CanAdapter::timing_const is not implemented for adapter type {}",
+            std::any::type_name::<Self>()
+        )
+    }
 }
 
 #[cfg(test)]
