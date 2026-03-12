@@ -44,7 +44,7 @@ async fn main() {
     let adapter = automotive::can::get_adapter().unwrap();
 
     let standard_ids = 0x700..=0x7f7;
-    let extended_ids = (0xb0..=0xff).map(|i| 0x18da0000 + (i << 8) + 0xf1);
+    let extended_ids = (0x00..=0xff).map(|i| 0x18da0000 + (i << 8) + 0xf1);
 
     let ids: Vec<u32> = standard_ids.chain(extended_ids).collect();
 
