@@ -135,7 +135,7 @@ impl CanAdapter for J2534CanAdapter {
                 frames.push_front(frame);
                 break;
             } else {
-                tracing::debug!(
+                tracing::error!(
                     ret = %status,
                     "J2534 TX error — channel disconnected, stopping adapter"
                 );
@@ -183,7 +183,7 @@ impl CanAdapter for J2534CanAdapter {
                 }
                 Status::NoError | Status::Timeout | Status::BufferEmpty => break,
                 _ => {
-                    tracing::debug!(
+                    tracing::error!(
                         ret = %status,
                         "J2534 RX error — channel disconnected, stopping adapter"
                     );
