@@ -2,7 +2,7 @@
 //! and helper utilities used by both the raw CAN adapter and the native
 //! ISO 15765 transport.
 
-use super::constants::Status;
+use super::constants::{FilterType, IoctlId, IoctlParam, Protocol, Status};
 use crate::can::Identifier;
 
 /// `PASSTHRU_MSG` from the SAE J2534 04.04 specification.
@@ -62,6 +62,136 @@ pub type FnPassThruStartMsgFilter = unsafe extern "system" fn(
 pub type FnPassThruIoctl =
     unsafe extern "system" fn(u32, u32, *mut std::ffi::c_void, *mut std::ffi::c_void) -> i32;
 
+/// Connected J2534 channel plus the callback set needed to operate it.
+///
+/// The callbacks are copied out of [`J2534Device`] so adapter implementations
+/// can keep using them after channel setup without repeatedly unpacking the
+/// device handle.
+#[derive(Clone, Copy)]
+pub(crate) struct J2534Channel {
+    pub(crate) channel_id: u32,
+    pub(crate) disconnect: FnPassThruDisconnect,
+    pub(crate) read: FnPassThruReadMsgs,
+    pub(crate) write: FnPassThruWriteMsgs,
+    pub(crate) filter: FnPassThruStartMsgFilter,
+    pub(crate) ioctl: FnPassThruIoctl,
+}
+
+impl J2534Channel {
+    pub(crate) fn disconnect(&self) -> Status {
+        Status::from(unsafe { (self.disconnect)(self.channel_id) })
+    }
+
+    pub(crate) fn clear_rx_buffer(&self) -> Status {
+        Status::from(unsafe {
+            (self.ioctl)(
+                self.channel_id,
+                IoctlId::ClearRxBuffer.into(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        })
+    }
+
+    pub(crate) fn read_message(&self, msg: &mut PassThruMsg, timeout_ms: u32) -> (Status, u32) {
+        let mut count: u32 = 1;
+        let status =
+            Status::from(unsafe { (self.read)(self.channel_id, msg, &mut count, timeout_ms) });
+        (status, count)
+    }
+
+    pub(crate) fn write_message(&self, msg: &mut PassThruMsg, timeout_ms: u32) -> (Status, u32) {
+        let mut count: u32 = 1;
+        let status =
+            Status::from(unsafe { (self.write)(self.channel_id, msg, &mut count, timeout_ms) });
+        (status, count)
+    }
+
+    /// Call `PassThruIoctl(SET_CONFIG)` with a single `(parameter, value)` pair.
+    pub(crate) fn set_config(&self, parameter: IoctlParam, value: u32) -> Status {
+        let mut cfg = SConfig {
+            parameter: parameter.into(),
+            value,
+        };
+        let mut list = SConfigList {
+            num_of_params: 1,
+            config_ptr: &mut cfg,
+        };
+        let ret = unsafe {
+            (self.ioctl)(
+                self.channel_id,
+                IoctlId::SetConfig.into(),
+                &mut list as *mut SConfigList as *mut _,
+                std::ptr::null_mut(),
+            )
+        };
+        Status::from(ret)
+    }
+
+    /// Install a pass-all receive filter on a CAN channel.
+    pub(crate) fn install_pass_all_can_filter(&self) -> Status {
+        let zero_msg = PassThruMsg::new_raw(Protocol::Can.into(), 0, &[]);
+        let (status, filter_id) =
+            self.start_msg_filter(FilterType::Pass, &zero_msg, &zero_msg, None);
+        tracing::debug!(ret = %status, filter_id, "PassThruStartMsgFilter");
+        status
+    }
+
+    /// Install the ISO 15765 flow-control filter used by the native ISO-TP channel.
+    pub(crate) fn install_iso15765_flow_control_filter(
+        &self,
+        tx_id: Identifier,
+        rx_id: Identifier,
+        tx_flags: u32,
+    ) -> Status {
+        let proto: u32 = Protocol::Iso15765.into();
+        let mut mask_msg = PassThruMsg::new_raw(proto, 0xFFFF_FFFF, &[]);
+        let mut pattern_msg = PassThruMsg::new(proto, rx_id, &[]);
+        let mut fc_msg = PassThruMsg::new(proto, tx_id, &[]);
+        mask_msg.tx_flags = tx_flags;
+        pattern_msg.tx_flags = tx_flags;
+        fc_msg.tx_flags = tx_flags;
+
+        let (status, filter_id) = self.start_msg_filter(
+            FilterType::FlowControl,
+            &mask_msg,
+            &pattern_msg,
+            Some(&fc_msg),
+        );
+        let tx_raw: u32 = tx_id.into();
+        let rx_raw: u32 = rx_id.into();
+        tracing::debug!(
+            ret = %status,
+            filter_id,
+            tx_id = format_args!("{tx_raw:08X}"),
+            rx_id = format_args!("{rx_raw:08X}"),
+            "PassThruStartMsgFilter (FLOW_CONTROL)"
+        );
+        status
+    }
+
+    fn start_msg_filter(
+        &self,
+        filter_type: FilterType,
+        mask_msg: &PassThruMsg,
+        pattern_msg: &PassThruMsg,
+        flow_control_msg: Option<&PassThruMsg>,
+    ) -> (Status, u32) {
+        let mut filter_id: u32 = 0;
+        let status = Status::from(unsafe {
+            (self.filter)(
+                self.channel_id,
+                filter_type.into(),
+                mask_msg,
+                pattern_msg,
+                flow_control_msg.map_or(std::ptr::null(), |msg| msg),
+                &mut filter_id,
+            )
+        });
+        (status, filter_id)
+    }
+}
+
 /// Owns a J2534 device (the `PassThruOpen` handle) and all resolved DLL
 /// function pointers.  On [`Drop`], calls `PassThruClose` to release the
 /// device.
@@ -86,6 +216,46 @@ impl Drop for J2534Device {
         let status = Status::from(unsafe { (self.close)(self.device_id) });
         tracing::trace!(ret = %status, "PassThruClose");
     }
+}
+
+/// Call `PassThruConnect` for `protocol` and return the channel context.
+pub(crate) fn connect_channel(
+    device: &J2534Device,
+    protocol: Protocol,
+    bitrate: u32,
+) -> Result<J2534Channel, String> {
+    let mut channel_id: u32 = 0;
+    let status = Status::from(unsafe {
+        (device.connect)(
+            device.device_id,
+            protocol.into(),
+            0,
+            bitrate,
+            &mut channel_id,
+        )
+    });
+    tracing::debug!(
+        ret = %status,
+        protocol = protocol_name(protocol),
+        channel_id,
+        bitrate,
+        "PassThruConnect"
+    );
+    if status != Status::NoError {
+        return Err(format!(
+            "PassThruConnect ({}, {bitrate} bps) failed: {status}",
+            protocol_name(protocol)
+        ));
+    }
+
+    Ok(J2534Channel {
+        channel_id,
+        disconnect: device.disconnect,
+        read: device.read,
+        write: device.write,
+        filter: device.filter,
+        ioctl: device.ioctl,
+    })
 }
 
 /// Bit 31 flag in the 4-byte CAN ID field of a `PassThruMsg`, indicating a
@@ -150,32 +320,6 @@ pub fn parse_can_id(data: &[u8]) -> Identifier {
     }
 }
 
-/// Call `PassThruIoctl(SET_CONFIG)` with a single `(parameter, value)` pair.
-pub fn set_config(
-    ioctl_fn: FnPassThruIoctl,
-    channel_id: u32,
-    parameter: super::constants::IoctlParam,
-    value: u32,
-) -> Status {
-    let mut cfg = SConfig {
-        parameter: parameter.into(),
-        value,
-    };
-    let mut list = SConfigList {
-        num_of_params: 1,
-        config_ptr: &mut cfg,
-    };
-    let ret = unsafe {
-        ioctl_fn(
-            channel_id,
-            super::constants::IoctlId::SetConfig.into(),
-            &mut list as *mut SConfigList as *mut _,
-            std::ptr::null_mut(),
-        )
-    };
-    Status::from(ret)
-}
-
 /// Load a J2534 DLL, resolve all function pointers, and call `PassThruOpen`.
 ///
 /// Pass `None` for `dll_path` to auto-discover the first 64-bit PassThru
@@ -229,4 +373,11 @@ pub fn open_device(dll_path: Option<&str>) -> Result<J2534Device, String> {
         ioctl,
         _lib: lib,
     })
+}
+
+fn protocol_name(protocol: Protocol) -> &'static str {
+    match protocol {
+        Protocol::Can => "CAN",
+        Protocol::Iso15765 => "ISO15765",
+    }
 }

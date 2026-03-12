@@ -1,5 +1,8 @@
 //! J2534 04.04 protocol constants expressed as type-safe enums.
 
+/// `TxFlags` flag: pad outbound ISO 15765 CAN frames to DLC = 8.
+pub const ISO15765_FRAME_PAD: u32 = 0x0040;
+
 /// J2534 status / error codes returned by all PassThru functions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]

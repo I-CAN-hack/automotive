@@ -8,11 +8,8 @@ use std::collections::VecDeque;
 
 use crate::can::{CanAdapter, Frame};
 
-use super::common::{
-    self, parse_can_id, FnPassThruDisconnect, FnPassThruReadMsgs, FnPassThruWriteMsgs, J2534Device,
-    PassThruMsg,
-};
-use super::constants::{FilterType, Protocol, Status};
+use super::common::{self, parse_can_id, J2534Channel, J2534Device, PassThruMsg};
+use super::constants::{Protocol, Status};
 
 /// Poll the J2534 channel without blocking the `AsyncCanAdapter` process loop.
 const IO_TIMEOUT_MS: u32 = 0;
@@ -25,11 +22,8 @@ const IO_TIMEOUT_MS: u32 = 0;
 /// by the generic async wrapper.
 pub struct J2534CanAdapter {
     loopback_queue: VecDeque<Frame>,
-    channel_id: u32,
+    channel: J2534Channel,
     connected: bool,
-    read: FnPassThruReadMsgs,
-    write: FnPassThruWriteMsgs,
-    pass_thru_disconnect: FnPassThruDisconnect,
     device: Option<J2534Device>,
 }
 
@@ -59,43 +53,14 @@ impl J2534CanAdapter {
         device: J2534Device,
         bitrate: u32,
     ) -> Result<Self, (String, J2534Device)> {
-        let device_id = device.device_id;
-        let pass_thru_connect = device.connect;
-        let pass_thru_disconnect = device.disconnect;
-        let pass_thru_read = device.read;
-        let pass_thru_write = device.write;
-        let pass_thru_filter = device.filter;
+        let channel = match common::connect_channel(&device, Protocol::Can, bitrate) {
+            Ok(channel) => channel,
+            Err(msg) => return Err((msg, device)),
+        };
 
-        // Open CAN channel
-        let mut channel_id: u32 = 0;
-        let status = Status::from(unsafe {
-            pass_thru_connect(device_id, Protocol::Can.into(), 0, bitrate, &mut channel_id)
-        });
-        tracing::debug!(ret = %status, channel_id, bitrate, "PassThruConnect CAN");
+        let status = channel.install_pass_all_can_filter();
         if status != Status::NoError {
-            return Err((
-                format!("PassThruConnect (CAN, {bitrate} bps) failed: {status}"),
-                device,
-            ));
-        }
-
-        // Install pass-all receive filter
-        // Mask and pattern both all-zero: every frame passes regardless of ID.
-        let zero_msg = PassThruMsg::new_raw(Protocol::Can.into(), 0, &[]);
-        let mut filter_id: u32 = 0;
-        let status = Status::from(unsafe {
-            pass_thru_filter(
-                channel_id,
-                FilterType::Pass.into(),
-                &zero_msg,
-                &zero_msg,
-                std::ptr::null(),
-                &mut filter_id,
-            )
-        });
-        tracing::debug!(ret = %status, filter_id, "PassThruStartMsgFilter");
-        if status != Status::NoError {
-            unsafe { pass_thru_disconnect(channel_id) };
+            let _ = channel.disconnect();
             return Err((
                 format!("PassThruStartMsgFilter (PASS, pass-all) failed: {status}"),
                 device,
@@ -104,11 +69,8 @@ impl J2534CanAdapter {
 
         Ok(Self {
             loopback_queue: VecDeque::new(),
-            channel_id,
+            channel,
             connected: true,
-            read: pass_thru_read,
-            write: pass_thru_write,
-            pass_thru_disconnect,
             device: Some(device),
         })
     }
@@ -128,7 +90,7 @@ impl J2534CanAdapter {
 
         // Disconnect invalidates the channel, causing in-flight
         // PassThruReadMsgs / PassThruWriteMsgs to fail on subsequent polls.
-        let status = Status::from(unsafe { (self.pass_thru_disconnect)(self.channel_id) });
+        let status = self.channel.disconnect();
         tracing::trace!(ret = %status, "PassThruDisconnect");
     }
 }
@@ -156,11 +118,7 @@ impl CanAdapter for J2534CanAdapter {
             );
 
             let mut msg = PassThruMsg::new(Protocol::Can.into(), frame.id, &frame.data);
-            let mut count: u32 = 1;
-
-            let status = Status::from(unsafe {
-                (self.write)(self.channel_id, &mut msg, &mut count, IO_TIMEOUT_MS)
-            });
+            let (status, count) = self.channel.write_message(&mut msg, IO_TIMEOUT_MS);
             tracing::trace!(ret = %status, count, "PassThruWriteMsgs");
 
             if status == Status::NoError && count == 1 {
@@ -196,10 +154,7 @@ impl CanAdapter for J2534CanAdapter {
         let mut frames = Vec::new();
         loop {
             let mut msg = PassThruMsg::default();
-            let mut count: u32 = 1;
-            let status = Status::from(unsafe {
-                (self.read)(self.channel_id, &mut msg, &mut count, IO_TIMEOUT_MS)
-            });
+            let (status, count) = self.channel.read_message(&mut msg, IO_TIMEOUT_MS);
 
             match status {
                 Status::NoError if count > 0 => {
