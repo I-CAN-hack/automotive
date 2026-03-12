@@ -180,10 +180,7 @@ impl J2534NativeIsoTpTransport {
         );
         if status != Status::NoError {
             unsafe { pass_thru_disconnect(channel_id) };
-            return Err((
-                format!("PassThruStartMsgFilter failed: {status}"),
-                device,
-            ));
+            return Err((format!("PassThruStartMsgFilter failed: {status}"), device));
         }
 
         // Clear receive buffer to ensure filter is applied correctly
