@@ -19,7 +19,9 @@
 mod can_adapter;
 mod common;
 mod isotp_adapter;
+mod constants;
 
 pub use can_adapter::J2534CanAdapter;
 pub use common::{open_device, resolve_dll_path, J2534Device};
 pub use isotp_adapter::{us_to_stmin_byte, J2534NativeIsoTpTransport};
+pub use constants::{FilterType, IoctlId, IoctlParam, Protocol, Status};

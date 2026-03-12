@@ -104,30 +104,32 @@ pub struct SConfigList {
     pub config_ptr: *mut SConfig,
 }
 
-pub const STATUS_NOERROR: i32 = 0x00;
-pub const ERR_BUFFER_EMPTY: i32 = 0x10;
-pub const ERR_TIMEOUT: i32 = 0x09;
-
-/// `PassThruIoctl` IOCTL ID for writing channel configuration.
-pub const IOCTL_SET_CONFIG: u32 = 0x02;
+use super::constants::Status;
 
 /// Call `PassThruIoctl(SET_CONFIG)` with a single `(parameter, value)` pair.
-///
-/// Returns the raw J2534 status code.
-pub fn set_config(ioctl_fn: FnPassThruIoctl, channel_id: u32, parameter: u32, value: u32) -> i32 {
-    let mut cfg = SConfig { parameter, value };
+pub fn set_config(
+    ioctl_fn: FnPassThruIoctl,
+    channel_id: u32,
+    parameter: super::constants::IoctlParam,
+    value: u32,
+) -> Status {
+    let mut cfg = SConfig {
+        parameter: parameter.into(),
+        value,
+    };
     let mut list = SConfigList {
         num_of_params: 1,
         config_ptr: &mut cfg,
     };
-    unsafe {
+    let ret = unsafe {
         ioctl_fn(
             channel_id,
-            IOCTL_SET_CONFIG,
+            super::constants::IoctlId::SetConfig.into(),
             &mut list as *mut SConfigList as *mut _,
             std::ptr::null_mut(),
         )
-    }
+    };
+    Status::from(ret)
 }
 
 pub type FnPassThruOpen = unsafe extern "system" fn(*const u8, *mut u32) -> i32;
@@ -170,8 +172,8 @@ pub struct J2534Device {
 
 impl Drop for J2534Device {
     fn drop(&mut self) {
-        let ret = unsafe { (self.close)(self.device_id) };
-        tracing::trace!(ret = status_str(ret), "PassThruClose");
+        let status = Status::from(unsafe { (self.close)(self.device_id) });
+        tracing::trace!(ret = %status, "PassThruClose");
     }
 }
 
@@ -211,13 +213,10 @@ pub fn open_device(dll_path: Option<&str>) -> Result<J2534Device, String> {
     let ioctl = sym!(b"PassThruIoctl\0", FnPassThruIoctl);
 
     let mut device_id: u32 = 0;
-    let ret = unsafe { pass_thru_open(std::ptr::null(), &mut device_id) };
-    tracing::debug!(ret = status_str(ret), device_id, "PassThruOpen");
-    if ret != STATUS_NOERROR {
-        return Err(format!(
-            "PassThruOpen failed: 0x{ret:02X} ({})",
-            status_str(ret)
-        ));
+    let status = Status::from(unsafe { pass_thru_open(std::ptr::null(), &mut device_id) });
+    tracing::debug!(ret = %status, device_id, "PassThruOpen");
+    if status != Status::NoError {
+        return Err(format!("PassThruOpen failed: {status}"));
     }
 
     Ok(J2534Device {
@@ -388,35 +387,3 @@ fn check_dll_architecture(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn status_str(ret: i32) -> &'static str {
-    match ret {
-        0x00 => "STATUS_NOERROR",
-        0x01 => "ERR_NOT_SUPPORTED",
-        0x02 => "ERR_INVALID_CHANNEL_ID",
-        0x03 => "ERR_INVALID_PROTOCOL_ID",
-        0x04 => "ERR_NULL_PARAMETER",
-        0x05 => "ERR_INVALID_IOCTL_VALUE",
-        0x06 => "ERR_INVALID_FLAGS",
-        0x07 => "ERR_FAILED",
-        0x08 => "ERR_DEVICE_NOT_CONNECTED",
-        0x09 => "ERR_TIMEOUT",
-        0x0A => "ERR_INVALID_MSG",
-        0x0B => "ERR_INVALID_TIME_INTERVAL",
-        0x0C => "ERR_EXCEEDED_LIMIT",
-        0x0D => "ERR_INVALID_MSG_ID",
-        0x0E => "ERR_DEVICE_IN_USE",
-        0x0F => "ERR_INVALID_IOCTL_ID",
-        0x10 => "ERR_BUFFER_EMPTY",
-        0x11 => "ERR_BUFFER_FULL",
-        0x12 => "ERR_BUFFER_OVERFLOW",
-        0x13 => "ERR_PIN_INVALID",
-        0x14 => "ERR_CHANNEL_IN_USE",
-        0x15 => "ERR_MSG_PROTOCOL_ID",
-        0x16 => "ERR_INVALID_FILTER_ID",
-        0x17 => "ERR_NO_FLOW_CONTROL",
-        0x18 => "ERR_NOT_UNIQUE",
-        0x19 => "ERR_INVALID_BAUDRATE",
-        0x1A => "ERR_INVALID_DEVICE_ID",
-        _ => "ERR_UNKNOWN",
-    }
-}

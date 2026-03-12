@@ -21,11 +21,9 @@ use crate::can::{CanAdapter, Frame, Identifier};
 
 use super::common::{
     self, parse_can_id, FnPassThruDisconnect, FnPassThruReadMsgs, FnPassThruWriteMsgs, J2534Device,
-    PassThruMsg, ERR_BUFFER_EMPTY, ERR_TIMEOUT, STATUS_NOERROR,
+    PassThruMsg,
 };
-
-const PROTOCOL_CAN: u32 = 5;
-const FILTER_PASS: u32 = 1;
+use super::constants::{FilterType, Protocol, Status};
 
 enum J2534Cmd {
     Send { id: Identifier, data: Vec<u8> },
@@ -53,15 +51,19 @@ enum J2534CanEvt {
 pub struct J2534CanAdapter {
     /// Commands to the TX thread.
     tx_cmd: Option<SyncSender<J2534Cmd>>,
+
     /// Subscription to the RX broadcast channel.  Stored directly (not in a
     /// `Mutex`) because `CanAdapter::recv` takes `&mut self`.
     rx_sub: broadcast::Receiver<J2534CanEvt>,
+
     /// Signals the RX thread to exit.
     stop_rx: Arc<AtomicBool>,
     tx_thread: Option<thread::JoinHandle<()>>,
     rx_thread: Option<thread::JoinHandle<()>>,
+
     channel_id: u32,
     pass_thru_disconnect: FnPassThruDisconnect,
+
     /// The underlying device handle; taken by `into_device()`.
     device: Option<J2534Device>,
 }
@@ -101,50 +103,36 @@ impl J2534CanAdapter {
 
         // Open CAN channel
         let mut channel_id: u32 = 0;
-        let ret =
-            unsafe { pass_thru_connect(device_id, PROTOCOL_CAN, 0, bitrate, &mut channel_id) };
-        tracing::debug!(
-            ret = common::status_str(ret),
-            channel_id,
-            bitrate,
-            "PassThruConnect CAN"
-        );
-        if ret != STATUS_NOERROR {
+        let status = Status::from(unsafe {
+            pass_thru_connect(device_id, Protocol::Can.into(), 0, bitrate, &mut channel_id)
+        });
+        tracing::debug!(ret = %status, channel_id, bitrate, "PassThruConnect CAN");
+        if status != Status::NoError {
             return Err((
-                format!(
-                    "PassThruConnect (CAN, {bitrate} bps) failed: 0x{ret:02X} ({})",
-                    common::status_str(ret)
-                ),
+                format!("PassThruConnect (CAN, {bitrate} bps) failed: {status}"),
                 device,
             ));
         }
 
         // Install pass-all receive filter
         // Mask and pattern both all-zero: every frame passes regardless of ID.
-        let zero_msg = PassThruMsg::new_raw(PROTOCOL_CAN, 0, &[]);
+        let zero_msg = PassThruMsg::new_raw(Protocol::Can.into(), 0, &[]);
         let mut filter_id: u32 = 0;
-        let ret = unsafe {
+        let status = Status::from(unsafe {
             pass_thru_filter(
                 channel_id,
-                FILTER_PASS,
+                FilterType::Pass.into(),
                 &zero_msg,
                 &zero_msg,
                 std::ptr::null(),
                 &mut filter_id,
             )
-        };
-        tracing::debug!(
-            ret = common::status_str(ret),
-            filter_id,
-            "PassThruStartMsgFilter"
-        );
-        if ret != STATUS_NOERROR {
+        });
+        tracing::debug!(ret = %status, filter_id, "PassThruStartMsgFilter");
+        if status != Status::NoError {
             unsafe { pass_thru_disconnect(channel_id) };
             return Err((
-                format!(
-                    "PassThruStartMsgFilter (PASS, pass-all) failed: 0x{ret:02X} ({})",
-                    common::status_str(ret)
-                ),
+                format!("PassThruStartMsgFilter (PASS, pass-all) failed: {status}"),
                 device,
             ));
         }
@@ -201,12 +189,15 @@ impl J2534CanAdapter {
     fn shutdown_channel(&mut self) {
         // Signal TX thread to stop (its recv() will return Err).
         drop(self.tx_cmd.take());
+
         // Signal RX thread to stop.
         self.stop_rx.store(true, Ordering::Release);
+
         // Disconnect invalidates the channel, causing in-flight
         // PassThruReadMsgs / PassThruWriteMsgs to return an error.
-        let ret = unsafe { (self.pass_thru_disconnect)(self.channel_id) };
-        tracing::trace!(ret = common::status_str(ret), "PassThruDisconnect");
+        let status = Status::from(unsafe { (self.pass_thru_disconnect)(self.channel_id) });
+        tracing::trace!(ret = %status, "PassThruDisconnect");
+
         // Join threads BEFORE PassThruClose — the threads may still be inside
         // a DLL call that references device-level structures.  Closing the
         // device while a read/write is in-flight causes a use-after-free.
@@ -291,13 +282,15 @@ fn can_tx_thread(
             payload = %hex::encode(&data),
             "J2534 TX"
         );
-        let mut msg = PassThruMsg::new(PROTOCOL_CAN, id, &data);
+        let mut msg = PassThruMsg::new(Protocol::Can.into(), id, &data);
         let mut count: u32 = 1;
+
         // 100 ms timeout: short enough that Drop's PassThruDisconnect
         // will interrupt us promptly.
-        let ret = unsafe { write(channel_id, &mut msg, &mut count, 100) };
-        tracing::trace!(ret = common::status_str(ret), count, "PassThruWriteMsgs");
-        if ret == STATUS_NOERROR {
+        let status = Status::from(unsafe { write(channel_id, &mut msg, &mut count, 100) });
+        tracing::trace!(ret = %status, count, "PassThruWriteMsgs");
+
+        if status == Status::NoError {
             // Software loopback: hardware loopback is unreliable on many adapters.
             bcast
                 .send(J2534CanEvt::Frame {
@@ -308,7 +301,7 @@ fn can_tx_thread(
                 .ok();
         } else {
             tracing::debug!(
-                ret = common::status_str(ret),
+                ret = %status,
                 "J2534 TX error (channel may be disconnected)"
             );
         }
@@ -335,10 +328,10 @@ fn can_rx_thread(
 
     loop {
         let mut count: u32 = 1;
-        let ret = unsafe { read(channel_id, &mut msg, &mut count, 500) };
+        let status = Status::from(unsafe { read(channel_id, &mut msg, &mut count, 500) });
 
-        match ret {
-            STATUS_NOERROR if count > 0 => {
+        match status {
+            Status::NoError if count > 0 => {
                 let len = msg.data_size as usize;
                 if len < 4 {
                     tracing::trace!(
@@ -364,14 +357,14 @@ fn can_rx_thread(
                         .ok();
                 }
             }
-            ERR_TIMEOUT | ERR_BUFFER_EMPTY | STATUS_NOERROR => {
+            Status::Timeout | Status::BufferEmpty | Status::NoError => {
                 if stop.load(Ordering::Acquire) {
                     return;
                 }
             }
             _ => {
                 tracing::debug!(
-                    ret = common::status_str(ret),
+                    ret = %status,
                     "J2534 RX error — channel disconnected, exiting"
                 );
                 bcast.send(J2534CanEvt::Disconnected).ok();
