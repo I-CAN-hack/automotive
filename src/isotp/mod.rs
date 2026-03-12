@@ -19,7 +19,6 @@ mod types;
 
 pub use constants::{FlowStatus, FrameType, FLOW_SATUS_MASK, FRAME_TYPE_MASK};
 pub use error::Error;
-// IsoTpTransport is declared later in this file and is re-exported implicitly.
 
 use crate::can::AsyncCanAdapter;
 use crate::can::{Frame, Identifier, DLC_TO_LEN};

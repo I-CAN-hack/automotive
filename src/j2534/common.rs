@@ -90,8 +90,6 @@ pub fn parse_can_id(data: &[u8]) -> Identifier {
     }
 }
 
-// SCONFIG / SCONFIG_LIST
-
 /// Single parameter entry passed to `PassThruIoctl(SET_CONFIG, …)`.
 #[repr(C)]
 pub struct SConfig {
@@ -132,8 +130,6 @@ pub fn set_config(ioctl_fn: FnPassThruIoctl, channel_id: u32, parameter: u32, va
     }
 }
 
-// Function-pointer signatures
-
 pub type FnPassThruOpen = unsafe extern "system" fn(*const u8, *mut u32) -> i32;
 pub type FnPassThruClose = unsafe extern "system" fn(u32) -> i32;
 pub type FnPassThruConnect = unsafe extern "system" fn(u32, u32, u32, u32, *mut u32) -> i32;
@@ -152,8 +148,6 @@ pub type FnPassThruStartMsgFilter = unsafe extern "system" fn(
 ) -> i32;
 pub type FnPassThruIoctl =
     unsafe extern "system" fn(u32, u32, *mut std::ffi::c_void, *mut std::ffi::c_void) -> i32;
-
-// J2534 device handle
 
 /// Owns a J2534 device (the `PassThruOpen` handle) and all resolved DLL
 /// function pointers.  On [`Drop`], calls `PassThruClose` to release the
@@ -239,8 +233,6 @@ pub fn open_device(dll_path: Option<&str>) -> Result<J2534Device, String> {
     })
 }
 
-// DLL path resolution
-
 /// Resolve the PassThru DLL path.
 ///
 /// If `dll_path` is `Some`, uses it directly (after architecture check).
@@ -315,8 +307,6 @@ fn read_passthru_paths(hklm: &winreg::RegKey, key: &str) -> Result<Vec<String>, 
         .collect();
     Ok(paths)
 }
-
-// PE header architecture check
 
 #[derive(Debug, PartialEq, Eq)]
 enum DllMachine {
@@ -397,8 +387,6 @@ fn check_dll_architecture(path: &str) -> Result<(), String> {
 
     Ok(())
 }
-
-// Errors from J2534 spec
 
 pub fn status_str(ret: i32) -> &'static str {
     match ret {

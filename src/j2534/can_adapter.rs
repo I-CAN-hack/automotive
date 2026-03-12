@@ -24,12 +24,9 @@ use super::common::{
     PassThruMsg, ERR_BUFFER_EMPTY, ERR_TIMEOUT, STATUS_NOERROR,
 };
 
-// Protocol / filter constants
-
 const PROTOCOL_CAN: u32 = 5;
 const FILTER_PASS: u32 = 1;
 
-// Internal channel types
 enum J2534Cmd {
     Send { id: Identifier, data: Vec<u8> },
 }
@@ -43,8 +40,6 @@ enum J2534CanEvt {
     },
     Disconnected,
 }
-
-// Public adapter struct
 
 /// CAN adapter backed by a SAE J2534 PassThru device.
 ///
@@ -280,8 +275,6 @@ impl CanAdapter for J2534CanAdapter {
     }
 }
 
-// TX background thread
-
 /// Transmit thread: dequeues [`J2534Cmd`] items and writes them to the CAN
 /// channel.  Synthesises a software loopback frame after each successful send.
 fn can_tx_thread(
@@ -323,8 +316,6 @@ fn can_tx_thread(
     // Tell the RX thread to stop.
     stop_rx.store(true, Ordering::Release);
 }
-
-// RX background thread
 
 /// Receive thread: blocks on `PassThruReadMsgs` waiting for one CAN frame at
 /// a time and broadcasts each frame.

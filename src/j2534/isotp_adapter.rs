@@ -83,8 +83,6 @@ pub fn us_to_stmin_byte(us: u32) -> u8 {
     }
 }
 
-// Internal channel types
-
 enum J2534IsoTpCmd {
     Send(Vec<u8>, oneshot::Sender<Result<(), String>>),
 }
@@ -376,8 +374,6 @@ impl IsoTpTransport for J2534NativeIsoTpTransport {
     }
 }
 
-// TX background thread
-
 fn isotp_tx_thread(
     channel_id: u32,
     tx_id: Identifier,
@@ -409,8 +405,6 @@ fn isotp_tx_thread(
     }
     stop_rx.store(true, Ordering::Release);
 }
-
-// RX background thread
 
 fn isotp_rx_thread(
     channel_id: u32,
