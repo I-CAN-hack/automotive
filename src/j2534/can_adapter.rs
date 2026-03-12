@@ -106,7 +106,7 @@ impl Drop for J2534CanAdapter {
 impl CanAdapter for J2534CanAdapter {
     fn send(&mut self, frames: &mut VecDeque<Frame>) -> crate::Result<()> {
         if !self.connected {
-            return Ok(());
+            return Err(crate::Error::Disconnected);
         }
 
         while let Some(frame) = frames.pop_front() {
