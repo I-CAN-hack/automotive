@@ -132,11 +132,20 @@ impl J2534Channel {
 
     /// Install a pass-all receive filter on a CAN channel.
     pub(crate) fn install_pass_all_can_filter(&self) -> Status {
-        let zero_msg = PassThruMsg::new_raw(Protocol::Can.into(), 0, &[]);
-        let (status, filter_id) =
-            self.start_msg_filter(FilterType::Pass, &zero_msg, &zero_msg, None);
-        tracing::debug!(ret = %status, filter_id, "PassThruStartMsgFilter");
-        status
+        for msg in pass_all_can_filter_messages() {
+            let (status, filter_id) = self.start_msg_filter(FilterType::Pass, &msg, &msg, None);
+            tracing::debug!(
+                ret = %status,
+                filter_id,
+                tx_flags = format_args!("0x{:04X}", msg.tx_flags),
+                "PassThruStartMsgFilter"
+            );
+            if status != Status::NoError {
+                return status;
+            }
+        }
+
+        Status::NoError
     }
 
     /// Install the ISO 15765 flow-control filter used by the native ISO-TP channel.
@@ -279,6 +288,13 @@ pub fn can_id_flags(id: Identifier) -> u32 {
     }
 }
 
+fn pass_all_can_filter_messages() -> [PassThruMsg; 2] {
+    let standard = PassThruMsg::new_raw(Protocol::Can.into(), 0, &[]);
+    let mut extended = standard;
+    extended.tx_flags = CAN_29BIT_ID_FLAG;
+    [standard, extended]
+}
+
 impl PassThruMsg {
     /// Build a message carrying `payload` after a 4-byte big-endian CAN ID.
     /// Used for both `PROTOCOL_CAN` and `PROTOCOL_ISO15765` frames.
@@ -374,6 +390,39 @@ mod tests {
 
         msg.rx_status = 0;
         assert_eq!(parse_can_id(&msg), Identifier::Standard(0x18DAF110));
+    }
+
+    #[test]
+    fn pass_all_can_filter_messages_cover_standard_and_extended_ids() {
+        let [standard, extended] = pass_all_can_filter_messages();
+
+        assert_eq!(standard.protocol_id, Protocol::Can.into());
+        assert_eq!(standard.data_size, 4);
+        assert_eq!(standard.extra_data_index, 4);
+        assert_eq!(standard.tx_flags, 0);
+        assert_eq!(
+            u32::from_be_bytes([
+                standard.data[0],
+                standard.data[1],
+                standard.data[2],
+                standard.data[3]
+            ]),
+            0
+        );
+
+        assert_eq!(extended.protocol_id, Protocol::Can.into());
+        assert_eq!(extended.data_size, 4);
+        assert_eq!(extended.extra_data_index, 4);
+        assert_eq!(extended.tx_flags, CAN_29BIT_ID_FLAG);
+        assert_eq!(
+            u32::from_be_bytes([
+                extended.data[0],
+                extended.data[1],
+                extended.data[2],
+                extended.data[3]
+            ]),
+            0
+        );
     }
 }
 
