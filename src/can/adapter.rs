@@ -28,5 +28,12 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
         };
     }
 
+    #[cfg(all(target_os = "windows", feature = "j2534"))]
+    {
+        if let Ok(adapter) = crate::j2534::J2534CanAdapter::new_async(None, 500_000) {
+            return Ok(adapter);
+        };
+    }
+
     Err(crate::error::Error::NotFound)
 }

@@ -33,13 +33,14 @@ use tokio::sync::{broadcast, oneshot};
 
 use crate::can::Identifier;
 use crate::isotp::{duration_to_stmin_byte, IsoTPConfig};
-use crate::IsoTpTransport;
+use crate::{IsoTpTransport, Result};
 
 use super::common::{self, parse_can_id, J2534Channel, J2534Device, PassThruMsg};
 use super::constants::{
     IoctlParam, Protocol, Status, CAN_29BIT_ID_FLAG, ISO15765_ADDR_TYPE, ISO15765_FRAME_PAD,
     ISO15765_PADDING_ERROR,
 };
+use super::error::Error as J2534Error;
 
 /// Timeout for blocking ISO 15765 TX writes.
 const ISO15765_TX_TIMEOUT_MS: u32 = 60_000;
@@ -48,7 +49,7 @@ const ISO15765_TX_TIMEOUT_MS: u32 = 60_000;
 const ISO15765_RX_TIMEOUT_MS: u32 = 500;
 
 enum J2534IsoTpCmd {
-    Send(Vec<u8>, oneshot::Sender<Result<(), String>>),
+    Send(Vec<u8>, oneshot::Sender<Result<()>>),
 }
 
 #[derive(Clone)]
@@ -77,9 +78,9 @@ impl J2534NativeIsoTpTransport {
     /// Opens a new device via `PassThruOpen`.  To reuse an already-open
     /// device (e.g. after an OBD DTC-clear channel), use
     /// [`open_on_device`](Self::open_on_device) instead.
-    pub fn open(dll_path: Option<&str>, bitrate: u32, config: IsoTPConfig) -> Result<Self, String> {
+    pub fn open(dll_path: Option<&str>, bitrate: u32, config: IsoTPConfig) -> Result<Self> {
         let device = common::open_device(dll_path)?;
-        Self::open_on_device(device, bitrate, config).map_err(|(msg, _device)| msg)
+        Self::open_on_device(device, bitrate, config)
     }
 
     /// Open an ISO 15765 channel on an already-open [`J2534Device`].
@@ -91,13 +92,7 @@ impl J2534NativeIsoTpTransport {
     /// The remaining [`IsoTPConfig`] fields are ignored by the native J2534
     /// transport.
     ///
-    /// On error, the [`J2534Device`] is returned alongside the error message
-    /// so the caller can reuse it.
-    pub fn open_on_device(
-        device: J2534Device,
-        bitrate: u32,
-        config: IsoTPConfig,
-    ) -> Result<Self, (String, J2534Device)> {
+    pub fn open_on_device(device: J2534Device, bitrate: u32, config: IsoTPConfig) -> Result<Self> {
         let tx_id = config.tx_id;
         let rx_id = config.rx_id;
         let ext_address = config.ext_address;
@@ -105,21 +100,20 @@ impl J2534NativeIsoTpTransport {
         let connect_flags = isotp_connect_flags(ext_address);
         let stmin_tx = config.separation_time_min;
 
-        let channel = match common::connect_channel_with_flags(
+        let channel = common::connect_channel_with_flags(
             &device,
             Protocol::Iso15765,
             connect_flags,
             bitrate,
-        ) {
-            Ok(channel) => channel,
-            Err(msg) => return Err((msg, device)),
-        };
+        )?;
 
         let status =
             channel.install_iso15765_flow_control_filter(tx_id, rx_id, ext_address, tx_flags);
         if status != Status::NoError {
             let _ = channel.disconnect();
-            return Err((format!("PassThruStartMsgFilter failed: {status}"), device));
+            return Err(
+                J2534Error::DllError(format!("PassThruStartMsgFilter failed: {status}")).into(),
+            );
         }
 
         // Clear receive buffer to ensure filter is applied correctly
@@ -160,12 +154,10 @@ impl J2534NativeIsoTpTransport {
                 .spawn(move || {
                     isotp_tx_thread(channel, tx_id, ext_address, tx_flags, rx_cmd, bcast, stop)
                 })
-                .map_err(|e| format!("Failed to spawn J2534 ISO-TP TX thread: {e}"))
-        };
-        let tx_thread = match tx_thread {
-            Ok(h) => h,
-            Err(e) => return Err((e, device)),
-        };
+                .map_err(|e| {
+                    J2534Error::DllError(format!("Failed to spawn J2534 ISO-TP TX thread: {e}"))
+                })
+        }?;
 
         let rx_thread = {
             let bcast = bcast_tx.clone();
@@ -173,12 +165,10 @@ impl J2534NativeIsoTpTransport {
             thread::Builder::new()
                 .name("j2534-isotp-rx".to_owned())
                 .spawn(move || isotp_rx_thread(channel, ext_address, bcast, stop))
-                .map_err(|e| format!("Failed to spawn J2534 ISO-TP RX thread: {e}"))
-        };
-        let rx_thread = match rx_thread {
-            Ok(h) => h,
-            Err(e) => return Err((e, device)),
-        };
+                .map_err(|e| {
+                    J2534Error::DllError(format!("Failed to spawn J2534 ISO-TP RX thread: {e}"))
+                })
+        }?;
 
         Ok(Self {
             tx_cmd: Some(tx_cmd),
@@ -234,10 +224,7 @@ impl IsoTpTransport for J2534NativeIsoTpTransport {
             let (done_tx, done_rx) = oneshot::channel();
             tx.send(J2534IsoTpCmd::Send(pdu, done_tx))
                 .map_err(|_| crate::Error::Disconnected)?;
-            done_rx
-                .await
-                .map_err(|_| crate::Error::Disconnected)?
-                .map_err(|_| crate::Error::Disconnected)
+            done_rx.await.map_err(|_| crate::Error::Disconnected)?
         }
     }
 
@@ -312,7 +299,7 @@ fn isotp_tx_thread(
         let result = if status == Status::NoError {
             Ok(())
         } else {
-            Err(format!("ISO15765 TX failed: {status}"))
+            Err(J2534Error::DllError(format!("ISO15765 TX failed: {status}")).into())
         };
         done.send(result).ok();
     }

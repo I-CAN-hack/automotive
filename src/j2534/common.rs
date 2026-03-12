@@ -3,7 +3,9 @@
 //! ISO 15765 transport.
 
 use super::constants::{FilterType, IoctlId, IoctlParam, Protocol, Status};
+use super::error::Error as J2534Error;
 use crate::can::Identifier;
+use crate::Result;
 
 /// `PASSTHRU_MSG` from the SAE J2534 04.04 specification.
 ///
@@ -230,7 +232,7 @@ pub(crate) fn connect_channel(
     device: &J2534Device,
     protocol: Protocol,
     bitrate: u32,
-) -> Result<J2534Channel, String> {
+) -> Result<J2534Channel> {
     connect_channel_with_flags(device, protocol, 0, bitrate)
 }
 
@@ -240,7 +242,7 @@ pub(crate) fn connect_channel_with_flags(
     protocol: Protocol,
     flags: u32,
     bitrate: u32,
-) -> Result<J2534Channel, String> {
+) -> Result<J2534Channel> {
     let mut channel_id: u32 = 0;
     let status = Status::from(unsafe {
         (device.connect)(
@@ -260,10 +262,11 @@ pub(crate) fn connect_channel_with_flags(
         "PassThruConnect"
     );
     if status != Status::NoError {
-        return Err(format!(
+        return Err(J2534Error::DllError(format!(
             "PassThruConnect ({}, {bitrate} bps) failed: {status}",
             protocol_name(protocol)
-        ));
+        ))
+        .into());
     }
 
     Ok(J2534Channel {
@@ -358,12 +361,12 @@ pub fn parse_can_id(data: &[u8]) -> Identifier {
 ///
 /// Pass `None` for `dll_path` to auto-discover the first 64-bit PassThru
 /// driver from the Windows registry.
-pub fn open_device(dll_path: Option<&str>) -> Result<J2534Device, String> {
+pub fn open_device(dll_path: Option<&str>) -> Result<J2534Device> {
     let path = super::dll::resolve_dll_path(dll_path)?;
 
     let lib = match unsafe { libloading::Library::new(&path) } {
         Ok(l) => l,
-        Err(e) => return Err(format!("Cannot load {path}: {e}")),
+        Err(e) => return Err(J2534Error::DllError(format!("Cannot load {path}: {e}")).into()),
     };
 
     macro_rules! sym {
@@ -371,10 +374,11 @@ pub fn open_device(dll_path: Option<&str>) -> Result<J2534Device, String> {
             match unsafe { lib.get::<$ty>($name) } {
                 Ok(s) => *s,
                 Err(e) => {
-                    return Err(format!(
+                    return Err(J2534Error::DllError(format!(
                         "Symbol {} not found in {path}: {e}",
                         std::str::from_utf8($name).unwrap_or("?")
-                    ));
+                    ))
+                    .into());
                 }
             }
         };
@@ -393,7 +397,7 @@ pub fn open_device(dll_path: Option<&str>) -> Result<J2534Device, String> {
     let status = Status::from(unsafe { pass_thru_open(std::ptr::null(), &mut device_id) });
     tracing::debug!(ret = %status, device_id, "PassThruOpen");
     if status != Status::NoError {
-        return Err(format!("PassThruOpen failed: {status}"));
+        return Err(J2534Error::DllError(format!("PassThruOpen failed: {status}")).into());
     }
 
     Ok(J2534Device {

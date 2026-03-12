@@ -20,11 +20,9 @@ mod can_adapter;
 mod common;
 mod constants;
 mod dll;
+mod error;
 mod isotp_adapter;
 
-pub use crate::isotp::duration_to_stmin_byte;
 pub use can_adapter::J2534CanAdapter;
-pub use common::{open_device, J2534Device};
-pub use constants::{FilterType, IoctlId, IoctlParam, Protocol, Status};
-pub use dll::resolve_dll_path;
+pub use error::Error;
 pub use isotp_adapter::J2534NativeIsoTpTransport;

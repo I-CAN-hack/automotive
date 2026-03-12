@@ -4,12 +4,13 @@
 //! on [`crate::can::AsyncCanAdapter`] for background polling, retry logic, and
 //! async send/receive orchestration.
 
-use std::collections::VecDeque;
-
-use crate::can::{CanAdapter, Frame};
-
 use super::common::{self, parse_can_id, J2534Channel, J2534Device, PassThruMsg};
 use super::constants::{Protocol, Status};
+use super::error::Error as J2534Error;
+use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
+use crate::Result;
+
+use std::collections::VecDeque;
 
 /// Poll the J2534 channel without blocking the `AsyncCanAdapter` process loop.
 const IO_TIMEOUT_MS: u32 = 0;
@@ -28,17 +29,23 @@ pub struct J2534CanAdapter {
 }
 
 impl J2534CanAdapter {
+    /// Creates a new [`AsyncCanAdapter`] from a J2534CanAdapter
+    pub fn new_async(dll_path: Option<&str>, bitrate: u32) -> Result<AsyncCanAdapter> {
+        let socket = J2534CanAdapter::new(dll_path, bitrate)?;
+        Ok(AsyncCanAdapter::new(socket))
+    }
+
     /// Open a J2534 CAN channel.
     ///
-    /// Opens a new device via [`open_device`](super::open_device).  To reuse
-    /// an already-open device, use [`open_on_device`](Self::open_on_device).
+    /// Opens a new device via `common::open_device`. To reuse an already-open
+    /// device, use [`new_on_device`](Self::new_on_device).
     ///
     /// * `dll_path` — path to the PassThru DLL, or `None` to auto-discover
     ///   the first 64-bit driver from the Windows registry.
     /// * `bitrate` — CAN bitrate in bits/sec (e.g. `500_000`).
-    pub fn open(dll_path: Option<&str>, bitrate: u32) -> Result<Self, String> {
+    pub fn new(dll_path: Option<&str>, bitrate: u32) -> Result<Self> {
         let device = common::open_device(dll_path)?;
-        Self::open_on_device(device, bitrate).map_err(|(msg, _device)| msg)
+        Self::new_on_device(device, bitrate)
     }
 
     /// Open a CAN channel on an already-open [`J2534Device`].
@@ -47,24 +54,16 @@ impl J2534CanAdapter {
     /// channels (e.g. reusing the same adapter for CAN after an ISO 15765
     /// channel was closed).
     ///
-    /// On error, the [`J2534Device`] is returned alongside the error message
-    /// so the caller can reuse it.
-    pub fn open_on_device(
-        device: J2534Device,
-        bitrate: u32,
-    ) -> Result<Self, (String, J2534Device)> {
-        let channel = match common::connect_channel(&device, Protocol::Can, bitrate) {
-            Ok(channel) => channel,
-            Err(msg) => return Err((msg, device)),
-        };
+    pub fn new_on_device(device: J2534Device, bitrate: u32) -> Result<Self> {
+        let channel = common::connect_channel(&device, Protocol::Can, bitrate)?;
 
         let status = channel.install_pass_all_can_filter();
         if status != Status::NoError {
             let _ = channel.disconnect();
-            return Err((
-                format!("PassThruStartMsgFilter (PASS, pass-all) failed: {status}"),
-                device,
-            ));
+            return Err(J2534Error::DllError(format!(
+                "PassThruStartMsgFilter (PASS, pass-all) failed: {status}"
+            ))
+            .into());
         }
 
         Ok(Self {
