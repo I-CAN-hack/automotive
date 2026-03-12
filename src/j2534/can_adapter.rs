@@ -237,10 +237,8 @@ impl CanAdapter for J2534CanAdapter {
             }
         }
 
-        for mut frame in self.loopback_queue.drain(..) {
-            frame.loopback = true;
-            frames.push(frame);
-        }
+        // Add fake loopback frames to the receive queue
+        frames.extend(self.loopback_queue.drain(..));
 
         Ok(frames)
     }
