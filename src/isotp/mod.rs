@@ -31,8 +31,6 @@ use self::types::FlowControlConfig;
 
 const DEFAULT_TIMEOUT_MS: u64 = 100;
 
-// ── IsoTpTransport trait ───────────────────────────────────────────────────
-
 /// Abstraction over anything that can exchange ISO-TP PDUs.
 ///
 /// Two implementations ship with this workspace:
