@@ -6,6 +6,8 @@ pub const ISO15765_FRAME_PAD: u32 = 0x0040;
 pub const ISO15765_ADDR_TYPE: u32 = 0x0080;
 /// `RxStatus` / `TxFlags` flag: message uses a 29-bit CAN ID.
 pub const CAN_29BIT_ID_FLAG: u32 = 0x0100;
+/// `Connect` flag: channel accepts both 11-bit and 29-bit CAN identifiers.
+pub const CAN_ID_BOTH: u32 = 0x0800;
 /// `RxStatus` flag: received ISO 15765 frame had a padding error.
 pub const ISO15765_PADDING_ERROR: u32 = 0x0010;
 

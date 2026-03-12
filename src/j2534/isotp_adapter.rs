@@ -37,8 +37,8 @@ use crate::{IsoTpTransport, Result};
 
 use super::common::{self, parse_can_id, J2534Channel, J2534Device, PassThruMsg};
 use super::constants::{
-    IoctlParam, Protocol, Status, CAN_29BIT_ID_FLAG, ISO15765_ADDR_TYPE, ISO15765_FRAME_PAD,
-    ISO15765_PADDING_ERROR,
+    IoctlParam, Protocol, Status, CAN_29BIT_ID_FLAG, CAN_ID_BOTH, ISO15765_ADDR_TYPE,
+    ISO15765_FRAME_PAD, ISO15765_PADDING_ERROR,
 };
 use super::error::Error as J2534Error;
 
@@ -96,8 +96,8 @@ impl J2534NativeIsoTpTransport {
         let tx_id = config.tx_id;
         let rx_id = config.rx_id;
         let ext_address = config.ext_address;
-        let tx_flags = isotp_tx_flags(config.padding, ext_address);
-        let connect_flags = isotp_connect_flags(ext_address);
+        let tx_flags = isotp_tx_flags(config.padding, ext_address, tx_id);
+        let connect_flags = isotp_connect_flags(ext_address, tx_id, rx_id);
         let stmin_tx = config.separation_time_min;
 
         let channel = common::connect_channel_with_flags(
@@ -254,21 +254,32 @@ impl IsoTpTransport for J2534NativeIsoTpTransport {
     }
 }
 
-fn isotp_connect_flags(ext_address: Option<u8>) -> u32 {
-    if ext_address.is_some() {
+fn isotp_connect_flags(ext_address: Option<u8>, tx_id: Identifier, rx_id: Identifier) -> u32 {
+    let mut flags = if ext_address.is_some() {
         ISO15765_ADDR_TYPE
     } else {
         0
-    }
+    };
+
+    flags |= match (tx_id.is_extended(), rx_id.is_extended()) {
+        (true, true) => CAN_29BIT_ID_FLAG,
+        (false, false) => 0,
+        _ => CAN_ID_BOTH,
+    };
+
+    flags
 }
 
-fn isotp_tx_flags(padding: Option<u8>, ext_address: Option<u8>) -> u32 {
+fn isotp_tx_flags(padding: Option<u8>, ext_address: Option<u8>, tx_id: Identifier) -> u32 {
     let mut flags = 0;
     if padding.is_some() {
         flags |= ISO15765_FRAME_PAD;
     }
     if ext_address.is_some() {
         flags |= ISO15765_ADDR_TYPE;
+    }
+    if tx_id.is_extended() {
+        flags |= CAN_29BIT_ID_FLAG;
     }
     flags
 }
@@ -325,7 +336,7 @@ fn isotp_rx_thread(
                     continue;
                 }
 
-                let src_id = parse_can_id(&msg.data);
+                let src_id = parse_can_id(&msg);
                 let src_raw: u32 = src_id.into();
                 if let Some(ext_address) = ext_address {
                     let actual_ext_address = msg.data[4];

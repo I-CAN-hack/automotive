@@ -4,8 +4,8 @@
 //! on [`crate::can::AsyncCanAdapter`] for background polling, retry logic, and
 //! async send/receive orchestration.
 
-use super::common::{self, parse_can_id, J2534Channel, J2534Device, PassThruMsg};
-use super::constants::{Protocol, Status};
+use super::common::{self, can_id_flags, parse_can_id, J2534Channel, J2534Device, PassThruMsg};
+use super::constants::{Protocol, Status, CAN_ID_BOTH};
 use super::error::Error as J2534Error;
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
 use crate::Result;
@@ -55,7 +55,8 @@ impl J2534CanAdapter {
     /// channel was closed).
     ///
     pub fn new_on_device(device: J2534Device, bitrate: u32) -> Result<Self> {
-        let channel = common::connect_channel(&device, Protocol::Can, bitrate)?;
+        let channel =
+            common::connect_channel_with_flags(&device, Protocol::Can, CAN_ID_BOTH, bitrate)?;
 
         let status = channel.install_pass_all_can_filter();
         if status != Status::NoError {
@@ -117,6 +118,7 @@ impl CanAdapter for J2534CanAdapter {
             );
 
             let mut msg = PassThruMsg::new(Protocol::Can.into(), frame.id, &frame.data);
+            msg.tx_flags = can_id_flags(frame.id);
             let (status, count) = self.channel.write_message(&mut msg, IO_TIMEOUT_MS);
             tracing::trace!(ret = %status, count, "PassThruWriteMsgs");
 
@@ -165,7 +167,7 @@ impl CanAdapter for J2534CanAdapter {
                             "J2534 RX skipped (frame too short)"
                         );
                     } else {
-                        let id = parse_can_id(&msg.data);
+                        let id = parse_can_id(&msg);
                         let data = msg.data[4..len].to_vec();
                         let arb_id: u32 = id.into();
                         tracing::debug!(

@@ -2,7 +2,7 @@
 //! and helper utilities used by both the raw CAN adapter and the native
 //! ISO 15765 transport.
 
-use super::constants::{FilterType, IoctlId, IoctlParam, Protocol, Status};
+use super::constants::{FilterType, IoctlId, IoctlParam, Protocol, Status, CAN_29BIT_ID_FLAG};
 use super::error::Error as J2534Error;
 use crate::can::Identifier;
 use crate::Result;
@@ -227,15 +227,6 @@ impl Drop for J2534Device {
     }
 }
 
-/// Call `PassThruConnect` for `protocol` and return the channel context.
-pub(crate) fn connect_channel(
-    device: &J2534Device,
-    protocol: Protocol,
-    bitrate: u32,
-) -> Result<J2534Channel> {
-    connect_channel_with_flags(device, protocol, 0, bitrate)
-}
-
 /// Call `PassThruConnect` for `protocol` with the provided `flags`.
 pub(crate) fn connect_channel_with_flags(
     device: &J2534Device,
@@ -279,16 +270,18 @@ pub(crate) fn connect_channel_with_flags(
     })
 }
 
-/// Bit 31 flag in the 4-byte CAN ID field of a `PassThruMsg`, indicating a
-/// 29-bit extended CAN identifier.
-pub const CAN_29BIT_ID: u32 = 0x8000_0000;
+/// J2534 `TxFlags`/`RxStatus` bits derived from a CAN identifier.
+pub fn can_id_flags(id: Identifier) -> u32 {
+    if id.is_extended() {
+        CAN_29BIT_ID_FLAG
+    } else {
+        0
+    }
+}
 
 impl PassThruMsg {
     /// Build a message carrying `payload` after a 4-byte big-endian CAN ID.
     /// Used for both `PROTOCOL_CAN` and `PROTOCOL_ISO15765` frames.
-    ///
-    /// For [`Identifier::Extended`], bit 31 (`CAN_29BIT_ID`) is set in the
-    /// ID field as required by the J2534 specification.
     pub fn new(protocol_id: u32, id: Identifier, payload: &[u8]) -> Self {
         Self::new_with_ext_address(protocol_id, id, None, payload)
     }
@@ -301,10 +294,7 @@ impl PassThruMsg {
         ext_address: Option<u8>,
         payload: &[u8],
     ) -> Self {
-        let raw_id: u32 = match id {
-            Identifier::Extended(v) => v | CAN_29BIT_ID,
-            Identifier::Standard(v) => v,
-        };
+        let raw_id: u32 = id.into();
         Self::new_raw_with_ext_address(protocol_id, raw_id, ext_address, payload)
     }
 
@@ -344,16 +334,46 @@ impl PassThruMsg {
     }
 }
 
-/// Parse a 4-byte big-endian CAN ID from a `PassThruMsg` data field.
-///
-/// If bit 31 (`CAN_29BIT_ID`) is set, returns [`Identifier::Extended`] with
-/// the lower 29 bits.  Otherwise returns [`Identifier::Standard`].
-pub fn parse_can_id(data: &[u8]) -> Identifier {
-    let raw = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
-    if raw & CAN_29BIT_ID != 0 {
-        Identifier::Extended(raw & !CAN_29BIT_ID)
+/// Parse a CAN identifier from a J2534 message.
+pub fn parse_can_id(msg: &PassThruMsg) -> Identifier {
+    let raw = u32::from_be_bytes([msg.data[0], msg.data[1], msg.data[2], msg.data[3]]);
+    if msg.rx_status & CAN_29BIT_ID_FLAG != 0 {
+        Identifier::Extended(raw)
     } else {
         Identifier::Standard(raw)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pass_thru_msg_keeps_extended_can_id_raw() {
+        let msg = PassThruMsg::new(
+            Protocol::Can.into(),
+            Identifier::Extended(0x18DAF110),
+            &[1, 2],
+        );
+
+        assert_eq!(
+            u32::from_be_bytes([msg.data[0], msg.data[1], msg.data[2], msg.data[3]]),
+            0x18DAF110
+        );
+        assert_eq!(
+            can_id_flags(Identifier::Extended(0x18DAF110)),
+            CAN_29BIT_ID_FLAG
+        );
+    }
+
+    #[test]
+    fn parse_can_id_uses_rx_status_flag() {
+        let mut msg = PassThruMsg::new(Protocol::Can.into(), Identifier::Extended(0x18DAF110), &[]);
+        msg.rx_status = CAN_29BIT_ID_FLAG;
+        assert_eq!(parse_can_id(&msg), Identifier::Extended(0x18DAF110));
+
+        msg.rx_status = 0;
+        assert_eq!(parse_can_id(&msg), Identifier::Standard(0x18DAF110));
     }
 }
 
