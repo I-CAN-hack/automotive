@@ -125,7 +125,13 @@ impl Eq for XLcanFdConf {}
 impl From<BitrateConfig> for XLcanFdConf {
     fn from(config: BitrateConfig) -> Self {
         let nominal = config.nominal;
-        let data = config.data.unwrap_or(nominal);
+        let data = match config.data {
+            Some(data) => data,
+            _ => {
+                tracing::warn!("no data bitrate settings provided when building XLcanFdConf");
+                nominal
+            }
+        };
 
         Self {
             arbitrationBitRate: nominal.bitrate,
