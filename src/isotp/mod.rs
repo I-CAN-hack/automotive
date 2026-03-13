@@ -31,13 +31,13 @@ use self::types::FlowControlConfig;
 
 const DEFAULT_TIMEOUT_MS: u64 = 100;
 
-/// Abstraction over anything that can exchange ISO-TP PDUs.
+/// Abstraction over anything that can exchange diagnostic PDUs over a transport layer.
 ///
 /// Two implementations ship with this workspace:
 /// * [`IsoTPAdapter`] — software ISO-TP framing on top of any [`crate::can::CanAdapter`].
 /// * `J2534NativeIsoTpTransport` — hardware ISO 15765 via a J2534 PassThru device; the
 ///   adapter firmware handles all framing, flow-control, and STmin timing.
-pub trait IsoTpTransport {
+pub trait TransportLayer {
     /// Transmit a single UDS PDU. Resolves once the transport has accepted the
     /// payload for transmission (not necessarily once it has been ACKed on the bus).
     fn send<'a>(
@@ -49,7 +49,7 @@ pub trait IsoTpTransport {
     fn recv(&self) -> impl crate::Stream<Item = crate::Result<Vec<u8>>> + Unpin + '_;
 }
 
-impl IsoTpTransport for IsoTPAdapter<'_> {
+impl TransportLayer for IsoTPAdapter<'_> {
     fn send<'a>(
         &'a self,
         data: &'a [u8],

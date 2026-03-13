@@ -34,7 +34,7 @@ use tokio::sync::{broadcast, oneshot};
 
 use crate::can::Identifier;
 use crate::isotp::{duration_to_stmin_byte, IsoTPConfig};
-use crate::{IsoTpTransport, Result};
+use crate::{Result, TransportLayer};
 
 use super::common::{self, parse_can_id, J2534Channel, J2534Device, PassThruMsg};
 use super::constants::{
@@ -61,7 +61,7 @@ enum J2534IsoTpEvt {
 
 /// J2534 ISO 15765 (native ISO-TP) transport.
 ///
-/// Implements [`IsoTpTransport`] so it plugs directly into `UDSClient`
+/// Implements [`TransportLayer`] so it plugs directly into `UDSClient`
 /// without going through the software ISO-TP layer.
 pub struct J2534NativeIsoTpTransport {
     tx_cmd: Option<SyncSender<J2534IsoTpCmd>>,
@@ -215,7 +215,7 @@ impl Drop for J2534NativeIsoTpTransport {
     }
 }
 
-impl IsoTpTransport for J2534NativeIsoTpTransport {
+impl TransportLayer for J2534NativeIsoTpTransport {
     fn send<'a>(
         &'a self,
         data: &'a [u8],

@@ -85,7 +85,7 @@ pub mod uds;
 pub use tokio_stream::{Stream, StreamExt, Timeout};
 
 pub use error::Error;
-pub use isotp::IsoTpTransport;
+pub use isotp::TransportLayer;
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(all(target_os = "linux", feature = "socketcan"))]
