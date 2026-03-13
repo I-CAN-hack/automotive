@@ -47,6 +47,7 @@
 //! ### Supported CAN adapters
 //!  - SocketCAN (Linux only)
 //!  - comma.ai panda (all platforms using [rusb](https://crates.io/crates/rusb))
+//!  - J2534 PassThru Devices (Windows only)
 //!  - Vector Devices (Windows x64 only)
 //!
 //! ### Known limitations / Notes
@@ -62,6 +63,7 @@
 //!    - neoVI/ValueCAN: Use of Intrepid Control System's devices is not recommended due to issues in their SocketCAN driver. If many frames are transmitted simultaneously it will cause the whole system/kernel to hang. [intrepid-socketcan-kernel-module#20](https://github.com/intrepidcs/intrepid-socketcan-kernel-module/issues/20) tracks this issue.
 //!  - comma.ai panda
 //!    - The panda does not retry frames that are not ACKed, and drops them instead. This can cause panics in some internal parts of the library when frames are dropped. [panda#1922](https://github.com/commaai/panda/issues/1922) tracks this issue.
+//!  - J2534 PassThru Devices are supported through the `j2534` feature. The library provides `J2534CanAdapter` for raw CAN access, and `J2534NativeIsoTpTransport` to offload ISO-TP framing, flow-control, and timing to the adapter. It is recommended to use `J2534CanAdapter` unless you have specific speed or latency requirements.
 //!  - Vector Devices are supported through the Vector XL Driver Library, and support can be enabled using the `vector-xl` feature. Make sure to distribute `vxlapi64.dll` alongside your application.
 //!
 //!
