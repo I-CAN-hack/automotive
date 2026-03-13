@@ -32,6 +32,7 @@ use std::time::Duration;
 use async_stream::stream;
 use tokio::sync::{broadcast, oneshot};
 
+use crate::can::bitrate::BitrateConfig;
 use crate::can::Identifier;
 use crate::isotp::{duration_to_stmin_byte, IsoTPConfig};
 use crate::{Result, TransportLayer};
@@ -80,9 +81,14 @@ impl J2534NativeIsoTpTransport {
     /// Opens a new device via `PassThruOpen`.  To reuse an already-open
     /// device (e.g. after an OBD DTC-clear channel), use
     /// [`new_on_device`](Self::new_on_device) instead.
-    pub fn new(dll_path: Option<&str>, bitrate: u32, config: IsoTPConfig) -> Result<Self> {
+    pub fn new(
+        dll_path: Option<&str>,
+        bitrate_cfg: BitrateConfig,
+        config: IsoTPConfig,
+    ) -> Result<Self> {
+        let bitrate = Self::nominal_bitrate(&bitrate_cfg)?;
         let device = common::open_device(dll_path)?;
-        Self::new_on_device(device, bitrate, config)
+        Self::new_on_device_with_bitrate(device, bitrate, config)
     }
 
     /// Create an ISO 15765 channel on an already-open [`J2534Device`].
@@ -94,7 +100,31 @@ impl J2534NativeIsoTpTransport {
     /// The remaining [`IsoTPConfig`] fields are ignored by the native J2534
     /// transport.
     ///
-    pub fn new_on_device(device: J2534Device, bitrate: u32, config: IsoTPConfig) -> Result<Self> {
+    pub fn new_on_device(
+        device: J2534Device,
+        bitrate_cfg: BitrateConfig,
+        config: IsoTPConfig,
+    ) -> Result<Self> {
+        let bitrate = Self::nominal_bitrate(&bitrate_cfg)?;
+        Self::new_on_device_with_bitrate(device, bitrate, config)
+    }
+
+    fn nominal_bitrate(bitrate_cfg: &BitrateConfig) -> Result<u32> {
+        if bitrate_cfg.data.is_some() {
+            return Err(crate::Error::InvalidBitrate(
+                "J2534 native ISO-TP transport does not support CAN-FD bitrate configuration"
+                    .to_string(),
+            ));
+        }
+
+        Ok(bitrate_cfg.nominal.bitrate)
+    }
+
+    fn new_on_device_with_bitrate(
+        device: J2534Device,
+        bitrate: u32,
+        config: IsoTPConfig,
+    ) -> Result<Self> {
         let tx_id = config.tx_id;
         let rx_id = config.rx_id;
         let ext_address = config.ext_address;

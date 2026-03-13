@@ -1,7 +1,8 @@
 #[cfg(all(target_os = "windows", feature = "j2534"))]
 mod app {
+    use automotive::can::bitrate::BitrateBuilder;
     use automotive::isotp::IsoTPConfig;
-    use automotive::j2534::J2534NativeIsoTpTransport;
+    use automotive::j2534::{J2534CanAdapter, J2534NativeIsoTpTransport};
     use automotive::uds::{DataIdentifier, UDSClient};
     use automotive::Result;
 
@@ -32,7 +33,10 @@ mod app {
         tracing_subscriber::fmt::init();
 
         let dll_path = None;
-        let bitrate = 500_000;
+        let bitrate_cfg = BitrateBuilder::new::<J2534CanAdapter>()
+            .bitrate(500_000)
+            .build()
+            .unwrap();
 
         let standard_ids = 0x700..=0x7f7;
         let extended_ids = (0x00..=0xff).map(|i| 0x18da0000 + (i << 8) + 0xf1);
@@ -43,15 +47,16 @@ mod app {
         };
 
         let config = IsoTPConfig::new(0, first_id.into());
-        let isotp = J2534NativeIsoTpTransport::new(dll_path, bitrate, config)?;
+        let isotp = J2534NativeIsoTpTransport::new(dll_path, bitrate_cfg, config)?;
         let _ = get_version(&isotp, first_id).await;
         let mut device = isotp.into_device();
 
         for id in ids {
             let config = IsoTPConfig::new(0, id.into());
-            let isotp = match J2534NativeIsoTpTransport::new_on_device(device, bitrate, config) {
+            let isotp = match J2534NativeIsoTpTransport::new_on_device(device, bitrate_cfg, config)
+            {
                 Ok(isotp) => isotp,
-                Err(_) => J2534NativeIsoTpTransport::new(dll_path, bitrate, config)?,
+                Err(_) => J2534NativeIsoTpTransport::new(dll_path, bitrate_cfg, config)?,
             };
 
             let _ = get_version(&isotp, id).await;
