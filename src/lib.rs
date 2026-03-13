@@ -83,6 +83,7 @@ pub mod uds;
 pub use tokio_stream::{Stream, StreamExt, Timeout};
 
 pub use error::Error;
+pub use isotp::IsoTpTransport;
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(all(target_os = "linux", feature = "socketcan"))]
@@ -92,6 +93,10 @@ pub mod socketcan;
 #[cfg(all(target_os = "windows", feature = "vector-xl"))]
 #[cfg_attr(docsrs, doc(cfg(all(target_os = "windows", feature = "vector-xl"))))]
 pub mod vector;
+
+#[cfg(all(target_os = "windows", feature = "j2534"))]
+#[cfg_attr(docsrs, doc(cfg(all(target_os = "windows", feature = "j2534"))))]
+pub mod j2534;
 
 #[cfg(feature = "panda")]
 #[cfg_attr(docsrs, doc(cfg(feature = "panda")))]

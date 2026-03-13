@@ -31,6 +31,10 @@ pub enum Error {
     #[error("Error loading DLL: {0}")]
     Libloading(std::sync::Arc<libloading::Error>),
 
+    #[cfg(all(target_os = "windows", feature = "j2534"))]
+    #[error(transparent)]
+    J2534Error(#[from] crate::j2534::Error),
+
     #[cfg(feature = "panda")]
     #[error(transparent)]
     PandaError(#[from] crate::panda::Error),

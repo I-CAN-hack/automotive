@@ -30,6 +30,38 @@ use tracing::debug;
 use self::types::FlowControlConfig;
 
 const DEFAULT_TIMEOUT_MS: u64 = 100;
+
+/// Abstraction over anything that can exchange ISO-TP PDUs.
+///
+/// Two implementations ship with this workspace:
+/// * [`IsoTPAdapter`] — software ISO-TP framing on top of any [`crate::can::CanAdapter`].
+/// * `J2534NativeIsoTpTransport` — hardware ISO 15765 via a J2534 PassThru device; the
+///   adapter firmware handles all framing, flow-control, and STmin timing.
+pub trait IsoTpTransport {
+    /// Transmit a single UDS PDU. Resolves once the transport has accepted the
+    /// payload for transmission (not necessarily once it has been ACKed on the bus).
+    fn send<'a>(
+        &'a self,
+        data: &'a [u8],
+    ) -> impl std::future::Future<Output = crate::Result<()>> + 'a;
+
+    /// Infinite stream of received UDS PDUs. Each item is one complete PDU.
+    fn recv(&self) -> impl crate::Stream<Item = crate::Result<Vec<u8>>> + Unpin + '_;
+}
+
+impl IsoTpTransport for IsoTPAdapter<'_> {
+    fn send<'a>(
+        &'a self,
+        data: &'a [u8],
+    ) -> impl std::future::Future<Output = crate::Result<()>> + 'a {
+        IsoTPAdapter::send(self, data)
+    }
+
+    fn recv(&self) -> impl crate::Stream<Item = crate::Result<Vec<u8>>> + Unpin + '_ {
+        IsoTPAdapter::recv(self)
+    }
+}
+
 const DEFAULT_PADDING_BYTE: u8 = 0xAA;
 
 /// N_WFTmax in ISO 15765-2
@@ -39,7 +71,34 @@ const CAN_MAX_DLEN: usize = 8;
 const CAN_FD_MAX_DLEN: usize = 64;
 
 const ISO_TP_MAX_DLEN: usize = (1 << 12) - 1;
-const ISO_TP_FD_MAX_DLEN: usize = (1 << 32) - 1;
+const ISO_TP_FD_MAX_DLEN: usize = u32::MAX as usize;
+
+/// Encode a separation-time value to the ISO 15765-2 STmin byte.
+///
+/// Values that do not land exactly on a representable STmin step round up to
+/// the next valid encoding so the requested delay is never undershot.
+///
+/// Encoding (ISO 15765-2 §9.6.5.4 / Table 5):
+/// - 0 µs -> `0x00` (no delay)
+/// - 1-900 µs -> `0xF1`-`0xF9` (100 µs steps, rounded up)
+/// - 901-127_000 µs -> `0x01`-`0x7F` (1 ms steps, rounded up)
+/// - Values above 127 ms clamp to `0x7F`
+pub fn duration_to_stmin_byte(duration: std::time::Duration) -> u8 {
+    let us = duration.as_micros().min(u128::from(u32::MAX)) as u32;
+    if us == 0 {
+        0x00
+    } else if us < 1_000 {
+        let steps = us.saturating_add(99) / 100;
+        if steps <= 9 {
+            0xF0 + steps as u8
+        } else {
+            0x01
+        }
+    } else {
+        let ms = us.saturating_add(999) / 1_000;
+        ms.min(127) as u8
+    }
+}
 
 /// Configuring passed to the IsoTPAdapter.
 #[derive(Debug, Clone, Copy)]
@@ -535,5 +594,38 @@ impl<'a> IsoTPAdapter<'a> {
                 yield self.recv_from_stream(&mut stream).await;
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::duration_to_stmin_byte;
+    use std::time::Duration;
+
+    #[test]
+    fn duration_to_stmin_byte_rounds_up_to_supported_microsecond_steps() {
+        assert_eq!(duration_to_stmin_byte(Duration::ZERO), 0x00);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(1)), 0xF1);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(99)), 0xF1);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(100)), 0xF1);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(101)), 0xF2);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(900)), 0xF9);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(901)), 0x01);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(999)), 0x01);
+    }
+
+    #[test]
+    fn duration_to_stmin_byte_rounds_up_to_supported_millisecond_steps() {
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(1_000)), 0x01);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(1_001)), 0x02);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(1_999)), 0x02);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(2_000)), 0x02);
+    }
+
+    #[test]
+    fn duration_to_stmin_byte_clamps_to_maximum_supported_delay() {
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(127_000)), 0x7F);
+        assert_eq!(duration_to_stmin_byte(Duration::from_micros(127_001)), 0x7F);
+        assert_eq!(duration_to_stmin_byte(Duration::from_secs(u64::MAX)), 0x7F);
     }
 }

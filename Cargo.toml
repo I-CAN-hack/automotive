@@ -13,11 +13,12 @@ repository = "https://github.com/I-CAN-hack/automotive"
 default = ["default-adapters"]
 all = ["all-adapters", "serde"]
 default-adapters = ["panda", "socketcan"]
-all-adapters = ["default-adapters", "vector-xl"]
+all-adapters = ["default-adapters", "vector-xl", "j2534"]
 serde = ["dep:serde"]
 
 # adapters
 vector-xl = ["dep:bindgen", "dep:libloading"]
+j2534 = ["dep:libloading", "dep:winreg"]
 panda = []
 socketcan = []
 
@@ -46,6 +47,7 @@ libc = "0.2.154"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 libloading = { version = "0.8", optional = true }
+winreg = { version = "0.55", optional = true }
 
 [dev-dependencies]
 futures = "0.3.30"
