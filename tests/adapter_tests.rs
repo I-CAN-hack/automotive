@@ -10,6 +10,15 @@ static BULK_NUM_FRAMES_ASYNC: usize = 0x1000;
 static BULK_SYNC_TIMEOUT_MS: u64 = 1000;
 static BULK_ASYNC_TIMEOUT_MS: u64 = 5000;
 
+#[cfg(feature = "test-panda")]
+fn panda_bitrate_config() -> automotive::can::bitrate::BitrateConfig {
+    automotive::can::bitrate::BitrateBuilder::new::<automotive::panda::Panda>()
+        .bitrate(500_000)
+        .sample_point(0.8)
+        .build()
+        .unwrap()
+}
+
 #[cfg(feature = "test-vector")]
 fn vector_bitrate_config() -> automotive::can::bitrate::BitrateConfig {
     automotive::can::bitrate::BitrateBuilder::new::<automotive::vector::VectorCan>()
@@ -107,7 +116,7 @@ async fn bulk_send(adapter: &AsyncCanAdapter) {
 #[test]
 #[serial_test::serial]
 fn panda_bulk_send_sync() {
-    let mut panda = Panda::new().unwrap();
+    let mut panda = Panda::new(panda_bitrate_config()).unwrap();
     bulk_send_sync(&mut panda);
 }
 
@@ -115,7 +124,7 @@ fn panda_bulk_send_sync() {
 #[tokio::test]
 #[serial_test::serial]
 async fn panda_bulk_send_async() {
-    let panda = automotive::panda::Panda::new_async().unwrap();
+    let panda = automotive::panda::Panda::new_async(panda_bitrate_config()).unwrap();
     bulk_send(&panda).await;
 }
 
