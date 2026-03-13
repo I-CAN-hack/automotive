@@ -24,8 +24,10 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
         let bitrate_cfg = crate::can::bitrate::BitrateBuilder::new::<crate::vector::VectorCan>()
             .bitrate(500_000)
             .sample_point(0.8)
+            .sjw(1)
             .data_bitrate(2_000_000)
             .data_sample_point(0.8)
+            .data_sjw(1)
             .build()
             .unwrap();
 
@@ -36,7 +38,13 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
 
     #[cfg(all(target_os = "windows", feature = "j2534"))]
     {
-        if let Ok(adapter) = crate::j2534::J2534CanAdapter::new_async(None, 500_000) {
+        let bitrate_cfg =
+            crate::can::bitrate::BitrateBuilder::new::<crate::j2534::J2534CanAdapter>()
+                .bitrate(500_000)
+                .build()
+                .unwrap();
+
+        if let Ok(adapter) = crate::j2534::J2534CanAdapter::new_async(None, bitrate_cfg) {
             return Ok(adapter);
         };
     }

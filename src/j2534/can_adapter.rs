@@ -4,9 +4,11 @@
 //! on [`crate::can::AsyncCanAdapter`] for background polling, retry logic, and
 //! async send/receive orchestration.
 
+use super::common::nominal_bitrate_from_config;
 use super::common::{self, can_id_flags, parse_can_id, J2534Channel, J2534Device, PassThruMsg};
 use super::constants::{Protocol, Status, CAN_ID_BOTH};
 use super::error::Error as J2534Error;
+use crate::can::bitrate::{AdapterTimingConst, BitTimingConst, BitrateConfig};
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
 use crate::Result;
 
@@ -14,6 +16,23 @@ use std::collections::VecDeque;
 
 /// Poll the J2534 channel without blocking the `AsyncCanAdapter` process loop.
 const IO_TIMEOUT_MS: u32 = 0;
+
+// J2534 does not expose portable timing metadata for CAN channel setup, so
+// use a permissive nominal-only timing range to drive BitrateBuilder.
+const J2534_TIMING_CONST: AdapterTimingConst = AdapterTimingConst {
+    nominal: BitTimingConst {
+        clock_hz: 80_000_000,
+        tseg1_min: 1,
+        tseg1_max: 1 << 8,
+        tseg2_min: 1,
+        tseg2_max: 1 << 7,
+        sjw_max: 1 << 7,
+        brp_min: 1,
+        brp_max: 1 << 10,
+        brp_inc: 1,
+    },
+    data: None,
+};
 
 /// CAN adapter backed by a SAE J2534 PassThru device.
 ///
@@ -30,8 +49,11 @@ pub struct J2534CanAdapter {
 
 impl J2534CanAdapter {
     /// Creates a new [`AsyncCanAdapter`] from a J2534CanAdapter
-    pub fn new_async(dll_path: Option<&str>, bitrate: u32) -> Result<AsyncCanAdapter> {
-        let socket = J2534CanAdapter::new(dll_path, bitrate)?;
+    pub fn new_async(
+        dll_path: Option<&str>,
+        bitrate_cfg: BitrateConfig,
+    ) -> Result<AsyncCanAdapter> {
+        let socket = J2534CanAdapter::new(dll_path, bitrate_cfg)?;
         Ok(AsyncCanAdapter::new(socket))
     }
 
@@ -42,10 +64,12 @@ impl J2534CanAdapter {
     ///
     /// * `dll_path` — path to the PassThru DLL, or `None` to auto-discover
     ///   the first 64-bit driver from the Windows registry.
-    /// * `bitrate` — CAN bitrate in bits/sec (e.g. `500_000`).
-    pub fn new(dll_path: Option<&str>, bitrate: u32) -> Result<Self> {
+    /// * `bitrate_cfg` — nominal CAN bitrate configuration. CAN-FD data phase
+    ///   settings are currently rejected.
+    pub fn new(dll_path: Option<&str>, bitrate_cfg: BitrateConfig) -> Result<Self> {
+        let bitrate = nominal_bitrate_from_config(&bitrate_cfg)?;
         let device = common::open_device(dll_path)?;
-        Self::new_on_device(device, bitrate)
+        Self::new_on_device_with_bitrate(device, bitrate)
     }
 
     /// Open a CAN channel on an already-open [`J2534Device`].
@@ -54,7 +78,12 @@ impl J2534CanAdapter {
     /// channels (e.g. reusing the same adapter for CAN after an ISO 15765
     /// channel was closed).
     ///
-    pub fn new_on_device(device: J2534Device, bitrate: u32) -> Result<Self> {
+    pub fn new_on_device(device: J2534Device, bitrate_cfg: BitrateConfig) -> Result<Self> {
+        let bitrate = nominal_bitrate_from_config(&bitrate_cfg)?;
+        Self::new_on_device_with_bitrate(device, bitrate)
+    }
+
+    fn new_on_device_with_bitrate(device: J2534Device, bitrate: u32) -> Result<Self> {
         let channel =
             common::connect_channel_with_flags(&device, Protocol::Can, CAN_ID_BOTH, bitrate)?;
 
@@ -197,5 +226,12 @@ impl CanAdapter for J2534CanAdapter {
         frames.extend(self.loopback_queue.drain(..));
 
         Ok(frames)
+    }
+
+    fn timing_const() -> AdapterTimingConst
+    where
+        Self: Sized,
+    {
+        J2534_TIMING_CONST
     }
 }
