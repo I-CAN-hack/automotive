@@ -19,5 +19,7 @@ jobs:
           scripts/set_up_vcan.sh
       - name: Build
         run: cargo build --verbose --features=serde
+      - name: Build Examples
+        run: cargo build --verbose --features=serde --examples
       - name: Run tests
         run: cargo test --features=test-vcan,serde --verbose
