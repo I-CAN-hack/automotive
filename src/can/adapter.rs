@@ -1,6 +1,9 @@
 //! Convenience functions to get a CAN adapter.
 
-/// Convenience function to get the first available adapter on the system. Supports both comma.ai panda, and SocketCAN.
+/// Convenience function to get the first available adapter on the system.
+///
+/// Adapter backends are feature-gated. If no adapter features are enabled, or no
+/// supported hardware/interface is available, this returns [`crate::error::Error::NotFound`].
 pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error> {
     #[cfg(feature = "panda")]
     {

@@ -45,10 +45,12 @@
 //! The following CAN adapters are supported.
 //!
 //! ### Supported CAN adapters
-//!  - SocketCAN (Linux only)
-//!  - comma.ai panda (all platforms using [rusb](https://crates.io/crates/rusb))
-//!  - J2534 PassThru Devices (Windows only)
-//!  - Vector Devices (Windows x64 only)
+//!  - SocketCAN (Linux only, enable with the `socketcan` feature)
+//!  - comma.ai panda (all platforms using [rusb](https://crates.io/crates/rusb), enable with the `panda` feature)
+//!  - J2534 PassThru Devices (Windows only, enable with the `j2534` feature)
+//!  - Vector Devices (Windows x64 only, enable with the `vector-xl` feature)
+//!
+//! Adapter support is opt-in. The default feature set does not enable any hardware adapters.
 //!
 //! ### Known limitations / Notes
 //! This library has some unique features that might expose (performance) issues in drivers you wouldn't otherwise notice, so check the list of known limitations below.

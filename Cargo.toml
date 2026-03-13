@@ -10,7 +10,7 @@ repository = "https://github.com/I-CAN-hack/automotive"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["default-adapters"]
+default = []
 all = ["all-adapters", "serde"]
 default-adapters = ["panda", "socketcan"]
 all-adapters = ["default-adapters", "vector-xl", "j2534"]
@@ -19,8 +19,8 @@ serde = ["dep:serde"]
 # adapters
 vector-xl = ["dep:bindgen", "dep:libloading"]
 j2534 = ["dep:libloading", "dep:winreg"]
-panda = []
-socketcan = []
+panda = ["dep:rusb"]
+socketcan = ["dep:libc", "dep:socket2"]
 
 # adapter tests
 test-j2534 = ["j2534"]
@@ -33,7 +33,7 @@ test-vector = ["vector-xl"]
 async-stream = "0.3.5"
 bstr = "1.9.0"
 hex = "0.4"
-rusb = "0.9"
+rusb = { version = "0.9", optional = true }
 serde = { version = "1.0.197", features = ["derive"], optional = true }
 strum = "0.26"
 strum_macros = "0.26"
@@ -43,8 +43,8 @@ tokio-stream = "0.1.14"
 tracing = "0.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-socket2 = "0.6.0"
-libc = "0.2.154"
+socket2 = { version = "0.6.0", optional = true }
+libc = { version = "0.2.154", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 libloading = { version = "0.8", optional = true }
