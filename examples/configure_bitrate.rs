@@ -14,7 +14,7 @@ pub async fn run() -> automotive::Result<()> {
         .build()
         .unwrap();
 
-    let adapter = VectorCan::new_async(0, &Some(bitrate_cfg.into()))?;
+    let adapter = VectorCan::new_async(0, Some(bitrate_cfg))?;
     let mut stream = adapter.recv();
 
     while let Some(frame) = stream.next().await {

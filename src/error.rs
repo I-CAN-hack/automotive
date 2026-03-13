@@ -11,6 +11,8 @@ pub enum Error {
     NotSupported,
     #[error("Malformed Frame")]
     MalformedFrame,
+    #[error("Invalid bitrate: {0}")]
+    InvalidBitrate(String),
     #[error("Timeout")]
     Timeout,
     #[error("Disconnected")]
