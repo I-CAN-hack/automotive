@@ -1,14 +1,23 @@
 #![allow(dead_code, unused_imports)]
 use automotive::can::AsyncCanAdapter;
 use automotive::can::{CanAdapter, Frame, Identifier};
-use automotive::panda::Panda;
 use std::collections::VecDeque;
 use std::time::Duration;
 
+/// Must not be larger than the RX buffer size of the adapter, otherwise the test will fail due to dropped messages.
+/// Should be large enough to trigger any potential issues with the adapter's internal buffering and handling of multiple messages.
 static BULK_NUM_FRAMES_SYNC: usize = 0x100;
 static BULK_NUM_FRAMES_ASYNC: usize = 0x1000;
-static BULK_SYNC_TIMEOUT_MS: u64 = 1000;
+static BULK_SYNC_TIMEOUT_MS: u64 = 5000;
 static BULK_ASYNC_TIMEOUT_MS: u64 = 5000;
+
+#[cfg(feature = "test-j2534")]
+fn j2534_bitrate_config() -> automotive::can::bitrate::BitrateConfig {
+    automotive::can::bitrate::BitrateBuilder::new::<automotive::j2534::J2534CanAdapter>()
+        .bitrate(500_000)
+        .build()
+        .unwrap()
+}
 
 #[cfg(feature = "test-panda")]
 fn panda_bitrate_config() -> automotive::can::bitrate::BitrateConfig {
@@ -112,11 +121,28 @@ async fn bulk_send(adapter: &AsyncCanAdapter) {
     .unwrap();
 }
 
+#[cfg(feature = "test-j2534")]
+#[tokio::test]
+#[serial_test::serial]
+async fn j2534_bulk_send() {
+    let mut j2534 = automotive::j2534::J2534CanAdapter::new(None, j2534_bitrate_config()).unwrap();
+    bulk_send_sync(&mut j2534);
+}
+
+#[cfg(feature = "test-j2534")]
+#[tokio::test]
+#[serial_test::serial]
+async fn j2534_bulk_send_async() {
+    let j2534 =
+        automotive::j2534::J2534CanAdapter::new_async(None, j2534_bitrate_config()).unwrap();
+    bulk_send(&j2534).await;
+}
+
 #[cfg(feature = "test-panda")]
 #[test]
 #[serial_test::serial]
 fn panda_bulk_send_sync() {
-    let mut panda = Panda::new(panda_bitrate_config()).unwrap();
+    let mut panda = automotive::panda::Panda::new(panda_bitrate_config()).unwrap();
     bulk_send_sync(&mut panda);
 }
 

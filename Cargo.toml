@@ -23,10 +23,11 @@ panda = []
 socketcan = []
 
 # adapter tests
+test-j2534 = ["j2534"]
 test-panda = ["panda"]
 test-socketcan = ["socketcan"]
-test-vector = ["vector-xl"]
 test-vcan = ["socketcan"]
+test-vector = ["vector-xl"]
 
 [dependencies]
 async-stream = "0.3.5"
