@@ -4,7 +4,15 @@
 pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error> {
     #[cfg(feature = "panda")]
     {
-        if let Ok(panda) = crate::panda::Panda::new_async() {
+        let bitrate_cfg = crate::can::bitrate::BitrateBuilder::new::<crate::panda::Panda>()
+            .bitrate(500_000)
+            .sample_point(0.8)
+            .data_bitrate(2_000_000)
+            .data_sample_point(0.8)
+            .build()
+            .unwrap();
+
+        if let Ok(panda) = crate::panda::Panda::new_async(bitrate_cfg) {
             return Ok(panda);
         }
     }
@@ -24,10 +32,8 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
         let bitrate_cfg = crate::can::bitrate::BitrateBuilder::new::<crate::vector::VectorCan>()
             .bitrate(500_000)
             .sample_point(0.8)
-            .sjw(1)
             .data_bitrate(2_000_000)
             .data_sample_point(0.8)
-            .data_sjw(1)
             .build()
             .unwrap();
 

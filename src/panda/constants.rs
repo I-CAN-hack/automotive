@@ -20,6 +20,7 @@ pub enum HwType {
 pub enum Endpoint {
     CanWrite = 0x3,
     HwType = 0xc1,
+    CanSpeed = 0xde,
     SafetyModel = 0xdc,
     CanResetCommunications = 0xc0,
     CanRead = 0x81,
@@ -27,6 +28,7 @@ pub enum Endpoint {
     PowerSave = 0xe7,
     CanFDAuto = 0xe8,
     HeartbeatDisabled = 0xf8,
+    CanDataSpeed = 0xf9,
 }
 
 #[repr(u8)]
