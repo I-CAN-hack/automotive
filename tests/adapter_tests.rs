@@ -10,6 +10,19 @@ static BULK_NUM_FRAMES_ASYNC: usize = 0x1000;
 static BULK_SYNC_TIMEOUT_MS: u64 = 1000;
 static BULK_ASYNC_TIMEOUT_MS: u64 = 5000;
 
+#[cfg(feature = "test-vector")]
+fn vector_bitrate_config() -> automotive::can::bitrate::BitrateConfig {
+    automotive::can::bitrate::BitrateBuilder::new::<automotive::vector::VectorCan>()
+        .bitrate(500_000)
+        .sample_point(0.8)
+        .sjw(1)
+        .data_bitrate(2_000_000)
+        .data_sample_point(0.8)
+        .data_sjw(1)
+        .build()
+        .unwrap()
+}
+
 fn get_test_frames(amount: usize) -> Vec<Frame> {
     let mut frames = vec![];
 
@@ -110,7 +123,7 @@ async fn panda_bulk_send_async() {
 #[test]
 #[serial_test::serial]
 fn vector_bulk_send_sync() {
-    let mut vector = automotive::vector::VectorCan::new(0).unwrap();
+    let mut vector = automotive::vector::VectorCan::new(0, Some(vector_bitrate_config())).unwrap();
     bulk_send_sync(&mut vector);
 }
 
@@ -118,7 +131,8 @@ fn vector_bulk_send_sync() {
 #[tokio::test]
 #[serial_test::serial]
 async fn vector_bulk_send_async() {
-    let vector = automotive::vector::VectorCan::new_async(0).unwrap();
+    let vector =
+        automotive::vector::VectorCan::new_async(0, Some(vector_bitrate_config())).unwrap();
     bulk_send(&vector).await;
 }
 

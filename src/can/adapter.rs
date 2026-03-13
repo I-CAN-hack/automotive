@@ -21,9 +21,15 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
 
     #[cfg(all(target_os = "windows", feature = "vector-xl"))]
     {
-        if let Ok(adapter) =
-            crate::vector::VectorCan::new_async(0, &Some(crate::vector::CONFIG_500K_2M_80))
-        {
+        let bitrate_cfg = crate::can::bitrate::BitrateBuilder::new::<crate::vector::VectorCan>()
+            .bitrate(500_000)
+            .sample_point(0.8)
+            .data_bitrate(2_000_000)
+            .data_sample_point(0.8)
+            .build()
+            .unwrap();
+
+        if let Ok(adapter) = crate::vector::VectorCan::new_async(0, Some(bitrate_cfg)) {
             return Ok(adapter);
         };
     }

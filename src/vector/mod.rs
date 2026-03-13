@@ -8,29 +8,13 @@ pub use error::Error;
 
 use std::collections::VecDeque;
 
-use crate::can::bitrate::{AdapterTimingConst, BitTimingConst};
+use crate::can::bitrate::{AdapterTimingConst, BitTimingConst, BitrateConfig};
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
-pub use crate::vector::types::XLcanFdConf;
+use crate::vector::bindings::XLcanFdConf;
 use crate::vector::types::{PortHandle, XLaccess, XLcanTxEvent};
 use crate::vector::vxlapi::*;
 use crate::Result;
 use tracing::info;
-
-/// Predefined configuration for 500 kbps arbitration bitrate and 2 Mbps data bitrate
-pub const CONFIG_500K_2M_80: XLcanFdConf = XLcanFdConf {
-    arbitrationBitRate: 500_000,
-    sjwAbr: 1,
-    tseg1Abr: 127,
-    tseg2Abr: 32,
-    dataBitRate: 2_000_000,
-    sjwDbr: 1,
-    tseg1Dbr: 31,
-    tseg2Dbr: 8,
-    reserved: 0,
-    options: 0,
-    reserved1: [0, 0],
-    reserved2: 0,
-};
 
 /// Vector XL timing capabilities used for bitrate helper calculations.
 pub const VECTOR_TIMING_CONST: AdapterTimingConst = AdapterTimingConst {
@@ -66,7 +50,7 @@ pub struct VectorCan {
 
 impl VectorCan {
     /// Convenience function to create a new adapter and wrap in an [`AsyncCanAdapter`]
-    pub fn new_async(channel_idx: usize, conf: &Option<XLcanFdConf>) -> Result<AsyncCanAdapter> {
+    pub fn new_async(channel_idx: usize, conf: Option<BitrateConfig>) -> Result<AsyncCanAdapter> {
         let vector = VectorCan::new(channel_idx, conf)?;
         Ok(AsyncCanAdapter::new(vector))
     }
@@ -75,7 +59,13 @@ impl VectorCan {
     /// If conf is provided, the channel will be initialized with the provided configuration.
     /// If not, the channel will be opened without requesting init (exclusive) access,
     /// and can be configured using other tools (e.g. Vector's CANalyzer).
-    pub fn new(channel_idx: usize, conf: &Option<XLcanFdConf>) -> Result<VectorCan> {
+    pub fn new(channel_idx: usize, conf: Option<BitrateConfig>) -> Result<VectorCan> {
+        if conf.as_ref().is_some_and(|conf| conf.data.is_none()) {
+            return Err(crate::Error::InvalidBitrate(
+                "Vector bitrate configuration requires a CAN-FD data phase".to_string(),
+            ));
+        }
+
         xl_open_driver()?;
 
         // Get config based on global channel number
@@ -92,7 +82,8 @@ impl VectorCan {
 
         // Configure bitrate
         if let Some(conf) = conf {
-            xl_can_fd_set_configuration(&port_handle, channel_mask, conf)?;
+            let conf: XLcanFdConf = conf.into();
+            xl_can_fd_set_configuration(&port_handle, channel_mask, &conf)?;
         }
 
         xl_activate_channel(&port_handle, channel_mask)?;
@@ -158,6 +149,21 @@ mod tests {
     use super::*;
     use crate::can::bitrate::BitrateBuilder;
 
+    const CONFIG_500K_2M_80: XLcanFdConf = XLcanFdConf {
+        arbitrationBitRate: 500_000,
+        sjwAbr: 1,
+        tseg1Abr: 127,
+        tseg2Abr: 32,
+        dataBitRate: 2_000_000,
+        sjwDbr: 1,
+        tseg1Dbr: 31,
+        tseg2Dbr: 8,
+        reserved: 0,
+        options: 0,
+        reserved1: [0, 0],
+        reserved2: 0,
+    };
+
     #[test]
     fn bitrate_builder_matches_predefined_config() {
         let bitrate_cfg = BitrateBuilder::new::<VectorCan>()
@@ -172,5 +178,26 @@ mod tests {
 
         let conf: XLcanFdConf = bitrate_cfg.into();
         assert_eq!(conf, CONFIG_500K_2M_80);
+    }
+
+    #[test]
+    fn rejects_nominal_only_bitrate_config() {
+        let bitrate_cfg = BitrateBuilder::new::<VectorCan>()
+            .bitrate(500_000)
+            .sample_point(0.8)
+            .sjw(1)
+            .build()
+            .unwrap();
+
+        match VectorCan::new(0, Some(bitrate_cfg)) {
+            Err(crate::Error::InvalidBitrate(msg)) => {
+                assert_eq!(
+                    msg,
+                    "Vector bitrate configuration requires a CAN-FD data phase"
+                );
+            }
+            Err(err) => panic!("unexpected error: {err}"),
+            Ok(_) => panic!("expected invalid bitrate error"),
+        }
     }
 }
