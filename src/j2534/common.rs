@@ -4,6 +4,7 @@
 
 use super::constants::{FilterType, IoctlId, IoctlParam, Protocol, Status, CAN_29BIT_ID_FLAG};
 use super::error::Error as J2534Error;
+use crate::can::bitrate::BitrateConfig;
 use crate::can::Identifier;
 use crate::Result;
 
@@ -425,4 +426,14 @@ fn protocol_name(protocol: Protocol) -> &'static str {
         Protocol::Can => "CAN",
         Protocol::Iso15765 => "ISO15765",
     }
+}
+
+pub(crate) fn nominal_bitrate_from_config(bitrate_cfg: &BitrateConfig) -> crate::Result<u32> {
+    if bitrate_cfg.data.is_some() {
+        return Err(crate::Error::InvalidBitrate(format!(
+            "J2534 does not support CAN-FD bitrate configuration"
+        )));
+    }
+
+    Ok(bitrate_cfg.nominal.bitrate)
 }

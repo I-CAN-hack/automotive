@@ -37,7 +37,9 @@ use crate::can::Identifier;
 use crate::isotp::{duration_to_stmin_byte, IsoTPConfig};
 use crate::{Result, TransportLayer};
 
-use super::common::{self, parse_can_id, J2534Channel, J2534Device, PassThruMsg};
+use super::common::{
+    self, nominal_bitrate_from_config, parse_can_id, J2534Channel, J2534Device, PassThruMsg,
+};
 use super::constants::{
     IoctlParam, Protocol, Status, CAN_29BIT_ID_FLAG, CAN_ID_BOTH, ISO15765_ADDR_TYPE,
     ISO15765_FRAME_PAD, ISO15765_PADDING_ERROR,
@@ -86,7 +88,7 @@ impl J2534NativeIsoTpTransport {
         bitrate_cfg: BitrateConfig,
         config: IsoTPConfig,
     ) -> Result<Self> {
-        let bitrate = Self::nominal_bitrate(&bitrate_cfg)?;
+        let bitrate = nominal_bitrate_from_config(&bitrate_cfg)?;
         let device = common::open_device(dll_path)?;
         Self::new_on_device_with_bitrate(device, bitrate, config)
     }
@@ -105,19 +107,8 @@ impl J2534NativeIsoTpTransport {
         bitrate_cfg: BitrateConfig,
         config: IsoTPConfig,
     ) -> Result<Self> {
-        let bitrate = Self::nominal_bitrate(&bitrate_cfg)?;
+        let bitrate = nominal_bitrate_from_config(&bitrate_cfg)?;
         Self::new_on_device_with_bitrate(device, bitrate, config)
-    }
-
-    fn nominal_bitrate(bitrate_cfg: &BitrateConfig) -> Result<u32> {
-        if bitrate_cfg.data.is_some() {
-            return Err(crate::Error::InvalidBitrate(
-                "J2534 native ISO-TP transport does not support CAN-FD bitrate configuration"
-                    .to_string(),
-            ));
-        }
-
-        Ok(bitrate_cfg.nominal.bitrate)
     }
 
     fn new_on_device_with_bitrate(

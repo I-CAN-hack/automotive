@@ -4,6 +4,7 @@
 //! on [`crate::can::AsyncCanAdapter`] for background polling, retry logic, and
 //! async send/receive orchestration.
 
+use super::common::nominal_bitrate_from_config;
 use super::common::{self, can_id_flags, parse_can_id, J2534Channel, J2534Device, PassThruMsg};
 use super::constants::{Protocol, Status, CAN_ID_BOTH};
 use super::error::Error as J2534Error;
@@ -16,22 +17,20 @@ use std::collections::VecDeque;
 /// Poll the J2534 channel without blocking the `AsyncCanAdapter` process loop.
 const IO_TIMEOUT_MS: u32 = 0;
 
-// J2534 does not expose portable timing metadata for raw CAN channels, so use a
-// permissive nominal-only timing range to drive BitrateBuilder.
-const J2534_NOMINAL_BTC: BitTimingConst = BitTimingConst {
-    clock_hz: 80_000_000,
-    tseg1_min: 1,
-    tseg1_max: 1 << 8,
-    tseg2_min: 1,
-    tseg2_max: 1 << 7,
-    sjw_max: 1 << 7,
-    brp_min: 1,
-    brp_max: 1 << 10,
-    brp_inc: 1,
-};
-
+// J2534 does not expose portable timing metadata for CAN channel setup, so
+// use a permissive nominal-only timing range to drive BitrateBuilder.
 const J2534_TIMING_CONST: AdapterTimingConst = AdapterTimingConst {
-    nominal: J2534_NOMINAL_BTC,
+    nominal: BitTimingConst {
+        clock_hz: 80_000_000,
+        tseg1_min: 1,
+        tseg1_max: 1 << 8,
+        tseg2_min: 1,
+        tseg2_max: 1 << 7,
+        sjw_max: 1 << 7,
+        brp_min: 1,
+        brp_max: 1 << 10,
+        brp_inc: 1,
+    },
     data: None,
 };
 
@@ -68,7 +67,7 @@ impl J2534CanAdapter {
     /// * `bitrate_cfg` — nominal CAN bitrate configuration. CAN-FD data phase
     ///   settings are currently rejected.
     pub fn new(dll_path: Option<&str>, bitrate_cfg: BitrateConfig) -> Result<Self> {
-        let bitrate = Self::nominal_bitrate(&bitrate_cfg)?;
+        let bitrate = nominal_bitrate_from_config(&bitrate_cfg)?;
         let device = common::open_device(dll_path)?;
         Self::new_on_device_with_bitrate(device, bitrate)
     }
@@ -80,18 +79,8 @@ impl J2534CanAdapter {
     /// channel was closed).
     ///
     pub fn new_on_device(device: J2534Device, bitrate_cfg: BitrateConfig) -> Result<Self> {
-        let bitrate = Self::nominal_bitrate(&bitrate_cfg)?;
+        let bitrate = nominal_bitrate_from_config(&bitrate_cfg)?;
         Self::new_on_device_with_bitrate(device, bitrate)
-    }
-
-    fn nominal_bitrate(bitrate_cfg: &BitrateConfig) -> Result<u32> {
-        if bitrate_cfg.data.is_some() {
-            return Err(crate::Error::InvalidBitrate(
-                "J2534 CAN adapter does not support CAN-FD bitrate configuration".to_string(),
-            ));
-        }
-
-        Ok(bitrate_cfg.nominal.bitrate)
     }
 
     fn new_on_device_with_bitrate(device: J2534Device, bitrate: u32) -> Result<Self> {
