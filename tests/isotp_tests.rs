@@ -221,8 +221,7 @@ async fn isotp_test_extended() {
     isotp_test_echo(64, config).await;
     // Overflow IDX in flow control
     isotp_test_echo(256, config).await;
-
-    // Overflow IDX in flow control
+    // Max transfer size
     isotp_test_echo(4095, config).await;
 }
 
