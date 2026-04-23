@@ -49,6 +49,7 @@
 //!  - comma.ai panda (all platforms using [rusb](https://crates.io/crates/rusb), enable with the `panda` feature)
 //!  - J2534 PassThru Devices (Windows only, enable with the `j2534` feature)
 //!  - Vector Devices (Windows x64 only, enable with the `vector-xl` feature)
+//!  - PEAK PCAN-USB / PCAN-USB FD (macOS only via [PCBUSB](https://github.com/mac-can/PCBUSB-Library), enable with the `pcan` feature)
 //!
 //! Adapter support is opt-in. The default feature set does not enable any hardware adapters.
 //!
@@ -67,6 +68,7 @@
 //!    - The panda does not retry frames that are not ACKed, and drops them instead. This can cause panics in some internal parts of the library when frames are dropped. [panda#1922](https://github.com/commaai/panda/issues/1922) tracks this issue.
 //!  - J2534 PassThru Devices are supported through the `j2534` feature. The library provides `J2534CanAdapter` for raw CAN access, and `J2534NativeIsoTpTransport` to offload ISO-TP framing, flow-control, and timing to the adapter. It is recommended to use `J2534CanAdapter` unless you have specific speed or latency requirements.
 //!  - Vector Devices are supported through the Vector XL Driver Library, and support can be enabled using the `vector-xl` feature. Make sure to distribute `vxlapi64.dll` alongside your application.
+//!  - PEAK PCAN devices on macOS are supported through the [PCBUSB](https://github.com/mac-can/PCBUSB-Library) library, a macOS port of PEAK's PCAN-Basic API. Install the `libPCBUSB.dylib` from the MacCAN project (for example at `/usr/local/lib/libPCBUSB.dylib`) and enable the `pcan` feature. The adapter supports both classic CAN (`CAN_Initialize`) and CAN-FD (`CAN_InitializeFD`). On Linux, PEAK devices should be used through SocketCAN instead.
 //!
 //!
 //! ### Implementing a New Adapter
@@ -105,3 +107,7 @@ pub mod j2534;
 #[cfg(feature = "panda")]
 #[cfg_attr(docsrs, doc(cfg(feature = "panda")))]
 pub mod panda;
+
+#[cfg(all(target_os = "macos", feature = "pcan"))]
+#[cfg_attr(docsrs, doc(cfg(all(target_os = "macos", feature = "pcan"))))]
+pub mod pcan;

@@ -42,6 +42,10 @@ pub enum Error {
     #[cfg(feature = "panda")]
     #[error(transparent)]
     PandaError(#[from] crate::panda::Error),
+
+    #[cfg(all(target_os = "macos", feature = "pcan"))]
+    #[error(transparent)]
+    PcanError(#[from] crate::pcan::Error),
 }
 
 impl From<tokio_stream::Elapsed> for Error {

@@ -41,6 +41,19 @@ fn vector_bitrate_config() -> automotive::can::bitrate::BitrateConfig {
         .unwrap()
 }
 
+#[cfg(all(target_os = "macos", feature = "test-pcan"))]
+fn pcan_bitrate_config() -> automotive::can::bitrate::BitrateConfig {
+    automotive::can::bitrate::BitrateBuilder::new::<automotive::pcan::Pcan>()
+        .bitrate(500_000)
+        .sample_point(0.8)
+        .sjw(1)
+        .data_bitrate(2_000_000)
+        .data_sample_point(0.8)
+        .data_sjw(1)
+        .build()
+        .unwrap()
+}
+
 fn get_test_frames(amount: usize) -> Vec<Frame> {
     let mut frames = vec![];
 
@@ -223,4 +236,20 @@ async fn socketcan_open_nonexistent() {
         Err(automotive::Error::NotFound) => {}
         _ => panic!("Expected NotFound error"),
     }
+}
+
+#[cfg(all(target_os = "macos", feature = "test-pcan"))]
+#[test]
+#[serial_test::serial]
+fn pcan_bulk_send_sync() {
+    let mut pcan = automotive::pcan::Pcan::new(0, pcan_bitrate_config()).unwrap();
+    bulk_send_sync(&mut pcan);
+}
+
+#[cfg(all(target_os = "macos", feature = "test-pcan"))]
+#[tokio::test]
+#[serial_test::serial]
+async fn pcan_bulk_send_async() {
+    let pcan = automotive::pcan::Pcan::new_async(0, pcan_bitrate_config()).unwrap();
+    bulk_send(&pcan).await;
 }

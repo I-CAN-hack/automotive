@@ -58,5 +58,24 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
         };
     }
 
+    #[cfg(all(target_os = "macos", feature = "pcan"))]
+    {
+        let bitrate_cfg = crate::can::bitrate::BitrateBuilder::new::<crate::pcan::Pcan>()
+            .bitrate(500_000)
+            .sample_point(0.8)
+            .sjw(1)
+            .data_bitrate(2_000_000)
+            .data_sample_point(0.8)
+            .data_sjw(1)
+            .build()
+            .unwrap();
+
+        for channel_idx in 0..8 {
+            if let Ok(adapter) = crate::pcan::Pcan::new_async(channel_idx, bitrate_cfg) {
+                return Ok(adapter);
+            }
+        }
+    }
+
     Err(crate::error::Error::NotFound)
 }

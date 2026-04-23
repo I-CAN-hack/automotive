@@ -13,7 +13,7 @@ repository = "https://github.com/I-CAN-hack/automotive"
 default = []
 all = ["all-adapters", "serde"]
 default-adapters = ["panda", "socketcan"]
-all-adapters = ["default-adapters", "vector-xl", "j2534"]
+all-adapters = ["default-adapters", "vector-xl", "j2534", "pcan"]
 serde = ["dep:serde"]
 
 # adapters
@@ -21,10 +21,12 @@ vector-xl = ["dep:bindgen", "dep:libloading"]
 j2534 = ["dep:libloading", "dep:winreg"]
 panda = ["dep:rusb"]
 socketcan = ["dep:libc", "dep:socket2"]
+pcan = []
 
 # adapter tests
 test-j2534 = ["j2534"]
 test-panda = ["panda"]
+test-pcan = ["pcan"]
 test-socketcan = ["socketcan"]
 test-vcan = ["socketcan"]
 test-vector = ["vector-xl"]
