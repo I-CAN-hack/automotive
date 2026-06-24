@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>automotive — WebUSB CAN demo</title>
+    <link data-trunk rel="rust" />
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 2rem;
+        max-width: 60rem;
+      }
+      button {
+        font-size: 1rem;
+        padding: 0.5rem 1rem;
+      }
+      #output {
+        margin-top: 1rem;
+        padding: 1rem;
+        background: #111;
+        color: #0f0;
+        font-family: ui-monospace, monospace;
+        font-size: 0.85rem;
+        height: 28rem;
+        overflow-y: auto;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>automotive — WebUSB CAN demo</h1>
+    <p>
+      Connects to a CAN adapter over WebUSB and prints incoming CAN frames. Requires a
+      Chromium-based browser (Chrome/Edge) over <code>localhost</code> or HTTPS.
+    </p>
+    <p>
+      Note: on Linux a PEAK adapter must be unbound from the in-kernel
+      <code>peak_usb</code> driver before the browser can claim it (see the README).
+    </p>
+    <button id="connect-panda">Connect panda</button>
+    <button id="connect-peak">Connect PEAK (PCAN-USB FD)</button>
+    <pre id="output"></pre>
+  </body>
+</html>

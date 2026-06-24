@@ -80,13 +80,22 @@
 
 pub mod can;
 mod error;
+
+// ISO-TP and UDS rely on tokio timers/`select!`, which are unavailable on the browser's
+// single-threaded wasm runtime, so they are excluded from the wasm build for now.
+#[cfg(not(target_arch = "wasm32"))]
 pub mod isotp;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod uds;
 
 /// Re-export of relevant stream traits from `tokio_stream`.
-pub use tokio_stream::{Stream, StreamExt, Timeout};
+pub use tokio_stream::{Stream, StreamExt};
+/// Re-export of `tokio_stream::Timeout` (requires tokio timers; native only).
+#[cfg(not(target_arch = "wasm32"))]
+pub use tokio_stream::Timeout;
 
 pub use error::Error;
+#[cfg(not(target_arch = "wasm32"))]
 pub use isotp::TransportLayer;
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -109,3 +118,8 @@ pub mod panda;
 #[cfg(feature = "peak")]
 #[cfg_attr(docsrs, doc(cfg(feature = "peak")))]
 pub mod peak;
+
+/// USB backend abstraction shared by USB-based CAN adapters (`rusb` natively, WebUSB on `wasm32`).
+#[cfg(any(feature = "rusb-backend", feature = "webusb"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "rusb-backend", feature = "webusb"))))]
+pub mod usb;

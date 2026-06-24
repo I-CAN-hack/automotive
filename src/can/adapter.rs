@@ -5,7 +5,7 @@
 /// Adapter backends are feature-gated. If no adapter features are enabled, or no
 /// supported hardware/interface is available, this returns [`crate::error::Error::NotFound`].
 pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error> {
-    #[cfg(feature = "panda")]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "panda"))]
     {
         let bitrate_cfg = crate::can::bitrate::BitrateBuilder::new::<crate::panda::Panda>()
             .bitrate(500_000)
@@ -20,7 +20,7 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
         }
     }
 
-    #[cfg(feature = "peak")]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "peak"))]
     {
         let bitrate_cfg = crate::can::bitrate::BitrateBuilder::new::<crate::peak::Peak>()
             .bitrate(500_000)

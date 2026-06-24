@@ -124,10 +124,16 @@ impl fmt::Debug for Frame {
     }
 }
 
-/// Trait for a Blocking CAN Adapter
+/// Trait for a CAN Adapter.
+///
+/// `send`/`recv` are `async` so that adapters over async-only transports (e.g. WebUSB in
+/// the browser) can implement the same trait as blocking adapters. Blocking adapters (e.g.
+/// SocketCAN, rusb-based panda) simply perform their blocking work inside the `async fn`;
+/// [`AsyncCanAdapter`] drives them on a dedicated thread so blocking is fine.
+#[allow(async_fn_in_trait)]
 pub trait CanAdapter {
-    fn send(&mut self, frames: &mut VecDeque<crate::can::Frame>) -> crate::Result<()>;
-    fn recv(&mut self) -> crate::Result<Vec<Frame>>;
+    async fn send(&mut self, frames: &mut VecDeque<crate::can::Frame>) -> crate::Result<()>;
+    async fn recv(&mut self) -> crate::Result<Vec<Frame>>;
 
     /// Maximum number of frames the adapter can have in flight at once, i.e.
     /// transmitted but not yet acknowledged back via a loopback frame.

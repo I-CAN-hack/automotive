@@ -133,7 +133,7 @@ impl Drop for J2534CanAdapter {
 }
 
 impl CanAdapter for J2534CanAdapter {
-    fn send(&mut self, frames: &mut VecDeque<Frame>) -> crate::Result<()> {
+    async fn send(&mut self, frames: &mut VecDeque<Frame>) -> crate::Result<()> {
         if !self.connected {
             return Err(crate::Error::Disconnected);
         }
@@ -176,7 +176,7 @@ impl CanAdapter for J2534CanAdapter {
         Ok(())
     }
 
-    fn recv(&mut self) -> crate::Result<Vec<Frame>> {
+    async fn recv(&mut self) -> crate::Result<Vec<Frame>> {
         if !self.connected {
             return Err(crate::Error::Disconnected);
         }
