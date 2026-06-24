@@ -129,6 +129,16 @@ pub trait CanAdapter {
     fn send(&mut self, frames: &mut VecDeque<crate::can::Frame>) -> crate::Result<()>;
     fn recv(&mut self) -> crate::Result<Vec<Frame>>;
 
+    /// Maximum number of frames the adapter can have in flight at once, i.e.
+    /// transmitted but not yet acknowledged back via a loopback frame.
+    ///
+    /// Adapters backed by hardware with a finite buffer should return `Some(n)`
+    /// so the [`crate::can::AsyncCanAdapter`] throttles transmission and does not
+    /// overrun the buffer. The default of `None` means no limit is enforced.
+    fn buffer_size(&self) -> Option<usize> {
+        None
+    }
+
     /// Adapter timing constants for bitrate configuration helpers.
     ///
     /// Adapters that support [`crate::can::bitrate::BitrateBuilder`] should override this.

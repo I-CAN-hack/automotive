@@ -81,6 +81,11 @@ fn get_test_frames(amount: usize) -> Vec<Frame> {
 fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
     let frames = get_test_frames(BULK_NUM_FRAMES_SYNC);
 
+    // The blocking sync test transmits everything before reading any echoes
+    // back, so cap the number of frames to what the adapter can buffer at once.
+    let limit = adapter.buffer_size().unwrap_or(frames.len());
+    let frames: Vec<Frame> = frames.into_iter().take(limit).collect();
+
     let mut to_send: VecDeque<Frame> = frames.clone().into();
     while !to_send.is_empty() {
         adapter.send(&mut to_send).unwrap();
