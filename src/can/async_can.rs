@@ -23,7 +23,11 @@ const DEBUG: bool = false;
 type BusIdentifier = (u8, Identifier);
 type FrameCallback = (Frame, oneshot::Sender<()>);
 
-fn process<T: CanAdapter>(
+/// Async processing loop driving a [`CanAdapter`]. Shared by the native driver (dedicated
+/// thread running `block_on`) and the wasm driver (`spawn_local`). The only blocking or
+/// awaiting points are the adapter's `recv`/`send`; all channel operations are synchronous
+/// (`try_recv`/`send`).
+async fn process<T: CanAdapter>(
     mut adapter: T,
     mut shutdown_receiver: oneshot::Receiver<()>,
     rx_sender: broadcast::Sender<Frame>,
@@ -39,7 +43,7 @@ fn process<T: CanAdapter>(
     let mut in_flight: usize = 0;
 
     while shutdown_receiver.try_recv().is_err() {
-        let frames: Vec<Frame> = match adapter.recv() {
+        let frames: Vec<Frame> = match adapter.recv().await {
             Ok(f) => f,
             Err(e) => {
                 debug!("Adapter recv error: {:?} — shutting down process loop", e);
@@ -109,7 +113,7 @@ fn process<T: CanAdapter>(
         }
         if !buffer.is_empty() {
             let queued = buffer.len();
-            adapter.send(&mut buffer).unwrap();
+            adapter.send(&mut buffer).await.unwrap();
             in_flight += queued - buffer.len();
 
             if !buffer.is_empty() {
@@ -119,12 +123,21 @@ fn process<T: CanAdapter>(
                 );
             }
         }
+
+        // On native, recv() blocks up to the adapter timeout so this loop is naturally
+        // paced; the short sleep just avoids a tight spin if recv returns instantly. On
+        // wasm there is no blocking sleep available and `recv().await` already yields to
+        // the event loop.
+        #[cfg(not(target_arch = "wasm32"))]
         std::thread::sleep(std::time::Duration::from_micros(1));
     }
 }
 
-/// Async wrapper around a [`CanAdapter`]. Starts a background thread to handle sending and receiving frames. Uses tokio channels to communicate with the background thread.
+/// Async wrapper around a [`CanAdapter`]. On native platforms a background thread drives
+/// the adapter; in the browser (`wasm32`) it is driven cooperatively via `spawn_local`.
+/// Uses tokio channels to communicate with the processing task.
 pub struct AsyncCanAdapter {
+    #[cfg(not(target_arch = "wasm32"))]
     processing_handle: Option<std::thread::JoinHandle<()>>,
     recv_receiver: broadcast::Receiver<Frame>,
     send_sender: mpsc::Sender<(Frame, oneshot::Sender<()>)>,
@@ -132,6 +145,8 @@ pub struct AsyncCanAdapter {
 }
 
 impl AsyncCanAdapter {
+    /// Create an [`AsyncCanAdapter`] driving `adapter` on a dedicated background thread.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn new<T: CanAdapter + Send + 'static>(adapter: T) -> Self {
         let (shutdown_sender, shutdown_receiver) = oneshot::channel();
         let (send_sender, send_receiver) = mpsc::channel(CAN_TX_BUFFER_SIZE);
@@ -145,8 +160,34 @@ impl AsyncCanAdapter {
         };
 
         ret.processing_handle = Some(std::thread::spawn(move || {
-            process(adapter, shutdown_receiver, recv_sender, send_receiver);
+            // `process` only awaits the adapter's blocking recv/send, so a minimal executor
+            // (no tokio runtime) is sufficient to drive it on this dedicated thread.
+            pollster::block_on(process(adapter, shutdown_receiver, recv_sender, send_receiver));
         }));
+
+        ret
+    }
+
+    /// Create an [`AsyncCanAdapter`] driving `adapter` on the browser event loop via
+    /// `spawn_local`. The adapter does not need to be [`Send`].
+    #[cfg(target_arch = "wasm32")]
+    pub fn new<T: CanAdapter + 'static>(adapter: T) -> Self {
+        let (shutdown_sender, shutdown_receiver) = oneshot::channel();
+        let (send_sender, send_receiver) = mpsc::channel(CAN_TX_BUFFER_SIZE);
+        let (recv_sender, recv_receiver) = broadcast::channel(CAN_RX_BUFFER_SIZE);
+
+        let ret = AsyncCanAdapter {
+            shutdown: Some(shutdown_sender),
+            recv_receiver,
+            send_sender,
+        };
+
+        wasm_bindgen_futures::spawn_local(process(
+            adapter,
+            shutdown_receiver,
+            recv_sender,
+            send_receiver,
+        ));
 
         ret
     }
@@ -194,15 +235,19 @@ impl AsyncCanAdapter {
 
 impl Drop for AsyncCanAdapter {
     fn drop(&mut self) {
+        // Send shutdown signal to the processing task.
+        // Use `ok()` instead of `unwrap()` because the receiver may already
+        // be dropped if the process loop exited early (e.g. adapter error).
+        if let Some(shutdown) = self.shutdown.take() {
+            let _ = shutdown.send(());
+        }
+
+        // On native, join the background thread; use `ok()` to avoid panicking inside Drop
+        // if the process thread panicked (double-panic would abort the process). On wasm
+        // there is no thread to join — the `spawn_local` task observes the shutdown signal
+        // and exits on its own.
+        #[cfg(not(target_arch = "wasm32"))]
         if let Some(handle) = self.processing_handle.take() {
-            // Send shutdown signal to background thread.
-            // Use `ok()` instead of `unwrap()` because the receiver may already
-            // be dropped if the process thread exited early (e.g. adapter error).
-            if let Some(shutdown) = self.shutdown.take() {
-                let _ = shutdown.send(());
-            }
-            // Join the thread; use `ok()` to avoid panicking inside Drop if the
-            // process thread panicked (double-panic would abort the process).
             let _ = handle.join();
         }
     }

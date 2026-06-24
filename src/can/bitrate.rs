@@ -42,11 +42,11 @@
 //! # };
 //! # struct DummyAdapter;
 //! # impl CanAdapter for DummyAdapter {
-//! #     fn send(&mut self, _frames: &mut VecDeque<Frame>) -> automotive::Result<()> {
+//! #     async fn send(&mut self, _frames: &mut VecDeque<Frame>) -> automotive::Result<()> {
 //! #         unreachable!()
 //! #     }
 //! #
-//! #     fn recv(&mut self) -> automotive::Result<Vec<Frame>> {
+//! #     async fn recv(&mut self) -> automotive::Result<Vec<Frame>> {
 //! #         unreachable!()
 //! #     }
 //! #
@@ -260,11 +260,11 @@ pub enum BitrateError {
 ///
 /// struct DummyAdapter;
 /// impl CanAdapter for DummyAdapter {
-///     fn send(&mut self, _frames: &mut VecDeque<Frame>) -> automotive::Result<()> {
+///     async fn send(&mut self, _frames: &mut VecDeque<Frame>) -> automotive::Result<()> {
 ///         unreachable!()
 ///     }
 ///
-///     fn recv(&mut self) -> automotive::Result<Vec<Frame>> {
+///     async fn recv(&mut self) -> automotive::Result<Vec<Frame>> {
 ///         unreachable!()
 ///     }
 ///
@@ -310,11 +310,11 @@ pub enum BitrateError {
 ///
 /// struct DummyAdapter;
 /// impl CanAdapter for DummyAdapter {
-///     fn send(&mut self, _frames: &mut VecDeque<Frame>) -> automotive::Result<()> {
+///     async fn send(&mut self, _frames: &mut VecDeque<Frame>) -> automotive::Result<()> {
 ///         unreachable!()
 ///     }
 ///
-///     fn recv(&mut self) -> automotive::Result<Vec<Frame>> {
+///     async fn recv(&mut self) -> automotive::Result<Vec<Frame>> {
 ///         unreachable!()
 ///     }
 ///
@@ -372,11 +372,11 @@ pub enum BitrateError {
 ///
 /// struct DummyAdapter;
 /// impl CanAdapter for DummyAdapter {
-///     fn send(&mut self, _frames: &mut VecDeque<Frame>) -> automotive::Result<()> {
+///     async fn send(&mut self, _frames: &mut VecDeque<Frame>) -> automotive::Result<()> {
 ///         unreachable!()
 ///     }
 ///
-///     fn recv(&mut self) -> automotive::Result<Vec<Frame>> {
+///     async fn recv(&mut self) -> automotive::Result<Vec<Frame>> {
 ///         unreachable!()
 ///     }
 ///
@@ -419,7 +419,11 @@ impl BitrateBuilder {
         Self::with_timing_const(T::timing_const())
     }
 
-    fn with_timing_const(timing_const: AdapterTimingConst) -> Self {
+    /// Create a builder directly from adapter timing metadata, without an adapter type.
+    ///
+    /// Useful when the adapter type does not implement [`crate::can::CanAdapter`], e.g. the
+    /// async WebUSB panda on `wasm32`. Native code can use [`BitrateBuilder::new`] instead.
+    pub fn with_timing_const(timing_const: AdapterTimingConst) -> Self {
         Self {
             timing_const,
             bitrate: None,
@@ -941,11 +945,11 @@ mod tests {
 
     struct DummyTimingAdapter;
     impl CanAdapter for DummyTimingAdapter {
-        fn send(&mut self, _frames: &mut VecDeque<Frame>) -> crate::Result<()> {
+        async fn send(&mut self, _frames: &mut VecDeque<Frame>) -> crate::Result<()> {
             unreachable!()
         }
 
-        fn recv(&mut self) -> crate::Result<Vec<Frame>> {
+        async fn recv(&mut self) -> crate::Result<Vec<Frame>> {
             unreachable!()
         }
 
@@ -959,11 +963,11 @@ mod tests {
 
     struct DummyNoFdTimingAdapter;
     impl CanAdapter for DummyNoFdTimingAdapter {
-        fn send(&mut self, _frames: &mut VecDeque<Frame>) -> crate::Result<()> {
+        async fn send(&mut self, _frames: &mut VecDeque<Frame>) -> crate::Result<()> {
             unreachable!()
         }
 
-        fn recv(&mut self) -> crate::Result<Vec<Frame>> {
+        async fn recv(&mut self) -> crate::Result<Vec<Frame>> {
             unreachable!()
         }
 

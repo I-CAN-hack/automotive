@@ -6,12 +6,19 @@ mod usb_protocol;
 
 pub use error::Error;
 use std::collections::VecDeque;
+use std::time::Duration;
 
 use crate::can::bitrate::{AdapterTimingConst, BitTimingConst, BitrateConfig};
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
 use crate::panda::constants::{Endpoint, HwType, SafetyModel};
+use crate::usb::UsbBackend;
 use crate::Result;
 use tracing::{info, warn};
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "rusb-backend"))]
+use crate::usb::RusbBackend;
+#[cfg(all(target_arch = "wasm32", feature = "webusb"))]
+use crate::usb::WebUsbBackend;
 
 const USB_VIDS: &[u16] = &[0xbbaa, 0x3801];
 const USB_PIDS: &[u16] = &[0xddee, 0xddcc];
@@ -40,7 +47,10 @@ const PANDA_BIT_TIMING_CONST: BitTimingConst = BitTimingConst {
     brp_max: 1 << 10,
     brp_inc: 1,
 };
-const PANDA_TIMING_CONST: AdapterTimingConst = AdapterTimingConst {
+
+/// Timing constants for the panda CAN controller, usable with
+/// [`crate::can::bitrate::BitrateBuilder::with_timing_const`].
+pub const PANDA_TIMING_CONST: AdapterTimingConst = AdapterTimingConst {
     nominal: PANDA_BIT_TIMING_CONST,
     data: Some(PANDA_BIT_TIMING_CONST),
 };
@@ -51,10 +61,22 @@ struct PandaBitrateConfig {
     data_kbps: Option<u16>,
 }
 
-/// Blocking implementation of the panda CAN adapter
-pub struct Panda {
-    handle: rusb::DeviceHandle<rusb::GlobalContext>,
-    timeout: std::time::Duration,
+/// The default [`UsbBackend`] for the current target: [`RusbBackend`] on native
+/// platforms, [`WebUsbBackend`] when targeting the browser (`wasm32`).
+#[cfg(all(not(target_arch = "wasm32"), feature = "rusb-backend"))]
+pub type DefaultBackend = crate::usb::RusbBackend;
+#[cfg(all(target_arch = "wasm32", feature = "webusb"))]
+pub type DefaultBackend = crate::usb::WebUsbBackend;
+
+/// Panda CAN adapter, generic over the [`UsbBackend`] used for USB transfers.
+///
+/// On native platforms `B` defaults to [`RusbBackend`] (libusb) and the adapter implements
+/// the blocking [`CanAdapter`] trait. When targeting the browser, `B` is
+/// [`WebUsbBackend`] and frames are sent/received with the async [`Panda::send_frames`] /
+/// [`Panda::recv_frames`] methods.
+pub struct Panda<B: UsbBackend = DefaultBackend> {
+    backend: B,
+    timeout: Duration,
     dat: Vec<u8>,
 }
 
@@ -65,177 +87,41 @@ struct Versions {
     can_health_version: u8,
 }
 
-unsafe impl Send for Panda {}
-
-impl Panda {
-    /// Convenience function to create a new panda adapter and wrap in an [`AsyncCanAdapter`]
-    pub fn new_async(bitrate_cfg: BitrateConfig) -> Result<AsyncCanAdapter> {
-        let panda = Panda::new(bitrate_cfg)?;
-        Ok(AsyncCanAdapter::new(panda))
-    }
-
-    /// Connect to the first available panda. This function will set the safety mode to ALL_OUTPUT and clear all buffers.
-    pub fn new(bitrate_cfg: BitrateConfig) -> Result<Panda> {
-        let resolved_bitrate_cfg = resolve_bitrate_config(&bitrate_cfg)?;
-        warn_if_non_default_sample_points(&bitrate_cfg);
-
-        for device in rusb::devices().unwrap().iter() {
-            let device_desc = device.device_descriptor().unwrap();
-
-            if !USB_VIDS.contains(&device_desc.vendor_id()) {
-                continue;
-            }
-            if !USB_PIDS.contains(&device_desc.product_id()) {
-                continue;
-            }
-
-            let panda = Panda {
-                dat: vec![],
-                handle: device.open()?,
-                timeout: std::time::Duration::from_millis(100),
-            };
-
-            panda.handle.claim_interface(0)?;
-
-            // Check panda firmware version
-            let versions = panda.get_packets_versions()?;
-            if !SUPPORTED_CAN_PACKET_VERSIONS.contains(&versions.can_version) {
-                return Err(Error::WrongFirmwareVersion.into());
-            }
-
-            let hw_type = panda.get_hw_type()?;
-            warn_if_fd_unsupported(hw_type, resolved_bitrate_cfg.data_kbps.is_some());
-
-            panda.set_safety_model(SafetyModel::AllOutput)?;
-            panda.set_power_save(false)?;
-            panda.set_heartbeat_disabled()?;
-            panda.can_reset_communications()?;
-
-            for i in 0..PANDA_BUS_CNT {
-                panda.set_can_speed_kbps(i, resolved_bitrate_cfg.nominal_kbps)?;
-                if let Some(data_kbps) = resolved_bitrate_cfg.data_kbps {
-                    panda.set_can_data_speed_kbps(i, data_kbps)?;
-                }
-                panda.set_canfd_auto(i, false)?;
-            }
-
-            // can_reset_communications() doesn't work properly, flush manually
-            panda.flush_rx()?;
-
-            info!("Connected to Panda ({:?})", hw_type);
-
-            return Ok(panda);
+impl<B: UsbBackend> Panda<B> {
+    /// Runs the post-connection setup sequence: validates firmware, configures safety
+    /// mode and bus bitrates, and flushes the receive buffer. Returns the hardware type.
+    async fn configure(&self, cfg: PandaBitrateConfig) -> Result<HwType> {
+        // Check panda firmware version
+        let versions = self.get_packets_versions().await?;
+        if !SUPPORTED_CAN_PACKET_VERSIONS.contains(&versions.can_version) {
+            return Err(Error::WrongFirmwareVersion.into());
         }
-        Err(crate::Error::NotFound)
-    }
 
-    fn flush_rx(&self) -> Result<()> {
-        const N: usize = 16384;
-        let mut buf: [u8; N] = [0; N];
+        let hw_type = self.get_hw_type().await?;
+        warn_if_fd_unsupported(hw_type, cfg.data_kbps.is_some());
 
-        loop {
-            let recv: usize =
-                self.handle
-                    .read_bulk(Endpoint::CanRead as u8, &mut buf, self.timeout)?;
+        self.set_safety_model(SafetyModel::AllOutput).await?;
+        self.set_power_save(false).await?;
+        self.set_heartbeat_disabled().await?;
+        self.can_reset_communications().await?;
 
-            if recv == 0 {
-                return Ok(());
+        for i in 0..PANDA_BUS_CNT {
+            self.set_can_speed_kbps(i, cfg.nominal_kbps).await?;
+            if let Some(data_kbps) = cfg.data_kbps {
+                self.set_can_data_speed_kbps(i, data_kbps).await?;
             }
+            self.set_canfd_auto(i, false).await?;
         }
+
+        // can_reset_communications() doesn't work properly, flush manually
+        self.flush_rx().await?;
+
+        info!("Connected to Panda ({:?})", hw_type);
+        Ok(hw_type)
     }
 
-    /// Change the safety model of the panda. This can be useful to switch to Silent mode or open/close the relay in the comma.ai harness
-    pub fn set_safety_model(&self, safety_model: SafetyModel) -> Result<()> {
-        let safety_param: u16 = 0;
-        self.usb_write_control(Endpoint::SafetyModel, safety_model as u16, safety_param)
-    }
-
-    fn set_heartbeat_disabled(&self) -> Result<()> {
-        self.usb_write_control(Endpoint::HeartbeatDisabled, 0, 0)
-    }
-
-    fn set_power_save(&self, power_save_enabled: bool) -> Result<()> {
-        self.usb_write_control(Endpoint::PowerSave, power_save_enabled as u16, 0)
-    }
-
-    fn set_canfd_auto(&self, bus: usize, auto: bool) -> Result<()> {
-        if bus >= PANDA_BUS_CNT {
-            return Err(crate::Error::NotSupported);
-        }
-        self.usb_write_control(Endpoint::CanFDAuto, bus as u16, auto as u16)
-    }
-
-    fn set_can_speed_kbps(&self, bus: usize, speed_kbps: u16) -> Result<()> {
-        if bus >= PANDA_BUS_CNT {
-            return Err(crate::Error::NotSupported);
-        }
-        self.usb_write_control(Endpoint::CanSpeed, bus as u16, speed_kbps * 10)
-    }
-
-    fn set_can_data_speed_kbps(&self, bus: usize, speed_kbps: u16) -> Result<()> {
-        if bus >= PANDA_BUS_CNT {
-            return Err(crate::Error::NotSupported);
-        }
-        self.usb_write_control(Endpoint::CanDataSpeed, bus as u16, speed_kbps * 10)
-    }
-
-    /// Get the hardware type of the panda. Usefull to detect if it supports CAN-FD.
-    pub fn get_hw_type(&self) -> Result<HwType> {
-        let hw_type = self.usb_read_control(Endpoint::HwType, 1)?;
-        HwType::from_repr(hw_type[0]).ok_or(Error::UnknownHwType.into())
-    }
-
-    fn get_packets_versions(&self) -> Result<Versions> {
-        let versions = self.usb_read_control(Endpoint::PacketsVersions, 3)?;
-        Ok({
-            Versions {
-                health_version: versions[0],
-                can_version: versions[1],
-                can_health_version: versions[2],
-            }
-        })
-    }
-
-    fn can_reset_communications(&self) -> Result<()> {
-        self.usb_write_control(Endpoint::CanResetCommunications, 0, 0)
-    }
-
-    fn usb_read_control(&self, endpoint: Endpoint, n: usize) -> Result<Vec<u8>> {
-        let mut buf: Vec<u8> = vec![0; n];
-
-        let request_type = rusb::request_type(
-            rusb::Direction::In,
-            rusb::RequestType::Standard,
-            rusb::Recipient::Device,
-        );
-
-        // TOOD: Check if we got the expected amount of data?
-        self.handle
-            .read_control(request_type, endpoint as u8, 0, 0, &mut buf, self.timeout)?;
-        Ok(buf)
-    }
-
-    fn usb_write_control(&self, endpoint: Endpoint, value: u16, index: u16) -> Result<()> {
-        let request_type = rusb::request_type(
-            rusb::Direction::Out,
-            rusb::RequestType::Standard,
-            rusb::Recipient::Device,
-        );
-        self.handle.write_control(
-            request_type,
-            endpoint as u8,
-            value,
-            index,
-            &[],
-            self.timeout,
-        )?;
-        Ok(())
-    }
-}
-
-impl CanAdapter for Panda {
-    /// Sends a buffer of CAN messages to the panda.
-    fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
+    /// Pack and send a queue of CAN frames over the bulk OUT endpoint.
+    pub async fn send_frames(&self, frames: &mut VecDeque<Frame>) -> Result<()> {
         if frames.is_empty() {
             return Ok(());
         }
@@ -244,25 +130,24 @@ impl CanAdapter for Panda {
         let buf = usb_protocol::pack_can_buffer(&frames)?;
 
         for chunk in buf {
-            self.handle
-                .write_bulk(Endpoint::CanWrite as u8, &chunk, self.timeout)?;
+            self.backend
+                .write_bulk(Endpoint::CanWrite as u8, &chunk, self.timeout)
+                .await?;
         }
         Ok(())
     }
 
-    /// Reads the current buffer of available CAN messages from the panda. This function will return an empty vector if no messages are available. In case of a recoverable error (e.g. unpacking error), the buffer will be cleared and an empty vector will be returned.
-    fn recv(&mut self) -> Result<Vec<Frame>> {
-        let mut buf: [u8; MAX_BULK_SIZE] = [0; MAX_BULK_SIZE];
+    /// Read and unpack the currently available CAN frames from the bulk IN endpoint. In
+    /// case of a recoverable unpacking error, the buffer is cleared and an empty vector is
+    /// returned.
+    pub async fn recv_frames(&mut self) -> Result<Vec<Frame>> {
+        let data = self
+            .backend
+            .read_bulk(Endpoint::CanRead as u8, MAX_BULK_SIZE, self.timeout)
+            .await?;
+        self.dat.extend_from_slice(&data);
 
-        let recv: usize = self
-            .handle
-            .read_bulk(Endpoint::CanRead as u8, &mut buf, self.timeout)?;
-        self.dat.extend_from_slice(&buf[0..recv]);
-
-        let frames = usb_protocol::unpack_can_buffer(&mut self.dat);
-
-        // Recover from unpacking errors, can_reset_communications() doesn't work properly
-        match frames {
+        match usb_protocol::unpack_can_buffer(&mut self.dat) {
             Ok(frames) => Ok(frames),
             Err(e) => {
                 warn!("Error unpacking: {:}", e);
@@ -270,6 +155,160 @@ impl CanAdapter for Panda {
                 Ok(vec![])
             }
         }
+    }
+
+    async fn flush_rx(&self) -> Result<()> {
+        loop {
+            let data = self
+                .backend
+                .read_bulk(Endpoint::CanRead as u8, MAX_BULK_SIZE, self.timeout)
+                .await?;
+            if data.is_empty() {
+                return Ok(());
+            }
+        }
+    }
+
+    /// Change the safety model of the panda. This can be useful to switch to Silent mode or open/close the relay in the comma.ai harness
+    pub async fn set_safety_model(&self, safety_model: SafetyModel) -> Result<()> {
+        let safety_param: u16 = 0;
+        self.usb_write_control(Endpoint::SafetyModel, safety_model as u16, safety_param)
+            .await
+    }
+
+    async fn set_heartbeat_disabled(&self) -> Result<()> {
+        self.usb_write_control(Endpoint::HeartbeatDisabled, 0, 0)
+            .await
+    }
+
+    async fn set_power_save(&self, power_save_enabled: bool) -> Result<()> {
+        self.usb_write_control(Endpoint::PowerSave, power_save_enabled as u16, 0)
+            .await
+    }
+
+    async fn set_canfd_auto(&self, bus: usize, auto: bool) -> Result<()> {
+        if bus >= PANDA_BUS_CNT {
+            return Err(crate::Error::NotSupported);
+        }
+        self.usb_write_control(Endpoint::CanFDAuto, bus as u16, auto as u16)
+            .await
+    }
+
+    async fn set_can_speed_kbps(&self, bus: usize, speed_kbps: u16) -> Result<()> {
+        if bus >= PANDA_BUS_CNT {
+            return Err(crate::Error::NotSupported);
+        }
+        self.usb_write_control(Endpoint::CanSpeed, bus as u16, speed_kbps * 10)
+            .await
+    }
+
+    async fn set_can_data_speed_kbps(&self, bus: usize, speed_kbps: u16) -> Result<()> {
+        if bus >= PANDA_BUS_CNT {
+            return Err(crate::Error::NotSupported);
+        }
+        self.usb_write_control(Endpoint::CanDataSpeed, bus as u16, speed_kbps * 10)
+            .await
+    }
+
+    /// Get the hardware type of the panda. Usefull to detect if it supports CAN-FD.
+    pub async fn get_hw_type(&self) -> Result<HwType> {
+        let hw_type = self.usb_read_control(Endpoint::HwType, 1).await?;
+        HwType::from_repr(hw_type[0]).ok_or(Error::UnknownHwType.into())
+    }
+
+    async fn get_packets_versions(&self) -> Result<Versions> {
+        let versions = self.usb_read_control(Endpoint::PacketsVersions, 3).await?;
+        Ok(Versions {
+            health_version: versions[0],
+            can_version: versions[1],
+            can_health_version: versions[2],
+        })
+    }
+
+    async fn can_reset_communications(&self) -> Result<()> {
+        self.usb_write_control(Endpoint::CanResetCommunications, 0, 0)
+            .await
+    }
+
+    async fn usb_read_control(&self, endpoint: Endpoint, n: usize) -> Result<Vec<u8>> {
+        self.backend
+            .read_control(endpoint as u8, 0, 0, n, self.timeout)
+            .await
+    }
+
+    async fn usb_write_control(&self, endpoint: Endpoint, value: u16, index: u16) -> Result<()> {
+        self.backend
+            .write_control(endpoint as u8, value, index, &[], self.timeout)
+            .await
+    }
+}
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "rusb-backend"))]
+impl Panda<RusbBackend> {
+    /// Convenience function to create a new panda adapter and wrap in an [`AsyncCanAdapter`]
+    pub fn new_async(bitrate_cfg: BitrateConfig) -> Result<AsyncCanAdapter> {
+        let panda = Panda::new(bitrate_cfg)?;
+        Ok(AsyncCanAdapter::new(panda))
+    }
+
+    /// Connect to the first available panda. This function will set the safety mode to ALL_OUTPUT and clear all buffers.
+    pub fn new(bitrate_cfg: BitrateConfig) -> Result<Panda<RusbBackend>> {
+        let resolved_bitrate_cfg = resolve_bitrate_config(&bitrate_cfg)?;
+        warn_if_non_default_sample_points(&bitrate_cfg);
+
+        let backend = RusbBackend::open_first(USB_VIDS, USB_PIDS)?;
+        let panda = Panda {
+            backend,
+            timeout: Duration::from_millis(100),
+            dat: vec![],
+        };
+
+        pollster::block_on(panda.configure(resolved_bitrate_cfg))?;
+        Ok(panda)
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "webusb"))]
+impl Panda<WebUsbBackend> {
+    /// Prompt the user to select a panda over WebUSB, connect to it, and wrap it in an
+    /// [`AsyncCanAdapter`]. Must be called from a user gesture (e.g. a button click).
+    pub async fn connect_async(bitrate_cfg: BitrateConfig) -> Result<AsyncCanAdapter> {
+        let panda = Panda::connect(bitrate_cfg).await?;
+        Ok(AsyncCanAdapter::new(panda))
+    }
+
+    /// Prompt the user to select a panda over WebUSB and connect to it. Must be called
+    /// from a user gesture (e.g. a button click). Sets the safety mode to ALL_OUTPUT and
+    /// clears all buffers.
+    pub async fn connect(bitrate_cfg: BitrateConfig) -> Result<Panda<WebUsbBackend>> {
+        let resolved_bitrate_cfg = resolve_bitrate_config(&bitrate_cfg)?;
+        warn_if_non_default_sample_points(&bitrate_cfg);
+
+        let backend = WebUsbBackend::request(USB_VIDS, USB_PIDS).await?;
+        let panda = Panda {
+            backend,
+            timeout: Duration::from_millis(100),
+            dat: vec![],
+        };
+
+        panda.configure(resolved_bitrate_cfg).await?;
+        Ok(panda)
+    }
+}
+
+// SAFETY: only applies when the backend is `Send` (i.e. native `RusbBackend`). On wasm the
+// `WebUsbBackend` holds JS values and is `!Send`, so this impl does not apply there.
+unsafe impl<B: UsbBackend + Send> Send for Panda<B> {}
+
+impl<B: UsbBackend> CanAdapter for Panda<B> {
+    /// Sends a buffer of CAN messages to the panda.
+    async fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
+        self.send_frames(frames).await
+    }
+
+    /// Reads the current buffer of available CAN messages from the panda.
+    async fn recv(&mut self) -> Result<Vec<Frame>> {
+        self.recv_frames().await
     }
 
     fn timing_const() -> AdapterTimingConst

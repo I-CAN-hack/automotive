@@ -87,7 +87,7 @@ fn get_test_frames(amount: usize) -> Vec<Frame> {
 /// Sends a large number of frames to a "blocking" adapter, and then reads back all sent messages.
 /// This verified the adapter doesn't drop messages and reads them back in the same order as they are sent,
 /// which is needed for the async adapter to work correctly.
-fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
+async fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
     let frames = get_test_frames(BULK_NUM_FRAMES_SYNC);
 
     // The blocking sync test transmits everything before reading any echoes
@@ -97,7 +97,7 @@ fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
 
     let mut to_send: VecDeque<Frame> = frames.clone().into();
     while !to_send.is_empty() {
-        adapter.send(&mut to_send).unwrap();
+        adapter.send(&mut to_send).await.unwrap();
     }
 
     let start = std::time::Instant::now();
@@ -106,7 +106,7 @@ fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
     while received.len() < frames.len()
         && start.elapsed() < Duration::from_millis(BULK_SYNC_TIMEOUT_MS)
     {
-        let rx = adapter.recv().unwrap();
+        let rx = adapter.recv().await.unwrap();
         let rx: Vec<Frame> = rx.into_iter().filter(|frame| frame.loopback).collect();
 
         for frame in rx {
@@ -140,7 +140,7 @@ async fn bulk_send(adapter: &AsyncCanAdapter) {
 #[serial_test::serial]
 async fn j2534_bulk_send() {
     let mut j2534 = automotive::j2534::J2534CanAdapter::new(None, j2534_bitrate_config()).unwrap();
-    bulk_send_sync(&mut j2534);
+    bulk_send_sync(&mut j2534).await;
 }
 
 #[cfg(feature = "test-j2534")]
@@ -153,11 +153,11 @@ async fn j2534_bulk_send_async() {
 }
 
 #[cfg(feature = "test-panda")]
-#[test]
+#[tokio::test]
 #[serial_test::serial]
-fn panda_bulk_send_sync() {
+async fn panda_bulk_send_sync() {
     let mut panda = automotive::panda::Panda::new(panda_bitrate_config()).unwrap();
-    bulk_send_sync(&mut panda);
+    bulk_send_sync(&mut panda).await;
 }
 
 #[cfg(feature = "test-panda")]
@@ -169,11 +169,11 @@ async fn panda_bulk_send_async() {
 }
 
 #[cfg(feature = "test-vector")]
-#[test]
+#[tokio::test]
 #[serial_test::serial]
-fn vector_bulk_send_sync() {
+async fn vector_bulk_send_sync() {
     let mut vector = automotive::vector::VectorCan::new(0, Some(vector_bitrate_config())).unwrap();
-    bulk_send_sync(&mut vector);
+    bulk_send_sync(&mut vector).await;
 }
 
 #[cfg(feature = "test-vector")]
@@ -186,11 +186,11 @@ async fn vector_bulk_send_async() {
 }
 
 #[cfg(feature = "test-peak")]
-#[test]
+#[tokio::test]
 #[serial_test::serial]
-fn peak_bulk_send_sync() {
+async fn peak_bulk_send_sync() {
     let mut peak = automotive::peak::Peak::new(peak_bitrate_config()).unwrap();
-    bulk_send_sync(&mut peak);
+    bulk_send_sync(&mut peak).await;
 }
 
 #[cfg(feature = "test-peak")]
@@ -202,11 +202,11 @@ async fn peak_bulk_send_async() {
 }
 
 #[cfg(feature = "test-socketcan")]
-#[test]
+#[tokio::test]
 #[serial_test::serial]
-fn socketcan_bulk_send_sync() {
+async fn socketcan_bulk_send_sync() {
     let mut adapter = automotive::socketcan::SocketCan::new("can0").unwrap();
-    bulk_send_sync(&mut adapter);
+    bulk_send_sync(&mut adapter).await;
 }
 
 #[cfg(feature = "test-socketcan")]
@@ -218,11 +218,11 @@ async fn socketcan_bulk_send_async() {
 }
 
 #[cfg(feature = "test-vcan")]
-#[test]
+#[tokio::test]
 #[serial_test::serial]
-fn vcan_bulk_send_sync() {
+async fn vcan_bulk_send_sync() {
     let mut adapter = automotive::socketcan::SocketCan::new("vcan0").unwrap();
-    bulk_send_sync(&mut adapter);
+    bulk_send_sync(&mut adapter).await;
 }
 
 #[cfg(feature = "test-vcan")]

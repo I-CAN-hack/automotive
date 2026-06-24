@@ -269,7 +269,7 @@ impl Peak {
 }
 
 impl CanAdapter for Peak {
-    fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
+    async fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
         while !frames.is_empty() {
             // Pack as many frames as fit into a single USB transfer, remembering
             // the buffer offset at which each frame's record ends.
@@ -314,7 +314,7 @@ impl CanAdapter for Peak {
         Ok(())
     }
 
-    fn recv(&mut self) -> Result<Vec<Frame>> {
+    async fn recv(&mut self) -> Result<Vec<Frame>> {
         let mut buf = [0u8; RX_BUFFER_SIZE];
 
         let n = match self.handle.read_bulk(self.ep_msg_in, &mut buf, RX_TIMEOUT) {

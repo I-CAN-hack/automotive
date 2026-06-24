@@ -1,0 +1,7 @@
+# WebUSB bindings in web-sys are unstable and gated behind this cfg, which must be set for
+# every crate compiled to wasm (including the `automotive` dependency).
+[target.wasm32-unknown-unknown]
+rustflags = ["--cfg=web_sys_unstable_apis"]
+
+[build]
+target = "wasm32-unknown-unknown"
