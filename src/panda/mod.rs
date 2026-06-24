@@ -15,7 +15,11 @@ use tracing::{info, warn};
 
 const USB_VIDS: &[u16] = &[0xbbaa, 0x3801];
 const USB_PIDS: &[u16] = &[0xddee, 0xddcc];
-const EXPECTED_CAN_PACKET_VERSION: u8 = 4;
+// CAN packet versions known to use the wire format implemented in `usb_protocol`.
+// Older firmware hardcoded an incrementing integer (4). Newer firmware derives the
+// version from a hash of the packet definition, so it reports a different value (157)
+// even though the actual packet layout is unchanged.
+const SUPPORTED_CAN_PACKET_VERSIONS: &[u8] = &[4, 157];
 const MAX_BULK_SIZE: usize = 16384;
 const PANDA_BUS_CNT: usize = 3;
 const PANDA_NOMINAL_SAMPLE_POINT: f64 = 0.8;
@@ -95,7 +99,7 @@ impl Panda {
 
             // Check panda firmware version
             let versions = panda.get_packets_versions()?;
-            if versions.can_version != EXPECTED_CAN_PACKET_VERSION {
+            if !SUPPORTED_CAN_PACKET_VERSIONS.contains(&versions.can_version) {
                 return Err(Error::WrongFirmwareVersion.into());
             }
 
