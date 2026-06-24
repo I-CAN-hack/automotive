@@ -32,6 +32,12 @@ fn process<T: CanAdapter>(
     let mut buffer: VecDeque<Frame> = VecDeque::new();
     let mut callbacks: HashMap<BusIdentifier, VecDeque<FrameCallback>> = HashMap::new();
 
+    // Optional hardware flow-control limit. When set, we keep the number of
+    // frames in flight (sent but not yet acknowledged via loopback) plus those
+    // queued to send below this limit so the adapter's buffer is not overrun.
+    let buffer_size = adapter.buffer_size();
+    let mut in_flight: usize = 0;
+
     while shutdown_receiver.try_recv().is_err() {
         let frames: Vec<Frame> = match adapter.recv() {
             Ok(f) => f,
@@ -48,6 +54,8 @@ fn process<T: CanAdapter>(
 
             // Wake up sender
             if frame.loopback {
+                in_flight = in_flight.saturating_sub(1);
+
                 let callback = callbacks
                     .entry((frame.bus, frame.id))
                     .or_default()
@@ -69,25 +77,40 @@ fn process<T: CanAdapter>(
             rx_sender.send(frame).unwrap();
         }
 
+        // Move queued TX frames into the send buffer, respecting the optional
+        // hardware buffer limit.
         // TODO: use poll_recv_many?
-        while let Ok((frame, callback)) = tx_receiver.try_recv() {
-            let mut loopback_frame = frame.clone();
-            loopback_frame.loopback = true;
-
-            // Insert callback into hashmap
-            callbacks
-                .entry((frame.bus, frame.id))
-                .or_default()
-                .push_back((loopback_frame, callback));
-
-            if DEBUG {
-                debug! {"TX {:?}", frame};
+        loop {
+            if let Some(max) = buffer_size {
+                if in_flight + buffer.len() >= max {
+                    break;
+                }
             }
 
-            buffer.push_back(frame);
+            match tx_receiver.try_recv() {
+                Ok((frame, callback)) => {
+                    let mut loopback_frame = frame.clone();
+                    loopback_frame.loopback = true;
+
+                    // Insert callback into hashmap
+                    callbacks
+                        .entry((frame.bus, frame.id))
+                        .or_default()
+                        .push_back((loopback_frame, callback));
+
+                    if DEBUG {
+                        debug! {"TX {:?}", frame};
+                    }
+
+                    buffer.push_back(frame);
+                }
+                Err(_) => break,
+            }
         }
         if !buffer.is_empty() {
+            let queued = buffer.len();
             adapter.send(&mut buffer).unwrap();
+            in_flight += queued - buffer.len();
 
             if !buffer.is_empty() {
                 debug!(
