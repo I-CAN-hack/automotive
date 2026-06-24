@@ -21,7 +21,7 @@ pub enum Error {
     #[error(transparent)]
     IsoTPError(#[from] crate::isotp::Error),
 
-    #[cfg(feature = "panda")]
+    #[cfg(any(feature = "panda", feature = "peak"))]
     #[error(transparent)]
     LibUsbError(#[from] rusb::Error),
     #[error(transparent)]
@@ -42,6 +42,10 @@ pub enum Error {
     #[cfg(feature = "panda")]
     #[error(transparent)]
     PandaError(#[from] crate::panda::Error),
+
+    #[cfg(feature = "peak")]
+    #[error(transparent)]
+    PeakError(#[from] crate::peak::Error),
 }
 
 impl From<tokio_stream::Elapsed> for Error {

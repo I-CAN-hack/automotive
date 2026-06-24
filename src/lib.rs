@@ -105,3 +105,7 @@ pub mod j2534;
 #[cfg(feature = "panda")]
 #[cfg_attr(docsrs, doc(cfg(feature = "panda")))]
 pub mod panda;
+
+#[cfg(feature = "peak")]
+#[cfg_attr(docsrs, doc(cfg(feature = "peak")))]
+pub mod peak;

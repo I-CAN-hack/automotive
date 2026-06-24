@@ -28,6 +28,15 @@ fn panda_bitrate_config() -> automotive::can::bitrate::BitrateConfig {
         .unwrap()
 }
 
+#[cfg(feature = "test-peak")]
+fn peak_bitrate_config() -> automotive::can::bitrate::BitrateConfig {
+    automotive::can::bitrate::BitrateBuilder::new::<automotive::peak::Peak>()
+        .bitrate(500_000)
+        .sample_point(0.8)
+        .build()
+        .unwrap()
+}
+
 #[cfg(feature = "test-vector")]
 fn vector_bitrate_config() -> automotive::can::bitrate::BitrateConfig {
     automotive::can::bitrate::BitrateBuilder::new::<automotive::vector::VectorCan>()
@@ -174,6 +183,22 @@ async fn vector_bulk_send_async() {
     let vector =
         automotive::vector::VectorCan::new_async(0, Some(vector_bitrate_config())).unwrap();
     bulk_send(&vector).await;
+}
+
+#[cfg(feature = "test-peak")]
+#[test]
+#[serial_test::serial]
+fn peak_bulk_send_sync() {
+    let mut peak = automotive::peak::Peak::new(peak_bitrate_config()).unwrap();
+    bulk_send_sync(&mut peak);
+}
+
+#[cfg(feature = "test-peak")]
+#[tokio::test]
+#[serial_test::serial]
+async fn peak_bulk_send_async() {
+    let peak = automotive::peak::Peak::new_async(peak_bitrate_config()).unwrap();
+    bulk_send(&peak).await;
 }
 
 #[cfg(feature = "test-socketcan")]

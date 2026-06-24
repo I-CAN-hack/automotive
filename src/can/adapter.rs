@@ -20,6 +20,21 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
         }
     }
 
+    #[cfg(feature = "peak")]
+    {
+        let bitrate_cfg = crate::can::bitrate::BitrateBuilder::new::<crate::peak::Peak>()
+            .bitrate(500_000)
+            .sample_point(0.8)
+            .data_bitrate(2_000_000)
+            .data_sample_point(0.8)
+            .build()
+            .unwrap();
+
+        if let Ok(peak) = crate::peak::Peak::new_async(bitrate_cfg) {
+            return Ok(peak);
+        }
+    }
+
     #[cfg(all(target_os = "linux", feature = "socketcan"))]
     {
         // TODO: iterate over all available SocketCAN adapters to also find things like vcan0
