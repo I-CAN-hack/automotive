@@ -11,7 +11,7 @@ use std::time::Duration;
 use crate::can::bitrate::{AdapterTimingConst, BitTimingConst, BitrateConfig};
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
 use crate::panda::constants::{Endpoint, HwType, SafetyModel};
-use crate::usb::UsbBackend;
+use crate::usb::{ControlType, Recipient, UsbBackend};
 use crate::Result;
 use tracing::{info, warn};
 
@@ -232,13 +232,29 @@ impl<B: UsbBackend> Panda<B> {
 
     async fn usb_read_control(&self, endpoint: Endpoint, n: usize) -> Result<Vec<u8>> {
         self.backend
-            .read_control(endpoint as u8, 0, 0, n, self.timeout)
+            .read_control(
+                ControlType::Standard,
+                Recipient::Device,
+                endpoint as u8,
+                0,
+                0,
+                n,
+                self.timeout,
+            )
             .await
     }
 
     async fn usb_write_control(&self, endpoint: Endpoint, value: u16, index: u16) -> Result<()> {
         self.backend
-            .write_control(endpoint as u8, value, index, &[], self.timeout)
+            .write_control(
+                ControlType::Standard,
+                Recipient::Device,
+                endpoint as u8,
+                value,
+                index,
+                &[],
+                self.timeout,
+            )
             .await
     }
 }

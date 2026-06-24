@@ -1,7 +1,7 @@
 //! Generic USB backend abstraction.
 //!
-//! This trait abstracts the small set of USB transfer operations that USB-based CAN
-//! adapters (currently the [`crate::panda::Panda`]) need. It allows swapping the
+//! This trait abstracts the USB transfer operations that USB-based CAN adapters (the
+//! [`crate::panda::Panda`] and [`crate::peak::Peak`]) need. It allows swapping the
 //! underlying USB implementation, e.g. [`rusb`](https://crates.io/crates/rusb) on native
 //! platforms, or WebUSB when targeting the browser (`wasm32`).
 //!
@@ -9,10 +9,9 @@
 //! [`RusbBackend`] implementation simply performs the equivalent blocking `rusb` call and
 //! returns immediately, so it can be driven with a trivial `block_on` from the existing
 //! blocking [`crate::can::CanAdapter`] path.
-//!
-//! Direction is implied by the method: `read_*` performs an IN transfer, `write_*`
-//! performs an OUT transfer. Control transfers use the Standard request type and Device
-//! recipient, which is all the panda protocol requires.
+
+// Control transfers inherently take type/recipient/request/value/index/len/timeout.
+#![allow(clippy::too_many_arguments)]
 
 use std::time::Duration;
 
@@ -28,24 +27,45 @@ mod webusb;
 #[cfg(all(target_arch = "wasm32", feature = "webusb"))]
 pub use webusb::WebUsbBackend;
 
+/// Control-transfer request type (the `type` field of `bmRequestType`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ControlType {
+    Standard,
+    Class,
+    Vendor,
+}
+
+/// Control-transfer recipient (the `recipient` field of `bmRequestType`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Recipient {
+    Device,
+    Interface,
+    Endpoint,
+    Other,
+}
+
 /// Asynchronous USB backend used by USB-based CAN adapters.
 ///
-/// The `read_*`/`write_*` methods map directly onto libusb-style bulk and control
-/// transfers. `endpoint` keeps the libusb convention (the direction bit is set for IN
-/// endpoints, e.g. `0x81`); WebUSB backends mask it off (`endpoint & 0x7f`).
+/// `endpoint` keeps the libusb convention (the direction bit is set for IN endpoints, e.g.
+/// `0x81`); WebUSB backends mask it off (`endpoint & 0x7f`).
 #[allow(async_fn_in_trait)]
 pub trait UsbBackend {
-    /// Perform a bulk IN transfer from `endpoint`, returning up to `max_len` bytes.
+    /// Perform a bulk IN transfer from `endpoint`, returning up to `max_len` bytes. A read
+    /// that times out returns an empty vector (rather than an error) so callers can poll
+    /// without special-casing each backend's timeout representation.
     async fn read_bulk(&self, endpoint: u8, max_len: usize, timeout: Duration)
         -> Result<Vec<u8>>;
 
-    /// Perform a bulk OUT transfer of `data` to `endpoint`.
-    async fn write_bulk(&self, endpoint: u8, data: &[u8], timeout: Duration) -> Result<()>;
+    /// Perform a bulk OUT transfer of `data` to `endpoint`, returning the number of bytes
+    /// actually written (which may be less than `data.len()` on a short write or timeout).
+    async fn write_bulk(&self, endpoint: u8, data: &[u8], timeout: Duration) -> Result<usize>;
 
-    /// Perform a Standard/Device control IN transfer, returning up to `len` bytes.
+    /// Perform a control IN transfer, returning up to `len` bytes (empty on timeout).
     /// `request` is the `bRequest` value.
     async fn read_control(
         &self,
+        ctrl_type: ControlType,
+        recipient: Recipient,
         request: u8,
         value: u16,
         index: u16,
@@ -53,9 +73,11 @@ pub trait UsbBackend {
         timeout: Duration,
     ) -> Result<Vec<u8>>;
 
-    /// Perform a Standard/Device control OUT transfer. `request` is the `bRequest` value.
+    /// Perform a control OUT transfer. `request` is the `bRequest` value.
     async fn write_control(
         &self,
+        ctrl_type: ControlType,
+        recipient: Recipient,
         request: u8,
         value: u16,
         index: u16,

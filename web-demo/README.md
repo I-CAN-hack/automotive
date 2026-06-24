@@ -1,9 +1,23 @@
 # automotive — WebUSB CAN demo
 
-A minimal browser app that connects to the first available comma.ai panda over **WebUSB**
-and prints incoming CAN frames. It uses the same `automotive::can::AsyncCanAdapter` API as
-the native adapters — the only difference is the panda is connected with
-`Panda::connect_async(...)` (WebUSB) instead of `Panda::new_async(...)` (libusb).
+A minimal browser app that connects to a CAN adapter over **WebUSB** and prints incoming
+CAN frames. It supports the comma.ai **panda** and the **PEAK PCAN-USB FD** family, using
+the same `automotive::can::AsyncCanAdapter` API as the native adapters — the only
+difference is the adapter is connected with `connect_async(...)` (WebUSB) instead of
+`new_async(...)` (libusb).
+
+## PEAK on Linux: unbind the kernel driver first
+
+WebUSB cannot detach an in-kernel driver. On Linux the PCAN-USB FD is claimed by the
+`peak_usb` module, so the browser's `claimInterface` will fail until you unbind it:
+
+```sh
+# Find the device's USB path, then unbind it from peak_usb:
+echo -n '1-2:1.0' | sudo tee /sys/bus/usb/drivers/peak_usb/unbind
+```
+
+(Replace `1-2:1.0` with your device's `<bus>-<port>:1.0` from `ls /sys/bus/usb/drivers/peak_usb/`.)
+Alternatively blocklist `peak_usb`. The panda has no kernel driver and needs none of this.
 
 ## Requirements
 

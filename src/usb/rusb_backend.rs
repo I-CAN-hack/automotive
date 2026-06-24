@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use crate::usb::UsbBackend;
+use crate::usb::{ControlType, Recipient, UsbBackend};
 use crate::Result;
 
 /// USB backend using `rusb` (libusb). Each async method performs the equivalent blocking
@@ -12,11 +12,15 @@ pub struct RusbBackend {
 }
 
 impl RusbBackend {
-    /// Scan for the first connected device matching any of `vids`/`pids`, open it, and
-    /// claim interface 0. Returns [`crate::Error::NotFound`] if no matching device exists.
+    /// Scan for the first connected device matching any of `vids`/`pids`, open it, detach
+    /// any in-kernel driver, and claim interface 0. Returns [`crate::Error::NotFound`] if
+    /// no matching device exists.
     pub fn open_first(vids: &[u16], pids: &[u16]) -> Result<Self> {
-        for device in rusb::devices().unwrap().iter() {
-            let device_desc = device.device_descriptor().unwrap();
+        for device in rusb::devices()?.iter() {
+            let device_desc = match device.device_descriptor() {
+                Ok(desc) => desc,
+                Err(_) => continue,
+            };
 
             if !vids.contains(&device_desc.vendor_id()) {
                 continue;
@@ -26,11 +30,29 @@ impl RusbBackend {
             }
 
             let handle = device.open()?;
+            // Detach the in-kernel driver (e.g. `peak_usb`) if bound, so we can claim the
+            // interface for raw access. A no-op for devices with no kernel driver.
+            handle.set_auto_detach_kernel_driver(true).ok();
             handle.claim_interface(0)?;
             return Ok(RusbBackend { handle });
         }
         Err(crate::Error::NotFound)
     }
+}
+
+fn request_type(dir: rusb::Direction, ctrl_type: ControlType, recipient: Recipient) -> u8 {
+    let ty = match ctrl_type {
+        ControlType::Standard => rusb::RequestType::Standard,
+        ControlType::Class => rusb::RequestType::Class,
+        ControlType::Vendor => rusb::RequestType::Vendor,
+    };
+    let recip = match recipient {
+        Recipient::Device => rusb::Recipient::Device,
+        Recipient::Interface => rusb::Recipient::Interface,
+        Recipient::Endpoint => rusb::Recipient::Endpoint,
+        Recipient::Other => rusb::Recipient::Other,
+    };
+    rusb::request_type(dir, ty, recip)
 }
 
 impl UsbBackend for RusbBackend {
@@ -41,52 +63,70 @@ impl UsbBackend for RusbBackend {
         timeout: Duration,
     ) -> Result<Vec<u8>> {
         let mut buf = vec![0u8; max_len];
-        let n = self.handle.read_bulk(endpoint, &mut buf, timeout)?;
-        buf.truncate(n);
-        Ok(buf)
+        match self.handle.read_bulk(endpoint, &mut buf, timeout) {
+            Ok(n) => {
+                buf.truncate(n);
+                Ok(buf)
+            }
+            Err(rusb::Error::Timeout) => Ok(vec![]),
+            Err(rusb::Error::NoDevice) => Err(crate::Error::Disconnected),
+            Err(e) => Err(e.into()),
+        }
     }
 
-    async fn write_bulk(&self, endpoint: u8, data: &[u8], timeout: Duration) -> Result<()> {
-        self.handle.write_bulk(endpoint, data, timeout)?;
-        Ok(())
+    async fn write_bulk(&self, endpoint: u8, data: &[u8], timeout: Duration) -> Result<usize> {
+        match self.handle.write_bulk(endpoint, data, timeout) {
+            Ok(n) => Ok(n),
+            Err(rusb::Error::Timeout) => Ok(0),
+            Err(rusb::Error::NoDevice) => Err(crate::Error::Disconnected),
+            Err(e) => Err(e.into()),
+        }
     }
 
     async fn read_control(
         &self,
+        ctrl_type: ControlType,
+        recipient: Recipient,
         request: u8,
         value: u16,
         index: u16,
         len: usize,
         timeout: Duration,
     ) -> Result<Vec<u8>> {
-        let request_type = rusb::request_type(
-            rusb::Direction::In,
-            rusb::RequestType::Standard,
-            rusb::Recipient::Device,
-        );
+        let rt = request_type(rusb::Direction::In, ctrl_type, recipient);
         let mut buf = vec![0u8; len];
-        let n = self
+        match self
             .handle
-            .read_control(request_type, request, value, index, &mut buf, timeout)?;
-        buf.truncate(n);
-        Ok(buf)
+            .read_control(rt, request, value, index, &mut buf, timeout)
+        {
+            Ok(n) => {
+                buf.truncate(n);
+                Ok(buf)
+            }
+            Err(rusb::Error::Timeout) => Ok(vec![]),
+            Err(rusb::Error::NoDevice) => Err(crate::Error::Disconnected),
+            Err(e) => Err(e.into()),
+        }
     }
 
     async fn write_control(
         &self,
+        ctrl_type: ControlType,
+        recipient: Recipient,
         request: u8,
         value: u16,
         index: u16,
         data: &[u8],
         timeout: Duration,
     ) -> Result<()> {
-        let request_type = rusb::request_type(
-            rusb::Direction::Out,
-            rusb::RequestType::Standard,
-            rusb::Recipient::Device,
-        );
-        self.handle
-            .write_control(request_type, request, value, index, data, timeout)?;
-        Ok(())
+        let rt = request_type(rusb::Direction::Out, ctrl_type, recipient);
+        match self
+            .handle
+            .write_control(rt, request, value, index, data, timeout)
+        {
+            Ok(_) => Ok(()),
+            Err(rusb::Error::NoDevice) => Err(crate::Error::Disconnected),
+            Err(e) => Err(e.into()),
+        }
     }
 }

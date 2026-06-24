@@ -8,7 +8,7 @@ publish = false
 [workspace]
 
 [dependencies]
-automotive = { path = "..", features = ["panda", "webusb"] }
+automotive = { path = "..", features = ["panda", "peak", "webusb"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 console_error_panic_hook = "0.1"
