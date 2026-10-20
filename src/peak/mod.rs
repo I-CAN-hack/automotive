@@ -76,6 +76,8 @@ const PEAK_TIMING_CONST: AdapterTimingConst = AdapterTimingConst {
 /// Blocking implementation of the PEAK PCAN-USB FD adapter.
 pub struct Peak {
     tx_timeout: Option<Duration>,
+    /// Hardware TX may contain frames until the next successful queue clear.
+    tx_queue_dirty: bool,
     buffered_rx: VecDeque<Frame>,
     handle: rusb::DeviceHandle<rusb::GlobalContext>,
     /// CAN channel index (0 for single-channel devices like the PCAN-USB FD).
@@ -147,6 +149,8 @@ impl Peak {
 
             let mut peak = Peak {
                 tx_timeout: config.tx_timeout,
+                // A previous process may have left transmissions in hardware.
+                tx_queue_dirty: true,
                 buffered_rx: VecDeque::new(),
                 handle,
                 channel: 0,
@@ -270,6 +274,11 @@ impl CanAdapter for Peak {
     }
 
     fn cancel_pending_tx(&mut self) -> Result<()> {
+        // new() already clears a fresh adapter. Wrapping it in AsyncCanAdapter
+        // must not repeat that handshake unless sync sends occurred meanwhile.
+        if !self.tx_queue_dirty {
+            return Ok(());
+        }
         self.send_commands(&[
             protocol::cmd_abort_tx(self.channel),
             protocol::cmd_rx_barrier(self.channel),
@@ -285,6 +294,7 @@ impl CanAdapter for Peak {
                     self.buffered_rx
                         .extend(frames.into_iter().filter(|frame| !frame.loopback));
                     if protocol::has_rx_barrier(data, self.channel) {
+                        self.tx_queue_dirty = false;
                         return Ok(());
                     }
                 }
@@ -313,6 +323,8 @@ impl CanAdapter for Peak {
             }
             buf.extend_from_slice(&[0u8; 4]); // zero-size record: end of list
 
+            // A short write or USB timeout may still submit part of the buffer.
+            self.tx_queue_dirty = true;
             match self.handle.write_bulk(self.ep_msg_out, &buf, TX_TIMEOUT) {
                 Ok(written) => {
                     // Only frames whose record was fully transmitted are sent;
