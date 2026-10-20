@@ -13,12 +13,13 @@
 //!     let adapter = automotive::can::get_adapter()?;
 //!     let mut stream = adapter.recv();
 //!
-//!     let frame = automotive::can::Frame::new(0, 0x541.into(), &[0xff; 8])?;
+//!     let frame = automotive::can::Frame::builder(0x541.try_into()?).data([0xff; 8]).build()?;
 //!     adapter.send(&frame).await?;
 //!
 //!     while let Some(frame) = stream.next().await {
-//!         let id: u32 = frame.id.into();
-//!         println!("[{}]\t0x{:x}\t{}", frame.bus, id, hex::encode(frame.data));
+//!         let Some(id) = frame.id() else { continue };
+//!         let id = id.as_raw();
+//!         println!("[{}]\t0x{:x}\t{}", frame.bus, id, hex::encode(frame.data()));
 //!     }
 //!     Ok(())
 //! }

@@ -6,12 +6,7 @@ pub use crate::vector::bindings::{
     XLaccess, XLcanFdConf, XLcanRxEvent, XLcanTxEvent, XLportHandle,
 };
 
-pub static DLC_TO_LEN: &[usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64];
-pub static LEN_TO_DLC: &[u8] = &[
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 9, 0, 0, 0, 10, 0, 0, 0, 11, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0,
-    0, 13, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 15,
-];
+use crate::can::{FrameContent, DLC_TO_LEN};
 
 pub const XL_CAN_EV_TAG_TX_MSG: u16 = 0x440;
 
@@ -150,28 +145,40 @@ impl From<BitrateConfig> for XLcanFdConf {
     }
 }
 
-impl From<crate::can::Frame> for XLcanTxEvent {
-    fn from(frame: crate::can::Frame) -> Self {
-        let can_id = match frame.id {
-            crate::can::Identifier::Standard(id) => id,
-            crate::can::Identifier::Extended(id) => id | xl::XL_CAN_EXT_MSG_ID,
-        };
-        let flags = match frame.fd {
-            true => xl::XL_CAN_TXMSG_FLAG_EDL,
-            false => 0,
-        };
+impl TryFrom<&crate::can::Frame> for XLcanTxEvent {
+    type Error = crate::Error;
 
-        // TODO: move calculation to can::Frame?
-        let dlc = LEN_TO_DLC[frame.data.len()];
-
-        // Copy data into array
+    fn try_from(frame: &crate::can::Frame) -> crate::Result<Self> {
+        let id = frame.id().ok_or(crate::Error::NotSupported)?;
+        let can_id = id.as_raw()
+            | if id.is_extended() {
+                xl::XL_CAN_EXT_MSG_ID
+            } else {
+                0
+            };
+        let mut flags = 0;
+        match frame.content() {
+            FrameContent::Fd(fd) => {
+                if fd.esi() {
+                    return Err(crate::Error::NotSupported);
+                }
+                flags |= xl::XL_CAN_TXMSG_FLAG_EDL;
+                if fd.brs() {
+                    flags |= xl::XL_CAN_TXMSG_FLAG_BRS;
+                }
+            }
+            FrameContent::Remote(_) => flags |= xl::XL_CAN_TXMSG_FLAG_RTR,
+            FrameContent::Classic(_) => {}
+            FrameContent::Error(_) => return Err(crate::Error::NotSupported),
+        }
+        let dlc = frame.dlc().ok_or(crate::Error::NotSupported)?;
         let mut data = [0; xl::XL_CAN_MAX_DATA_LEN as usize];
-        data[..frame.data.len()].copy_from_slice(&frame.data);
+        data[..frame.data().len()].copy_from_slice(frame.data());
 
-        Self {
+        Ok(Self {
             tag: XL_CAN_EV_TAG_TX_MSG,
-            transId: 0,      // Internal use
-            channelIndex: 0, // Internal use. The accessMask parameter of xlCanTransmitEx() specifies which channels send the message
+            transId: 0,
+            channelIndex: 0, // The transmit accessMask specifies the channel.
             reserved: [0, 0, 0],
             tagData: xl::XLcanTxEvent__bindgen_ty_1 {
                 canMsg: xl::XL_CAN_TX_MSG {
@@ -182,7 +189,7 @@ impl From<crate::can::Frame> for XLcanTxEvent {
                     data,
                 },
             },
-        }
+        })
     }
 }
 
@@ -190,27 +197,45 @@ impl TryFrom<XLcanRxEvent> for crate::can::Frame {
     type Error = ();
 
     fn try_from(event: XLcanRxEvent) -> Result<Self, Self::Error> {
-        let tag = RxTags::from_repr(event.tag).unwrap();
+        let tag = RxTags::from_repr(event.tag).ok_or(())?;
 
         match tag {
             RxTags::XL_CAN_EV_TAG_TX_OK | RxTags::XL_CAN_EV_TAG_RX_OK => {
                 let frame = unsafe { event.tagData.canRxOkMsg }; // Same type for both rx and tx
                 let loopback = tag == RxTags::XL_CAN_EV_TAG_TX_OK;
 
-                let id = match frame.canId & xl::XL_CAN_EXT_MSG_ID != 0 {
-                    false => crate::can::Identifier::Standard(frame.canId & 0x7ff),
-                    true => crate::can::Identifier::Extended(frame.canId & 0x1fffffff),
-                };
-                let len = DLC_TO_LEN[frame.dlc as usize];
+                let id = if frame.canId & xl::XL_CAN_EXT_MSG_ID != 0 {
+                    crate::can::Identifier::extended(frame.canId & 0x1fff_ffff)
+                } else {
+                    crate::can::Identifier::standard(frame.canId & 0x7ff)
+                }
+                .map_err(|_| ())?;
                 let fd = frame.msgFlags & xl::XL_CAN_RXMSG_FLAG_EDL != 0;
-
-                Ok(Self {
-                    bus: 0, // TODO: perform proper mapping based on xlGetChannelIndex,
-                    id,
-                    data: frame.data[..len].into(),
-                    loopback,
-                    fd,
-                })
+                let rtr = frame.msgFlags & xl::XL_CAN_RXMSG_FLAG_RTR != 0;
+                let len = *DLC_TO_LEN.get(frame.dlc as usize).ok_or(())?;
+                if rtr {
+                    if fd {
+                        return Err(());
+                    }
+                    return Self::remote_builder(id, frame.dlc)
+                        .loopback(loopback)
+                        .build()
+                        .map_err(|_| ());
+                }
+                let len = if fd { len } else { len.min(8) };
+                let builder = Self::builder(id)
+                    .loopback(loopback)
+                    .data(&frame.data[..len]);
+                if fd {
+                    builder
+                        .fd()
+                        .brs(frame.msgFlags & xl::XL_CAN_RXMSG_FLAG_BRS != 0)
+                        .esi(frame.msgFlags & xl::XL_CAN_RXMSG_FLAG_ESI != 0)
+                        .build()
+                } else {
+                    builder.build()
+                }
+                .map_err(|_| ())
             }
             RxTags::XL_CAN_EV_TAG_CHIP_STATE | RxTags::XL_CAN_EV_TAG_TX_ERROR => {
                 Err(()) // Ignore these for now

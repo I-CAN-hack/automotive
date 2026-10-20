@@ -39,16 +39,51 @@ async fn can_example() -> automotive::Result<()> {
     let adapter = automotive::can::get_adapter()?;
     let mut stream = adapter.recv();
 
-    let frame = automotive::can::Frame::new(0, 0x541.into(), &[0xff; 8])?;
+    let frame = automotive::can::Frame::builder(0x541.try_into()?).data([0xff; 8]).build()?;
     adapter.send(&frame).await?;
 
     while let Some(frame) = stream.next().await {
-        let id: u32 = frame.id.into();
-        println!("[{}]\t0x{:x}\t{}", frame.bus, id, hex::encode(frame.data));
+        let Some(id) = frame.id() else { continue };
+        let id = id.as_raw();
+        println!("[{}]\t0x{:x}\t{}", frame.bus, id, hex::encode(frame.data()));
     }
     Ok(())
 }
 ```
+
+## Building CAN frames
+
+Choose the frame format explicitly with the builder. Payloads are ordinary
+`Vec<u8>` values; construction checks the length without padding or truncating.
+
+```rust
+use automotive::can::{ErrorFlag, Frame, Identifier};
+
+# fn example() -> automotive::Result<()> {
+let id = Identifier::standard(0x123)?;
+let classic = Frame::builder(id).data(vec![1, 2, 3]).build()?;
+let fd = Frame::builder(id).fd().brs(true).data(vec![0xaa; 12]).build()?;
+let remote = Frame::remote_builder(id, 8).bus(1).build()?;
+let error = Frame::error_builder(ErrorFlag::Active).build()?;
+# Ok(())
+# }
+```
+
+Classic frames accept zero to eight bytes. FD frames accept lengths 0–8, 12,
+16, 20, 24, 32, 48, and 64, including short FD frames. Only FD builders expose
+`brs` and `esi`. Remote requests have a four-bit DLC and no payload; error frames
+have an active or passive error flag and no arbitration ID, DLC, or payload.
+Error frames can be represented, but adapters do not currently transmit them.
+Adapters return an error for frame types or options their protocol cannot encode.
+BRS is selected per frame and requires a configured data bitrate on PEAK adapters.
+
+Frame fields `id`, `data`, and `fd` are now accessed through `id()`, `data()`,
+and `is_fd()`. `id()` returns `None` for error frames. Use `content()` to match on
+`FrameContent` and access type-specific information. Identifiers use checked
+`Identifier::standard(...)`, `Identifier::extended(...)`, or `u32::try_into()`
+construction. An explicitly extended ID keeps its format even when its value
+fits in 11 bits. Serde deserialization applies the same validation, using the new
+`content` enum in place of the old flat frame fields.
 
 ## Adapter configuration
 

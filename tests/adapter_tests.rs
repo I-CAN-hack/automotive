@@ -62,7 +62,7 @@ fn get_test_frames(amount: usize) -> Vec<Frame> {
     frames.push(
         Frame::new(
             0,
-            Identifier::Extended(0x1234),
+            Identifier::extended(0x1234).unwrap(),
             &[0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA],
         )
         .unwrap(),
@@ -72,18 +72,18 @@ fn get_test_frames(amount: usize) -> Vec<Frame> {
     frames.push(
         Frame::new(
             0,
-            Identifier::Extended(0x123),
+            Identifier::extended(0x123).unwrap(),
             &[0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA],
         )
         .unwrap(),
     );
 
     // Zero length data
-    frames.push(Frame::new(0, 0x0.into(), &[]).unwrap());
+    frames.push(Frame::new(0, 0x0.try_into().unwrap(), &[]).unwrap());
 
     // Add bulk
     for i in 0..amount {
-        frames.push(Frame::new(0, 0x123.into(), &i.to_be_bytes()).unwrap());
+        frames.push(Frame::new(0, 0x123.try_into().unwrap(), &i.to_be_bytes()).unwrap());
     }
 
     frames
@@ -249,7 +249,7 @@ async fn vcan_send_fd() {
     let adapter =
         automotive::socketcan::SocketCan::new_async(SocketCanConfig::new("vcan0")).unwrap();
     adapter
-        .send(&Frame::new(0, 0x123.into(), &[0u8; 64]).unwrap())
+        .send(&Frame::new(0, 0x123.try_into().unwrap(), &[0u8; 64]).unwrap())
         .await
         .unwrap();
 }

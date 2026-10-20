@@ -55,14 +55,15 @@ impl CanFdSocket {
     }
 
     pub fn write_frame(&self, frame: &Frame) -> std::io::Result<()> {
-        match frame.fd {
+        let invalid_frame = |error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error);
+        match frame.is_fd() {
             true => {
-                let frame = canfd_frame::from(frame);
+                let frame = canfd_frame::try_from(frame).map_err(invalid_frame)?;
                 let bytes = as_bytes(&frame);
                 self.as_raw_socket().write_all(bytes)
             }
             false => {
-                let frame = can_frame::from(frame);
+                let frame = can_frame::try_from(frame).map_err(invalid_frame)?;
                 let bytes = as_bytes(&frame);
                 self.as_raw_socket().write_all(bytes)
             }
@@ -92,7 +93,8 @@ impl CanFdSocket {
                 let mut ret = can_frame_default();
                 as_bytes_mut(&mut ret).copy_from_slice(&frame);
 
-                let mut frame = Frame::from(ret);
+                let mut frame = Frame::try_from(ret)
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
                 frame.loopback = loopback;
                 Ok(frame)
             }
@@ -107,8 +109,8 @@ impl CanFdSocket {
                 let mut ret = canfd_frame_default();
                 as_bytes_mut(&mut ret).copy_from_slice(&frame);
 
-                let mut frame = Frame::from(ret);
-                frame.fd = true;
+                let mut frame = Frame::try_from(ret)
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
                 frame.loopback = loopback;
                 Ok(frame)
             }

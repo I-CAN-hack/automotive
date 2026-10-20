@@ -363,7 +363,9 @@ fn isotp_rx_thread(
                     continue;
                 }
 
-                let src_id = parse_can_id(&msg);
+                let Ok(src_id) = parse_can_id(&msg) else {
+                    continue;
+                };
                 let src_raw: u32 = src_id.into();
                 if let Some(ext_address) = ext_address {
                     let actual_ext_address = msg.data[4];

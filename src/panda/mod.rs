@@ -243,8 +243,10 @@ impl CanAdapter for Panda {
             return Ok(());
         }
 
-        let frames: Vec<Frame> = frames.drain(..).collect();
-        let buf = usb_protocol::pack_can_buffer(&frames)?;
+        // Validate/encode before removing anything from the queue. Unsupported
+        // frame types must remain queued when encoding returns an error.
+        let buf = usb_protocol::pack_can_buffer(frames.make_contiguous())?;
+        frames.clear();
 
         for chunk in buf {
             self.handle

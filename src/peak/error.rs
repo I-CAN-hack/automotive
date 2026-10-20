@@ -3,6 +3,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq, Clone)]
 pub enum Error {
+    #[error("Unsupported CAN frame type")]
+    UnsupportedFrame,
     /// A frame had a payload length that is not a valid CAN(-FD) length.
     #[error("Malformed Frame")]
     MalformedFrame,
