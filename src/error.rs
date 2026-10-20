@@ -13,10 +13,17 @@ pub enum Error {
     MalformedFrame,
     #[error("Invalid bitrate: {0}")]
     InvalidBitrate(String),
+    #[error("Invalid adapter configuration: {0}")]
+    InvalidAdapterConfig(String),
     #[error("Timeout")]
     Timeout,
+    #[error("Transmission cancelled by a transmit queue clear")]
+    Cancelled,
     #[error("Disconnected")]
     Disconnected,
+
+    #[error(transparent)]
+    IoError(std::sync::Arc<std::io::Error>),
 
     #[error(transparent)]
     IsoTPError(#[from] crate::isotp::Error),
@@ -51,6 +58,12 @@ pub enum Error {
 impl From<crate::can::bitrate::BitrateError> for Error {
     fn from(error: crate::can::bitrate::BitrateError) -> Self {
         Self::InvalidBitrate(error.to_string())
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(error: std::io::Error) -> Self {
+        Self::IoError(std::sync::Arc::new(error))
     }
 }
 

@@ -14,7 +14,7 @@
 //!     let mut stream = adapter.recv();
 //!
 //!     let frame = automotive::can::Frame::new(0, 0x541.into(), &[0xff; 8])?;
-//!     adapter.send(&frame).await;
+//!     adapter.send(&frame).await?;
 //!
 //!     while let Some(frame) = stream.next().await {
 //!         let id: u32 = frame.id.into();

@@ -22,6 +22,7 @@ pub use error::Error;
 use std::collections::VecDeque;
 use std::time::Duration;
 
+use crate::can::adapter::validate_tx_timeout;
 use crate::can::bitrate::{AdapterTimingConst, BitTimingConst, BitrateConfig};
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
 use crate::peak::constants::*;
@@ -75,6 +76,10 @@ const PEAK_TIMING_CONST: AdapterTimingConst = AdapterTimingConst {
 
 /// Blocking implementation of the PEAK PCAN-USB FD adapter.
 pub struct Peak {
+    tx_timeout: Option<Duration>,
+    /// Hardware TX may contain frames until the next successful queue clear.
+    tx_queue_dirty: bool,
+    buffered_rx: VecDeque<Frame>,
     handle: rusb::DeviceHandle<rusb::GlobalContext>,
     /// CAN channel index (0 for single-channel devices like the PCAN-USB FD).
     channel: u8,
@@ -104,6 +109,7 @@ impl Peak {
     /// The in-kernel `peak_usb` driver, if bound, is detached automatically.
     pub fn new(config: PeakConfig) -> Result<Peak> {
         let bitrate_cfg = config.bitrate;
+        validate_tx_timeout(config.tx_timeout)?;
         for device in rusb::devices()?.iter() {
             let desc = match device.device_descriptor() {
                 Ok(desc) => desc,
@@ -142,7 +148,11 @@ impl Peak {
                     (DEFAULT_EP_CMD_OUT, DEFAULT_EP_MSG_OUT, DEFAULT_EP_MSG_IN)
                 };
 
-            let peak = Peak {
+            let mut peak = Peak {
+                tx_timeout: config.tx_timeout,
+                // A previous process may have left transmissions in hardware.
+                tx_queue_dirty: true,
+                buffered_rx: VecDeque::new(),
                 handle,
                 channel: 0,
                 ep_cmd_out,
@@ -155,11 +165,11 @@ impl Peak {
             // Tell the device a host driver is now in control.
             peak.set_driver_loaded(true)?;
 
-            // Apply clock, bit timing, filters and go bus-on.
+            // Configure while reset, then clear old TX before going bus-on.
             peak.configure(&bitrate_cfg)?;
 
-            // Drop anything buffered from before we took over.
-            peak.flush_rx()?;
+            // Drop anything buffered from before we took over and go bus-on.
+            peak.cancel_pending_tx()?;
 
             info!(
                 "Connected to PEAK PCAN-USB FD (fw v{}.{}.{}, channel {})",
@@ -221,7 +231,7 @@ impl Peak {
         Ok(())
     }
 
-    /// Configure clock, bit timing and filters, then bring the bus up.
+    /// Configure clock, bit timing and filters while keeping the bus off.
     fn configure(&self, cfg: &BitrateConfig) -> Result<()> {
         let ch = self.channel;
 
@@ -238,6 +248,11 @@ impl Peak {
         // Accept every standard ID. Extended IDs are not affected by this filter.
         self.send_commands(&protocol::cmd_filter_accept_all(ch))?;
 
+        Ok(())
+    }
+
+    fn set_bus_on(&self) -> Result<()> {
+        let ch = self.channel;
         // Bring the bus up: clear error counters, select ISO CAN-FD framing if
         // the firmware supports it, then enter normal mode.
         let mut bus_on = vec![protocol::cmd_reset_error_counters(ch)];
@@ -245,33 +260,64 @@ impl Peak {
             bus_on.push(protocol::cmd_set_fd_iso(ch, true));
         }
         bus_on.push(protocol::cmd_normal_mode(ch));
-        self.send_commands(&bus_on)?;
-
-        Ok(())
+        self.send_commands(&bus_on)
     }
 
     fn set_bus_off(&self) -> Result<()> {
         self.send_commands(&[protocol::cmd_reset_mode(self.channel)])
     }
+}
 
-    /// Drain any frames the device has already buffered.
-    fn flush_rx(&self) -> Result<()> {
+impl CanAdapter for Peak {
+    fn supports_tx_timeout() -> bool {
+        true
+    }
+
+    fn tx_timeout(&self) -> Option<Duration> {
+        self.tx_timeout
+    }
+
+    fn cancel_pending_tx(&mut self) -> Result<()> {
+        // new() already clears a fresh adapter. Wrapping it in AsyncCanAdapter
+        // must not repeat that handshake unless sync sends occurred meanwhile.
+        if !self.tx_queue_dirty {
+            return Ok(());
+        }
+        // The kernel pcan_usb_fd_set_bus() and PEAK canfd_set_bus_off() use
+        // RESET_MODE for USB. RB replies are synchronized in their PCIe paths
+        // (peak_pciefd_main.c / pcanfd_pci.c), not their USB paths. Don't make
+        // USB opening/recovery depend on an RX_BARRIER reply. Stop the core and
+        // flush TX before draining old completions, then restore bus operation.
+        self.send_commands(&[
+            protocol::cmd_reset_mode(self.channel),
+            protocol::cmd_abort_tx(self.channel),
+        ])?;
+        self.buffered_rx.retain(|frame| !frame.loopback);
+        let deadline = std::time::Instant::now() + CMD_TIMEOUT;
         let mut buf = [0u8; RX_BUFFER_SIZE];
-        loop {
+        while std::time::Instant::now() < deadline {
             match self
                 .handle
                 .read_bulk(self.ep_msg_in, &mut buf, FLUSH_TIMEOUT)
             {
-                Ok(0) => return Ok(()),
-                Ok(_) => continue,
-                Err(rusb::Error::Timeout) => return Ok(()),
-                Err(e) => return Err(e.into()),
+                Ok(0) | Err(rusb::Error::Timeout) => {
+                    self.set_bus_on()?;
+                    self.tx_queue_dirty = false;
+                    return Ok(());
+                }
+                Ok(n) => {
+                    let data = &buf[..n];
+                    let (frames, _) = protocol::parse_rx_buffer(data);
+                    // Preserve bus traffic, but discard old TX completions.
+                    self.buffered_rx
+                        .extend(frames.into_iter().filter(|frame| !frame.loopback));
+                }
+                Err(error) => return Err(error.into()),
             }
         }
+        Err(crate::Error::Timeout)
     }
-}
 
-impl CanAdapter for Peak {
     fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
         while !frames.is_empty() {
             // Pack as many frames as fit into a single USB transfer, remembering
@@ -290,6 +336,8 @@ impl CanAdapter for Peak {
             }
             buf.extend_from_slice(&[0u8; 4]); // zero-size record: end of list
 
+            // A short write or USB timeout may still submit part of the buffer.
+            self.tx_queue_dirty = true;
             match self.handle.write_bulk(self.ep_msg_out, &buf, TX_TIMEOUT) {
                 Ok(written) => {
                     // Only frames whose record was fully transmitted are sent;
@@ -322,7 +370,7 @@ impl CanAdapter for Peak {
 
         let n = match self.handle.read_bulk(self.ep_msg_in, &mut buf, RX_TIMEOUT) {
             Ok(n) => n,
-            Err(rusb::Error::Timeout) => return Ok(vec![]),
+            Err(rusb::Error::Timeout) => return Ok(self.buffered_rx.drain(..).collect()),
             Err(rusb::Error::NoDevice) => return Err(crate::Error::Disconnected),
             Err(e) => return Err(e.into()),
         };
@@ -334,7 +382,8 @@ impl CanAdapter for Peak {
                 overruns
             );
         }
-        Ok(frames)
+        self.buffered_rx.extend(frames);
+        Ok(self.buffered_rx.drain(..).collect())
     }
 
     /// The device has a finite TX/RX FIFO, so cap the number of frames in flight.

@@ -225,7 +225,7 @@ pub fn xl_can_transmit_ex(
         );
 
         match status as u32 {
-            xl::XL_SUCCESS => Ok(msg_cnt_sent),
+            xl::XL_SUCCESS | xl::XL_ERR_QUEUE_IS_FULL => Ok(msg_cnt_sent),
             _ => Err(Error::DriverError(format!("xlCanTransmitEx failed, err {}", status)).into()),
         }
     }

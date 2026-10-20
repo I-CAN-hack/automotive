@@ -40,7 +40,7 @@ async fn can_example() -> automotive::Result<()> {
     let mut stream = adapter.recv();
 
     let frame = automotive::can::Frame::new(0, 0x541.into(), &[0xff; 8])?;
-    adapter.send(&frame).await;
+    adapter.send(&frame).await?;
 
     while let Some(frame) = stream.next().await {
         let id: u32 = frame.id.into();
@@ -101,6 +101,44 @@ let adapter = VectorCan::new_async(config)?;
 Each adapter's configuration types live in its `config.rs` module and are
 re-exported from the adapter module.
 
+## Transmit timeouts
+
+Vector and PEAK default to a one-second transmit timeout. Set it using the
+adapter config builder's `.tx_timeout(Duration)` method, or disable it with
+`.without_tx_timeout()`. Their configs expose the corresponding `tx_timeout`
+field; `None` disables the deadline. A zero timeout is rejected with
+`Error::InvalidAdapterConfig` when opening the adapter. Panda, SocketCAN and
+J2534 do not support TX cancellation and expose no TX timeout setting.
+
+`adapter.send(&frame).await` returns `Result<()>`. `Error::Timeout` means the
+send was still unconfirmed when its expired deadline was checked. A matching TX
+confirmation received before cancellation succeeds even if its deadline has
+passed. `Error::Cancelled` means the send was invalidated by a transmit queue
+clear. Adapter errors retain their original error variant. A queue clear
+invalidates all pending sends, including software-queued frames and callers
+waiting for queue capacity. ISO-TP and UDS propagate CAN transmit failures.
+
+Supported adapters also clear TX on startup. PEAK holds the controller in reset,
+uses TX_ABORT/FLUSH, drains old transmit echoes, and restores bus operation. This
+briefly interrupts reception on its channel; received non-TX frames are buffered
+while draining. USB firmware does not need to emit an RX-barrier reply. A fresh
+PEAK adapter is cleared once before the bus is enabled.
+
+Vector sends the first real frame with HIGHPRIO, which clears its send buffers
+before transmitting that frame; after a timeout the next real frame uses
+HIGHPRIO again. Until that replacement is submitted, old Vector frames can still
+be pending in hardware.
+
+Unmatched echoes are warned about and ignored until the first current TX
+confirmation. After that, an unmatched echo is an adapter invariant violation and
+panics the worker. Every queue clear resets this startup/recovery grace period.
+
+Run the `tx_timeout` example with the desired adapter feature (for example,
+`cargo run --example tx_timeout --features peak`) to queue two frames and print
+each result. The second frame is queued 250 ms later so the first can time out
+and cancel it before its own deadline. After timeout/cancellation, the example
+waits one second and retries both frames with the same adapter open.
+
 ## UDS Example
 The automotive crate also supplies interfaces for various diagnostic protocols such as UDS. The adapter is first wrapped to support the ISO Transport Layer, then a UDS Client is created. All methods are fully async, making it easy to communicate with multiple ECUs in parallel. See [automotive#21](https://github.com/I-CAN-hack/automotive/issues/21) for progress on the supported SIDs.
 
@@ -145,6 +183,7 @@ This library supports awaiting a sent frame and waiting for the ACK on the CAN b
    - The panda does not retry frames that are not ACKed, and drops them instead. This can cause panics in some internal parts of the library when frames are dropped. [panda#1922](https://github.com/commaai/panda/issues/1922) tracks this issue.
  - PEAK PCAN-USB FD (raw USB, `peak` feature)
    - This driver talks to the device directly over USB instead of through SocketCAN, so it does not need the `peak_usb` kernel module to be unloaded; the in-kernel driver is detached automatically when the device is opened.
+   - To temporarily unload `peak_usb` or the out-of-tree `pcan` driver for testing, run `scripts/unload_peak_driver.sh`. Test raw USB in another terminal, then press Enter to restore the drivers. The script also restores them on Ctrl+C or ordinary errors, and only reloads drivers that were initially loaded.
    - On Linux the USB device node is owned by root by default. To use the adapter without running as root, install a udev rule granting access to your user, e.g. in `/etc/udev/rules.d/70-pcan-usb-fd.rules`:
      ```
      # PEAK System PCAN-USB FD family

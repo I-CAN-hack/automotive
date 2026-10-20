@@ -70,6 +70,13 @@ pub fn cmd_normal_mode(channel: u8) -> Command {
     command(channel, CMD_NORMAL_MODE)
 }
 
+/// Abort controller TX and discard its queued frames (uCAN TX_ABORT/FLUSH).
+pub fn cmd_abort_tx(channel: u8) -> Command {
+    let mut cmd = command(channel, CMD_TX_ABORT);
+    cmd[2..4].copy_from_slice(&TX_ABORT_FLUSH.to_le_bytes());
+    cmd
+}
+
 /// Reset both error counters to zero.
 pub fn cmd_reset_error_counters(channel: u8) -> Command {
     let mut cmd = command(channel, CMD_WR_ERR_CNT);

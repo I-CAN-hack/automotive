@@ -283,7 +283,7 @@ impl<'a> IsoTPAdapter<'a> {
         debug!("TX SF, length: {} data {}", data.len(), hex::encode(&buf));
 
         let frame = self.frame(&buf)?;
-        self.adapter.send(&frame).await;
+        self.adapter.send(&frame).await?;
         Ok(())
     }
 
@@ -305,7 +305,7 @@ impl<'a> IsoTPAdapter<'a> {
         debug!("TX FF, length: {} data {}", data.len(), hex::encode(&buf));
 
         let frame = self.frame(&buf)?;
-        self.adapter.send(&frame).await;
+        self.adapter.send(&frame).await?;
         Ok(offset)
     }
 
@@ -320,7 +320,7 @@ impl<'a> IsoTPAdapter<'a> {
 
         let frame = self.frame(&buf)?;
 
-        self.adapter.send(&frame).await;
+        self.adapter.send(&frame).await?;
 
         Ok(())
     }
@@ -478,7 +478,7 @@ impl<'a> IsoTPAdapter<'a> {
         debug!("TX FC, data {}", hex::encode(&flow_control));
 
         let frame = self.frame(&flow_control)?;
-        self.adapter.send(&frame).await;
+        self.adapter.send(&frame).await?;
 
         Ok(len)
     }
