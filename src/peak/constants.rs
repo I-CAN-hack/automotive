@@ -69,7 +69,6 @@ pub const CMD_TX_ABORT: u16 = 0x009;
 pub const CMD_WR_ERR_CNT: u16 = 0x00a;
 pub const CMD_SET_EN_OPTION: u16 = 0x00b;
 pub const CMD_CLR_DIS_OPTION: u16 = 0x00c;
-pub const CMD_RX_BARRIER: u16 = 0x010;
 pub const CMD_END_OF_COLLECTION: u16 = 0x3ff;
 pub const TX_ABORT_FLUSH: u16 = 0x0001;
 

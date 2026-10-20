@@ -32,6 +32,7 @@ use tracing::{info, warn};
 const CMD_TIMEOUT: Duration = Duration::from_millis(1000);
 const TX_TIMEOUT: Duration = Duration::from_millis(1000);
 const RX_TIMEOUT: Duration = Duration::from_millis(5);
+const FLUSH_TIMEOUT: Duration = Duration::from_millis(10);
 
 /// Maximum number of command records per USB transfer, leaving room for the
 /// trailing end-of-collection marker.
@@ -164,10 +165,10 @@ impl Peak {
             // Tell the device a host driver is now in control.
             peak.set_driver_loaded(true)?;
 
-            // Apply clock, bit timing, filters and go bus-on.
+            // Configure while reset, then clear old TX before going bus-on.
             peak.configure(&bitrate_cfg)?;
 
-            // Drop anything buffered from before we took over.
+            // Drop anything buffered from before we took over and go bus-on.
             peak.cancel_pending_tx()?;
 
             info!(
@@ -230,7 +231,7 @@ impl Peak {
         Ok(())
     }
 
-    /// Configure clock, bit timing and filters, then bring the bus up.
+    /// Configure clock, bit timing and filters while keeping the bus off.
     fn configure(&self, cfg: &BitrateConfig) -> Result<()> {
         let ch = self.channel;
 
@@ -247,6 +248,11 @@ impl Peak {
         // Accept every standard ID. Extended IDs are not affected by this filter.
         self.send_commands(&protocol::cmd_filter_accept_all(ch))?;
 
+        Ok(())
+    }
+
+    fn set_bus_on(&self) -> Result<()> {
+        let ch = self.channel;
         // Bring the bus up: clear error counters, select ISO CAN-FD framing if
         // the firmware supports it, then enter normal mode.
         let mut bus_on = vec![protocol::cmd_reset_error_counters(ch)];
@@ -254,9 +260,7 @@ impl Peak {
             bus_on.push(protocol::cmd_set_fd_iso(ch, true));
         }
         bus_on.push(protocol::cmd_normal_mode(ch));
-        self.send_commands(&bus_on)?;
-
-        Ok(())
+        self.send_commands(&bus_on)
     }
 
     fn set_bus_off(&self) -> Result<()> {
@@ -279,26 +283,35 @@ impl CanAdapter for Peak {
         if !self.tx_queue_dirty {
             return Ok(());
         }
+        // The kernel pcan_usb_fd_set_bus() and PEAK canfd_set_bus_off() use
+        // RESET_MODE for USB. RB replies are synchronized in their PCIe paths
+        // (peak_pciefd_main.c / pcanfd_pci.c), not their USB paths. Don't make
+        // USB opening/recovery depend on an RX_BARRIER reply. Stop the core and
+        // flush TX before draining old completions, then restore bus operation.
         self.send_commands(&[
+            protocol::cmd_reset_mode(self.channel),
             protocol::cmd_abort_tx(self.channel),
-            protocol::cmd_rx_barrier(self.channel),
         ])?;
+        self.buffered_rx.retain(|frame| !frame.loopback);
         let deadline = std::time::Instant::now() + CMD_TIMEOUT;
         let mut buf = [0u8; RX_BUFFER_SIZE];
         while std::time::Instant::now() < deadline {
-            match self.handle.read_bulk(self.ep_msg_in, &mut buf, RX_TIMEOUT) {
+            match self
+                .handle
+                .read_bulk(self.ep_msg_in, &mut buf, FLUSH_TIMEOUT)
+            {
+                Ok(0) | Err(rusb::Error::Timeout) => {
+                    self.set_bus_on()?;
+                    self.tx_queue_dirty = false;
+                    return Ok(());
+                }
                 Ok(n) => {
                     let data = &buf[..n];
                     let (frames, _) = protocol::parse_rx_buffer(data);
                     // Preserve bus traffic, but discard old TX completions.
                     self.buffered_rx
                         .extend(frames.into_iter().filter(|frame| !frame.loopback));
-                    if protocol::has_rx_barrier(data, self.channel) {
-                        self.tx_queue_dirty = false;
-                        return Ok(());
-                    }
                 }
-                Err(rusb::Error::Timeout) => {}
                 Err(error) => return Err(error.into()),
             }
         }

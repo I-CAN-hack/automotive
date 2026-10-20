@@ -118,9 +118,14 @@ clear. Adapter errors retain their original error variant. A queue clear
 invalidates all pending sends, including software-queued frames and callers
 waiting for queue capacity. ISO-TP and UDS propagate CAN transmit failures.
 
-Supported adapters also clear TX on startup. PEAK uses TX_ABORT/FLUSH and an RX
-barrier. Vector sends the first real frame with HIGHPRIO, which clears its send
-buffers before transmitting that frame; after a timeout the next real frame uses
+Supported adapters also clear TX on startup. PEAK holds the controller in reset,
+uses TX_ABORT/FLUSH, drains old transmit echoes, and restores bus operation. This
+briefly interrupts reception on its channel; received non-TX frames are buffered
+while draining. USB firmware does not need to emit an RX-barrier reply. A fresh
+PEAK adapter is cleared once before the bus is enabled.
+
+Vector sends the first real frame with HIGHPRIO, which clears its send buffers
+before transmitting that frame; after a timeout the next real frame uses
 HIGHPRIO again. Until that replacement is submitted, old Vector frames can still
 be pending in hardware.
 
