@@ -5,7 +5,8 @@
 //! Adapters with cancellation support use a one-second TX timeout by default.
 //! Without an ACKing peer, the first frame should time out and the second should
 //! be cancelled by the queue clear. Both results are printed with the same
-//! adapter kept open between retries.
+//! adapter kept open between retries. Each frame carries an incrementing
+//! little-endian u64 counter so cancelled frames are identifiable in bus traces.
 
 #[tokio::main]
 async fn main() -> automotive::Result<()> {
@@ -16,41 +17,50 @@ async fn main() -> automotive::Result<()> {
     tracing_subscriber::fmt::init();
 
     let adapter = automotive::can::get_adapter()?;
-    let first = Frame::new(0, Identifier::Standard(0x123), &[1, 2, 3, 4, 5, 6, 7, 8])?;
-    let second = Frame::new(0, Identifier::Standard(0x124), &[8, 7, 6, 5, 4, 3, 2, 1])?;
+    let mut counter = 0_u64;
 
     loop {
+        let first = Frame::new(0, Identifier::Standard(0x123), &counter.to_le_bytes())?;
+        let second = Frame::new(0, Identifier::Standard(0x124), &counter.to_le_bytes())?;
+        counter = counter.wrapping_add(1);
+
         // Await both results: try_join! would drop the other send on the first
         // error, hiding the cancellation we want to observe.
         let (first_result, second_result) = tokio::join!(
             async {
-                println!("Sending {first:?}");
+                println!("Sending {first:?} (counter {counter})");
                 adapter.send(&first).await
             },
             async {
                 // A later deadline lets the queue clear cancel this send before
                 // its own timeout. Both frames remain pending concurrently.
                 tokio::time::sleep(Duration::from_millis(250)).await;
-                println!("Sending {second:?}");
+                println!("Sending {second:?} (counter {counter})");
                 adapter.send(&second).await
             }
         );
 
         let mut retry = false;
         let mut adapter_error = None;
-        for (frame, result) in [(&first, first_result), (&second, second_result)] {
+        for (frame, result) in [
+            (&first, first_result),
+            (&second, second_result),
+        ] {
             match result {
-                Ok(()) => println!("{:?}: TX confirmed", frame.id),
+                Ok(()) => println!("{:?} (counter {counter}): TX confirmed", frame.id),
                 Err(Error::Timeout) => {
-                    println!("{:?}: Timeout", frame.id);
+                    println!("{:?} (counter {counter}): Timeout", frame.id);
                     retry = true;
                 }
                 Err(Error::Cancelled) => {
-                    println!("{:?}: Cancelled by the transmit queue clear", frame.id);
+                    println!(
+                        "{:?} (counter {counter}): Cancelled by the transmit queue clear",
+                        frame.id
+                    );
                     retry = true;
                 }
                 Err(error) => {
-                    eprintln!("{:?}: {error}", frame.id);
+                    eprintln!("{:?} (counter {counter}): {error}", frame.id);
                     adapter_error = Some(error);
                 }
             }
