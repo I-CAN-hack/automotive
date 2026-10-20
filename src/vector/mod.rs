@@ -109,36 +109,6 @@ impl VectorCan {
     }
 }
 
-impl VectorCan {
-    fn send_frames(
-        &mut self,
-        frames: &mut VecDeque<Frame>,
-        mut transmit: impl FnMut(&XLcanTxEvent) -> Result<u32>,
-    ) -> Result<()> {
-        while let Some(frame) = frames.pop_front() {
-            let mut xl_frame: XLcanTxEvent = frame.clone().into();
-            if self.replace_pending {
-                unsafe {
-                    xl_frame.tagData.canMsg.msgFlags |= bindings::XL_CAN_TXMSG_FLAG_HIGHPRIO;
-                }
-            }
-            match transmit(&xl_frame) {
-                Ok(1) => self.replace_pending = false,
-                Ok(_) => {
-                    frames.push_front(frame);
-                    break;
-                }
-                Err(error) => {
-                    frames.push_front(frame);
-                    return Err(error);
-                }
-            }
-        }
-
-        Ok(())
-    }
-}
-
 impl Drop for VectorCan {
     fn drop(&mut self) {
         info!("Closing Vector Device");
@@ -165,11 +135,31 @@ impl CanAdapter for VectorCan {
     }
 
     fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
-        let port = self.port_handle;
-        let mask = self.channel_mask;
-        self.send_frames(frames, |frame| {
-            xl_can_transmit_ex(&port, mask, std::slice::from_ref(frame))
-        })
+        while let Some(frame) = frames.pop_front() {
+            let mut xl_frame: XLcanTxEvent = frame.clone().into();
+            if self.replace_pending {
+                unsafe {
+                    xl_frame.tagData.canMsg.msgFlags |= bindings::XL_CAN_TXMSG_FLAG_HIGHPRIO;
+                }
+            }
+            match xl_can_transmit_ex(
+                &self.port_handle,
+                self.channel_mask,
+                std::slice::from_ref(&xl_frame),
+            ) {
+                Ok(1) => self.replace_pending = false,
+                Ok(_) => {
+                    frames.push_front(frame);
+                    break;
+                }
+                Err(error) => {
+                    frames.push_front(frame);
+                    return Err(error);
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn recv(&mut self) -> Result<Vec<Frame>> {

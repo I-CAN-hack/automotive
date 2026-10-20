@@ -1,7 +1,6 @@
 //! Async wrapper for adapters implementing the [`CanAdapter`] trait.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::can::{CanAdapter, Frame, Identifier};
@@ -15,7 +14,12 @@ const CAN_TX_BUFFER_SIZE: usize = 128;
 const CAN_RX_BUFFER_SIZE: usize = 8192;
 
 type BusIdentifier = (u8, Identifier);
-type TerminalError = Arc<Mutex<Option<Error>>>;
+
+#[derive(Default)]
+struct WorkerState {
+    generation: u64,
+    error: Option<Error>,
+}
 
 struct Transmission {
     frame: Frame,
@@ -34,8 +38,8 @@ impl Transmission {
     }
 }
 
-fn terminal_error(error: &TerminalError) -> Error {
-    error.lock().unwrap().clone().unwrap_or(Error::Disconnected)
+fn terminal_error(state: &watch::Receiver<WorkerState>) -> Error {
+    state.borrow().error.clone().unwrap_or(Error::Disconnected)
 }
 
 fn process<T: CanAdapter>(
@@ -43,8 +47,7 @@ fn process<T: CanAdapter>(
     mut shutdown: oneshot::Receiver<()>,
     rx_sender: broadcast::Sender<Frame>,
     mut tx_receiver: mpsc::Receiver<Transmission>,
-    generation: watch::Sender<u64>,
-    error: TerminalError,
+    state: watch::Sender<WorkerState>,
 ) {
     let mut queued: VecDeque<Transmission> = VecDeque::new();
     let mut pending: HashMap<BusIdentifier, VecDeque<Transmission>> = HashMap::new();
@@ -79,34 +82,28 @@ fn process<T: CanAdapter>(
                     // again. Never consume a callback or credit for an
                     // unmatched echo.
                     let key = (frame.bus, frame.id);
-                    if let Some(txs) = pending.get_mut(&key) {
-                        if txs.front().is_some_and(|tx| {
+                    if let Some(txs) = pending.get_mut(&key).filter(|txs| {
+                        txs.front().is_some_and(|tx| {
                             let mut expected = tx.frame.clone();
                             expected.loopback = true;
                             expected == frame
-                        }) {
-                            // A matching echo confirms TX even if recv() crossed
-                            // its deadline. Check timeouts only after processing
-                            // received confirmations, for sends still pending.
-                            let tx = txs.pop_front().unwrap();
-                            in_flight -= 1;
-                            tx.finish(Ok(()));
-                            first_tx_confirmed = true;
-                        } else {
-                            assert!(
-                                !first_tx_confirmed,
-                                "Unmatched transmit echo after first TX confirmation: {frame:?}"
-                            );
-                            tracing::warn!(
-                                ?frame,
-                                "Ignoring unmatched echo before first TX confirmation"
-                            );
-                        }
+                        })
+                    }) {
+                        // A matching echo confirms TX even if recv() crossed
+                        // its deadline. Check timeouts only after processing
+                        // received confirmations, for sends still pending.
+                        let tx = txs.pop_front().unwrap();
+                        in_flight -= 1;
+                        tx.finish(Ok(()));
+                        first_tx_confirmed = true;
                         if txs.is_empty() {
                             pending.remove(&key);
                         }
                     } else {
-                        assert!(!first_tx_confirmed, "Transmit echo without a pending send after first TX confirmation: {frame:?}");
+                        assert!(
+                            !first_tx_confirmed,
+                            "Unmatched transmit echo after first TX confirmation: {frame:?}"
+                        );
                         tracing::warn!(
                             ?frame,
                             "Ignoring unmatched echo before first TX confirmation"
@@ -132,7 +129,7 @@ fn process<T: CanAdapter>(
                 // callers with Cancelled; the generation check below rejects
                 // old requests that enter the channel later. Sends started
                 // after this change belong to the new session and can proceed.
-                generation.send_modify(|value| *value = value.wrapping_add(1));
+                state.send_modify(|state| state.generation = state.generation.wrapping_add(1));
                 for tx in queued
                     .drain(..)
                     .chain(pending.drain().flat_map(|(_, txs)| txs))
@@ -152,7 +149,7 @@ fn process<T: CanAdapter>(
             // generations even when hardware is full so clears unblock waiters.
             while queued.len() < CAN_TX_BUFFER_SIZE {
                 match tx_receiver.try_recv() {
-                    Ok(tx) if tx.generation != *generation.borrow() => {
+                    Ok(tx) if tx.generation != state.borrow().generation => {
                         tx.finish(Err(Error::Cancelled))
                     }
                     Ok(tx) if tx.completion.is_closed() => {}
@@ -190,7 +187,7 @@ fn process<T: CanAdapter>(
     // whose command has not reached the worker yet. Publish before closing any
     // channels so callers cannot race this into a generic disconnected error.
     let failure = result.err().unwrap_or(Error::Disconnected);
-    *error.lock().unwrap() = Some(failure.clone());
+    state.send_modify(|state| state.error = Some(failure.clone()));
     for tx in queued
         .drain(..)
         .chain(pending.drain().flat_map(|(_, txs)| txs))
@@ -207,8 +204,7 @@ pub struct AsyncCanAdapter {
     processing_handle: Option<std::thread::JoinHandle<()>>,
     recv_receiver: broadcast::Receiver<Frame>,
     send_sender: mpsc::Sender<Transmission>,
-    generation: watch::Receiver<u64>,
-    error: TerminalError,
+    state: watch::Receiver<WorkerState>,
     tx_timeout: Option<Duration>,
     shutdown: Option<oneshot::Sender<()>>,
 }
@@ -218,9 +214,7 @@ impl AsyncCanAdapter {
         let (shutdown_sender, shutdown_receiver) = oneshot::channel();
         let (send_sender, send_receiver) = mpsc::channel(CAN_TX_BUFFER_SIZE);
         let (recv_sender, recv_receiver) = broadcast::channel(CAN_RX_BUFFER_SIZE);
-        let (generation_sender, generation) = watch::channel(0);
-        let error = Arc::new(Mutex::new(None));
-        let worker_error = error.clone();
+        let (state_sender, state) = watch::channel(WorkerState::default());
         let tx_timeout = adapter.tx_timeout();
         let processing_handle = std::thread::spawn(move || {
             process(
@@ -228,8 +222,7 @@ impl AsyncCanAdapter {
                 shutdown_receiver,
                 recv_sender,
                 send_receiver,
-                generation_sender,
-                worker_error,
+                state_sender,
             );
         });
         Self {
@@ -237,8 +230,7 @@ impl AsyncCanAdapter {
             processing_handle: Some(processing_handle),
             recv_receiver,
             send_sender,
-            generation,
-            error,
+            state,
             tx_timeout,
         }
     }
@@ -255,8 +247,8 @@ impl AsyncCanAdapter {
     /// Adapter failures retain their original error variant.
     pub async fn send(&self, frame: &Frame) -> Result<()> {
         let deadline = self.tx_timeout.map(|timeout| Instant::now() + timeout);
-        let mut generation = self.generation.clone();
-        let current_generation = *generation.borrow_and_update();
+        let mut state = self.state.clone();
+        let current_generation = state.borrow_and_update().generation;
         let (completion, response) = oneshot::channel();
         let tx = Transmission {
             frame: frame.clone(),
@@ -268,12 +260,12 @@ impl AsyncCanAdapter {
             self.send_sender
                 .send(tx)
                 .await
-                .map_err(|_| terminal_error(&self.error))?;
-            response.await.map_err(|_| terminal_error(&self.error))?
+                .map_err(|_| terminal_error(&self.state))?;
+            response.await.map_err(|_| terminal_error(&self.state))?
         };
         let cancelled = async {
-            let _ = generation.changed().await;
-            let error = self.error.lock().unwrap().clone();
+            let _ = state.changed().await;
+            let error = state.borrow().error.clone();
             if let Some(error) = error {
                 error
             } else if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
