@@ -15,6 +15,24 @@ pub(crate) fn default_bitrate(
         .data_sample_point(0.8)
 }
 
+/// Default TX deadline for adapters that support cancellation.
+pub const DEFAULT_TX_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+
+#[cfg(any(feature = "peak", all(target_os = "windows", feature = "vector-xl")))]
+pub(crate) fn default_tx_timeout() -> Option<std::time::Duration> {
+    Some(DEFAULT_TX_TIMEOUT)
+}
+
+#[cfg(any(feature = "peak", all(target_os = "windows", feature = "vector-xl")))]
+pub(crate) fn validate_tx_timeout(timeout: Option<std::time::Duration>) -> crate::Result<()> {
+    if timeout.is_some_and(|timeout| timeout.is_zero()) {
+        return Err(crate::Error::InvalidAdapterConfig(
+            "TX timeout must be nonzero".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Convenience function to get the first available adapter on the system.
 ///
 /// Adapter backends are feature-gated. If no adapter features are enabled, or no

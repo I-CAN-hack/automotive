@@ -70,6 +70,35 @@ pub fn cmd_normal_mode(channel: u8) -> Command {
     command(channel, CMD_NORMAL_MODE)
 }
 
+/// Abort controller TX and discard its queued frames (uCAN TX_ABORT/FLUSH).
+pub fn cmd_abort_tx(channel: u8) -> Command {
+    let mut cmd = command(channel, CMD_TX_ABORT);
+    cmd[2..4].copy_from_slice(&TX_ABORT_FLUSH.to_le_bytes());
+    cmd
+}
+
+/// Request a status record delimiting the previous receive stream.
+pub fn cmd_rx_barrier(channel: u8) -> Command {
+    command(channel, CMD_RX_BARRIER)
+}
+
+/// Whether a complete RX barrier status for this channel is present.
+pub fn has_rx_barrier(data: &[u8], channel: u8) -> bool {
+    let mut off = 0;
+    while off + 4 <= data.len() {
+        let size = u16::from_le_bytes([data[off], data[off + 1]]) as usize;
+        if size < 4 || off + size > data.len() {
+            break;
+        }
+        let kind = u16::from_le_bytes([data[off + 2], data[off + 3]]);
+        if kind == MSG_STATUS && size >= 16 && data[off + 12] & 0x1f == (0x10 | channel) {
+            return true;
+        }
+        off += align4(size);
+    }
+    false
+}
+
 /// Reset both error counters to zero.
 pub fn cmd_reset_error_counters(channel: u8) -> Command {
     let mut cmd = command(channel, CMD_WR_ERR_CNT);

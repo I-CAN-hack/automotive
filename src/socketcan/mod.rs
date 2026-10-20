@@ -86,10 +86,14 @@ impl SocketCan {
 impl CanAdapter for SocketCan {
     fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
         while let Some(frame) = frames.pop_front() {
-            if self.socket.write_frame(&frame).is_err() {
-                // Failed to send frame, push it back to the front of the queue for next send call
+            if let Err(error) = self.socket.write_frame(&frame) {
                 frames.push_front(frame);
-                break;
+                if error.kind() == std::io::ErrorKind::WouldBlock
+                    || error.raw_os_error() == Some(libc::ENOBUFS)
+                {
+                    break;
+                }
+                return Err(error.into());
             } else if !self.iff_echo {
                 // If IFF_ECHO is not set, we need to emulate the ACK logic.
                 let mut frame = frame.clone();

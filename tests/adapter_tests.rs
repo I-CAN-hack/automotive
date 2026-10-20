@@ -130,12 +130,15 @@ async fn bulk_send(adapter: &AsyncCanAdapter) {
     let frames = get_test_frames(BULK_NUM_FRAMES_ASYNC);
 
     let r = frames.iter().map(|frame| adapter.send(frame));
-    tokio::time::timeout(
+    let results = tokio::time::timeout(
         Duration::from_millis(BULK_ASYNC_TIMEOUT_MS),
         futures::future::join_all(r),
     )
     .await
     .unwrap();
+    for result in results {
+        result.unwrap();
+    }
 }
 
 #[cfg(feature = "test-j2534")]
@@ -245,7 +248,8 @@ async fn vcan_send_fd() {
         automotive::socketcan::SocketCan::new_async(SocketCanConfig::new("vcan0")).unwrap();
     adapter
         .send(&Frame::new(0, 0x123.into(), &[0u8; 64]).unwrap())
-        .await;
+        .await
+        .unwrap();
 }
 
 #[cfg(all(target_os = "linux", feature = "socketcan"))]

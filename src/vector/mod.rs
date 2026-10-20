@@ -10,6 +10,7 @@ pub use error::Error;
 
 use std::collections::VecDeque;
 
+use crate::can::adapter::validate_tx_timeout;
 use crate::can::bitrate::{AdapterTimingConst, BitTimingConst};
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
 use crate::vector::bindings::XLcanFdConf;
@@ -48,6 +49,8 @@ pub const VECTOR_TIMING_CONST: AdapterTimingConst = AdapterTimingConst {
 pub struct VectorCan {
     port_handle: PortHandle,
     channel_mask: XLaccess,
+    tx_timeout: Option<std::time::Duration>,
+    replace_pending: bool,
 }
 
 impl VectorCan {
@@ -60,6 +63,8 @@ impl VectorCan {
     /// Open a shared Vector channel or request initialization access and
     /// configure its bus timing. Shared channels retain their existing timing.
     pub fn new(config: VectorConfig) -> Result<VectorCan> {
+        validate_tx_timeout(config.tx_timeout)?;
+        let tx_timeout = config.tx_timeout;
         let conf = match config.access {
             VectorAccess::Shared => None,
             VectorAccess::Init { bitrate } => Some(bitrate),
@@ -96,7 +101,41 @@ impl VectorCan {
         Ok(VectorCan {
             port_handle,
             channel_mask,
+            tx_timeout,
+            // Always clear transmissions left by an earlier session on the
+            // first real send, including when the timeout is disabled.
+            replace_pending: true,
         })
+    }
+}
+
+impl VectorCan {
+    fn send_frames(
+        &mut self,
+        frames: &mut VecDeque<Frame>,
+        mut transmit: impl FnMut(&XLcanTxEvent) -> Result<u32>,
+    ) -> Result<()> {
+        while let Some(frame) = frames.pop_front() {
+            let mut xl_frame: XLcanTxEvent = frame.clone().into();
+            if self.replace_pending {
+                unsafe {
+                    xl_frame.tagData.canMsg.msgFlags |= bindings::XL_CAN_TXMSG_FLAG_HIGHPRIO;
+                }
+            }
+            match transmit(&xl_frame) {
+                Ok(1) => self.replace_pending = false,
+                Ok(_) => {
+                    frames.push_front(frame);
+                    break;
+                }
+                Err(error) => {
+                    frames.push_front(frame);
+                    return Err(error);
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -110,22 +149,27 @@ impl Drop for VectorCan {
 }
 
 impl CanAdapter for VectorCan {
-    fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
-        // TODO: can we send frames in bulk? If we fill up the TX queue can we figure out which messages were actually sent out?
-        while let Some(frame) = frames.pop_front() {
-            let xl_frame: XLcanTxEvent = frame.clone().into();
-            let xl_frames = vec![xl_frame];
+    fn supports_tx_timeout() -> bool {
+        true
+    }
 
-            if let Ok(tx) = xl_can_transmit_ex(&self.port_handle, self.channel_mask, &xl_frames) {
-                assert_eq!(tx, 1);
-            } else {
-                // TODO: figure out what error happened, and decide if we can retry later or need to shut down
-                frames.push_front(frame);
-                break;
-            }
-        }
+    fn tx_timeout(&self) -> Option<std::time::Duration> {
+        self.tx_timeout
+    }
 
+    fn cancel_pending_tx(&mut self) -> Result<()> {
+        // xlCanFlushTransmitQueue is a successful no-op on newer devices.
+        // HIGHPRIO clears the hardware queues before the next real frame.
+        self.replace_pending = true;
         Ok(())
+    }
+
+    fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
+        let port = self.port_handle;
+        let mask = self.channel_mask;
+        self.send_frames(frames, |frame| {
+            xl_can_transmit_ex(&port, mask, std::slice::from_ref(frame))
+        })
     }
 
     fn recv(&mut self) -> Result<Vec<Frame>> {

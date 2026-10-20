@@ -65,10 +65,13 @@ pub const CMD_LISTEN_ONLY_MODE: u16 = 0x003;
 pub const CMD_TIMING_SLOW: u16 = 0x004;
 pub const CMD_TIMING_FAST: u16 = 0x005;
 pub const CMD_FILTER_STD: u16 = 0x008;
+pub const CMD_TX_ABORT: u16 = 0x009;
 pub const CMD_WR_ERR_CNT: u16 = 0x00a;
 pub const CMD_SET_EN_OPTION: u16 = 0x00b;
 pub const CMD_CLR_DIS_OPTION: u16 = 0x00c;
+pub const CMD_RX_BARRIER: u16 = 0x010;
 pub const CMD_END_OF_COLLECTION: u16 = 0x3ff;
+pub const TX_ABORT_FLUSH: u16 = 0x0001;
 
 /// Extended (vendor-specific, non-uCAN) commands.
 pub const CMD_CLOCK_SET: u16 = 0x80;

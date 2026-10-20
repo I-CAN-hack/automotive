@@ -1,5 +1,7 @@
 use super::VectorCan;
+use crate::can::adapter::default_tx_timeout;
 use crate::can::bitrate::{BitrateBuilder, BitrateConfig, BitrateError};
+use std::time::Duration;
 
 /// Access requested when opening a Vector XL CAN channel.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -13,7 +15,7 @@ pub enum VectorAccess {
 }
 
 /// Configuration for a Vector XL CAN channel.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(default))]
 pub struct VectorConfig {
@@ -21,6 +23,18 @@ pub struct VectorConfig {
     pub channel: usize,
     /// Shared access retains existing timing; initialization requires a bitrate.
     pub access: VectorAccess,
+    /// Queue/confirmation deadline. Defaults to one second; `None` disables it.
+    pub tx_timeout: Option<Duration>,
+}
+
+impl Default for VectorConfig {
+    fn default() -> Self {
+        Self {
+            channel: 0,
+            access: VectorAccess::default(),
+            tx_timeout: default_tx_timeout(),
+        }
+    }
 }
 
 impl VectorConfig {
@@ -38,6 +52,7 @@ impl VectorConfig {
         VectorConfigBuilder {
             channel,
             bitrate: None,
+            tx_timeout: default_tx_timeout(),
         }
     }
 }
@@ -48,6 +63,7 @@ impl VectorConfig {
 pub struct VectorConfigBuilder {
     channel: usize,
     bitrate: Option<BitrateBuilder>,
+    tx_timeout: Option<Duration>,
 }
 
 impl VectorConfigBuilder {
@@ -58,6 +74,18 @@ impl VectorConfigBuilder {
             .bitrate
             .unwrap_or_else(BitrateBuilder::new::<VectorCan>);
         self.bitrate = Some(configure(bitrate));
+        self
+    }
+
+    /// Set the queue/confirmation deadline for each transmission.
+    pub fn tx_timeout(mut self, timeout: Duration) -> Self {
+        self.tx_timeout = Some(timeout);
+        self
+    }
+
+    /// Disable the default transmit deadline.
+    pub fn without_tx_timeout(mut self) -> Self {
+        self.tx_timeout = None;
         self
     }
 
@@ -72,6 +100,7 @@ impl VectorConfigBuilder {
         Ok(VectorConfig {
             channel: self.channel,
             access,
+            tx_timeout: self.tx_timeout,
         })
     }
 }

@@ -40,7 +40,7 @@ async fn can_example() -> automotive::Result<()> {
     let mut stream = adapter.recv();
 
     let frame = automotive::can::Frame::new(0, 0x541.into(), &[0xff; 8])?;
-    adapter.send(&frame).await;
+    adapter.send(&frame).await?;
 
     while let Some(frame) = stream.next().await {
         let id: u32 = frame.id.into();
@@ -100,6 +100,38 @@ let adapter = VectorCan::new_async(config)?;
 
 Each adapter's configuration types live in its `config.rs` module and are
 re-exported from the adapter module.
+
+## Transmit timeouts
+
+Vector and PEAK default to a one-second transmit timeout. Set it using the
+adapter config builder's `.tx_timeout(Duration)` method, or disable it with
+`.without_tx_timeout()`. Their configs expose the corresponding `tx_timeout`
+field; `None` disables the deadline. A zero timeout is rejected with
+`Error::InvalidAdapterConfig` when opening the adapter. Panda, SocketCAN and
+J2534 do not support TX cancellation and expose no TX timeout setting.
+
+`adapter.send(&frame).await` returns `Result<()>`. `Error::Timeout` means the
+queue/confirmation deadline expired. `Error::Cancelled` means the send was
+invalidated by a transmit queue clear. Adapter errors retain their original
+error variant. A queue clear invalidates all pending sends,
+including software-queued frames and callers waiting for queue capacity. ISO-TP
+and UDS propagate CAN transmit failures.
+
+Supported adapters also clear TX on startup. PEAK uses TX_ABORT/FLUSH and an RX
+barrier. Vector sends the first real frame with HIGHPRIO, which clears its send
+buffers before transmitting that frame; after a timeout the next real frame uses
+HIGHPRIO again. Until that replacement is submitted, old Vector frames can still
+be pending in hardware.
+
+Unmatched echoes are warned about and ignored until the first current TX
+confirmation. After that, an unmatched echo is an adapter invariant violation and
+panics the worker. Every queue clear resets this startup/recovery grace period.
+
+Run the `tx_timeout` example with the desired adapter feature (for example,
+`cargo run --example tx_timeout --features peak`) to queue two frames and print
+each result. The second frame is queued 250 ms later so the first can time out
+and cancel it before its own deadline. After timeout/cancellation, the example
+waits one second and retries both frames with the same adapter open.
 
 ## UDS Example
 The automotive crate also supplies interfaces for various diagnostic protocols such as UDS. The adapter is first wrapped to support the ISO Transport Layer, then a UDS Client is created. All methods are fully async, making it easy to communicate with multiple ECUs in parallel. See [automotive#21](https://github.com/I-CAN-hack/automotive/issues/21) for progress on the supported SIDs.
