@@ -4,6 +4,32 @@
 
 Welcome to the `automotive` crate documentation. The purpose of this crate is to help you with all things automotive related. Most importantly, it provides a fully async CAN interface supporting multiple adapters.
 
+## Development with Nix
+
+Enter the development environment and run the tests:
+
+```sh
+nix develop
+cargo test --features all
+```
+
+The shell includes Rust, Cargo, rustfmt, Clippy, rust-analyzer, libusb,
+libclang for bindgen, and Python with Scapy. On Linux it also includes the CAN
+and network tools used by the virtual ECU tests. The flake lock pins the packages.
+
+To run the virtual CAN tests on Linux, first load the host's CAN/ISO-TP kernel
+modules and create `vcan0` using the existing setup scripts:
+
+```sh
+scripts/build_can_isotp.sh
+scripts/set_up_vcan.sh
+cargo test --features test-vcan,serde
+```
+
+The setup scripts require `sudo`; entering the shell does not change the host's
+network interfaces or load kernel modules. Windows-only adapters still require
+their Windows SDKs and drivers.
+
 ## Async CAN Example
 The following adapter opens the first available adapter on the system, and then receives all frames. Note how the sent frame is awaited, which waits until the message is ACKed on the CAN bus.
 
