@@ -122,6 +122,9 @@ fn process<T: CanAdapter>(
                 });
             if cancel {
                 adapter.cancel_pending_tx()?;
+                // Classify against the completed clear, which may have blocked
+                // while other sends reached their deadlines.
+                let now = Instant::now();
                 // Each send captures the generation BEFORE waiting for channel
                 // capacity. Clearing hardware and draining queued/pending is
                 // insufficient: older requests can still be in tx_receiver or
@@ -129,18 +132,23 @@ fn process<T: CanAdapter>(
                 // callers with Cancelled; the generation check below rejects
                 // old requests that enter the channel later. Sends started
                 // after this change belong to the new session and can proceed.
-                state.send_modify(|state| state.generation = state.generation.wrapping_add(1));
-                for tx in queued
-                    .drain(..)
-                    .chain(pending.drain().flat_map(|(_, txs)| txs))
-                {
-                    let reason = if tx.expired(now) {
-                        Error::Timeout
-                    } else {
-                        Error::Cancelled
-                    };
-                    tx.finish(Err(reason));
-                }
+                // Post results before notifying watchers so send() observes the
+                // worker's classification. The state lock also prevents an
+                // immediate retry from capturing the old generation.
+                state.send_modify(|state| {
+                    for tx in queued
+                        .drain(..)
+                        .chain(pending.drain().flat_map(|(_, txs)| txs))
+                    {
+                        let reason = if tx.expired(now) {
+                            Error::Timeout
+                        } else {
+                            Error::Cancelled
+                        };
+                        tx.finish(Err(reason));
+                    }
+                    state.generation = state.generation.wrapping_add(1);
+                });
                 in_flight = 0;
                 first_tx_confirmed = false;
             }
@@ -265,14 +273,9 @@ impl AsyncCanAdapter {
         };
         let cancelled = async {
             let _ = state.changed().await;
-            let error = state.borrow().error.clone();
-            if let Some(error) = error {
-                error
-            } else if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
-                Error::Timeout
-            } else {
-                Error::Cancelled
-            }
+            // The worker supplies timeout results for admitted sends. Requests
+            // still waiting for admission are invalidated by the queue clear.
+            state.borrow().error.clone().unwrap_or(Error::Cancelled)
         };
         // The worker decides between confirmations and timeout cancellation.
         // A caller-side timer could return Timeout before it processes a
