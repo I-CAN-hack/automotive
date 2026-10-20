@@ -33,6 +33,7 @@ fn panda_config() -> automotive::panda::PandaConfig {
 fn peak_config() -> automotive::peak::PeakConfig {
     automotive::peak::PeakConfig::builder()
         .bitrate(|bitrate| bitrate.bitrate(500_000).sample_point(0.8))
+        .tx_timeout(Duration::from_millis(BULK_ASYNC_TIMEOUT_MS))
         .build()
         .unwrap()
 }
@@ -49,6 +50,7 @@ fn vector_config() -> automotive::vector::VectorConfig {
                 .data_sample_point(0.8)
                 .data_sjw(1)
         })
+        .tx_timeout(Duration::from_millis(BULK_ASYNC_TIMEOUT_MS))
         .build()
         .unwrap()
 }
