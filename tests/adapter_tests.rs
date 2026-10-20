@@ -1,6 +1,8 @@
 #![allow(dead_code, unused_imports)]
 use automotive::can::AsyncCanAdapter;
 use automotive::can::{CanAdapter, Frame, Identifier};
+#[cfg(all(target_os = "linux", feature = "socketcan"))]
+use automotive::socketcan::SocketCanConfig;
 use std::collections::VecDeque;
 use std::time::Duration;
 
@@ -20,32 +22,33 @@ fn j2534_bitrate_config() -> automotive::can::bitrate::BitrateConfig {
 }
 
 #[cfg(feature = "test-panda")]
-fn panda_bitrate_config() -> automotive::can::bitrate::BitrateConfig {
-    automotive::can::bitrate::BitrateBuilder::new::<automotive::panda::Panda>()
-        .bitrate(500_000)
-        .sample_point(0.8)
+fn panda_config() -> automotive::panda::PandaConfig {
+    automotive::panda::PandaConfig::builder()
+        .bitrate(|bitrate| bitrate.bitrate(500_000).sample_point(0.8))
         .build()
         .unwrap()
 }
 
 #[cfg(feature = "test-peak")]
-fn peak_bitrate_config() -> automotive::can::bitrate::BitrateConfig {
-    automotive::can::bitrate::BitrateBuilder::new::<automotive::peak::Peak>()
-        .bitrate(500_000)
-        .sample_point(0.8)
+fn peak_config() -> automotive::peak::PeakConfig {
+    automotive::peak::PeakConfig::builder()
+        .bitrate(|bitrate| bitrate.bitrate(500_000).sample_point(0.8))
         .build()
         .unwrap()
 }
 
 #[cfg(feature = "test-vector")]
-fn vector_bitrate_config() -> automotive::can::bitrate::BitrateConfig {
-    automotive::can::bitrate::BitrateBuilder::new::<automotive::vector::VectorCan>()
-        .bitrate(500_000)
-        .sample_point(0.8)
-        .sjw(1)
-        .data_bitrate(2_000_000)
-        .data_sample_point(0.8)
-        .data_sjw(1)
+fn vector_config() -> automotive::vector::VectorConfig {
+    automotive::vector::VectorConfig::builder(0)
+        .bitrate(|bitrate| {
+            bitrate
+                .bitrate(500_000)
+                .sample_point(0.8)
+                .sjw(1)
+                .data_bitrate(2_000_000)
+                .data_sample_point(0.8)
+                .data_sjw(1)
+        })
         .build()
         .unwrap()
 }
@@ -156,7 +159,7 @@ async fn j2534_bulk_send_async() {
 #[test]
 #[serial_test::serial]
 fn panda_bulk_send_sync() {
-    let mut panda = automotive::panda::Panda::new(panda_bitrate_config()).unwrap();
+    let mut panda = automotive::panda::Panda::new(panda_config()).unwrap();
     bulk_send_sync(&mut panda);
 }
 
@@ -164,7 +167,7 @@ fn panda_bulk_send_sync() {
 #[tokio::test]
 #[serial_test::serial]
 async fn panda_bulk_send_async() {
-    let panda = automotive::panda::Panda::new_async(panda_bitrate_config()).unwrap();
+    let panda = automotive::panda::Panda::new_async(panda_config()).unwrap();
     bulk_send(&panda).await;
 }
 
@@ -172,7 +175,7 @@ async fn panda_bulk_send_async() {
 #[test]
 #[serial_test::serial]
 fn vector_bulk_send_sync() {
-    let mut vector = automotive::vector::VectorCan::new(0, Some(vector_bitrate_config())).unwrap();
+    let mut vector = automotive::vector::VectorCan::new(vector_config()).unwrap();
     bulk_send_sync(&mut vector);
 }
 
@@ -180,8 +183,7 @@ fn vector_bulk_send_sync() {
 #[tokio::test]
 #[serial_test::serial]
 async fn vector_bulk_send_async() {
-    let vector =
-        automotive::vector::VectorCan::new_async(0, Some(vector_bitrate_config())).unwrap();
+    let vector = automotive::vector::VectorCan::new_async(vector_config()).unwrap();
     bulk_send(&vector).await;
 }
 
@@ -189,7 +191,7 @@ async fn vector_bulk_send_async() {
 #[test]
 #[serial_test::serial]
 fn peak_bulk_send_sync() {
-    let mut peak = automotive::peak::Peak::new(peak_bitrate_config()).unwrap();
+    let mut peak = automotive::peak::Peak::new(peak_config()).unwrap();
     bulk_send_sync(&mut peak);
 }
 
@@ -197,7 +199,7 @@ fn peak_bulk_send_sync() {
 #[tokio::test]
 #[serial_test::serial]
 async fn peak_bulk_send_async() {
-    let peak = automotive::peak::Peak::new_async(peak_bitrate_config()).unwrap();
+    let peak = automotive::peak::Peak::new_async(peak_config()).unwrap();
     bulk_send(&peak).await;
 }
 
@@ -205,7 +207,7 @@ async fn peak_bulk_send_async() {
 #[test]
 #[serial_test::serial]
 fn socketcan_bulk_send_sync() {
-    let mut adapter = automotive::socketcan::SocketCan::new("can0").unwrap();
+    let mut adapter = automotive::socketcan::SocketCan::new(SocketCanConfig::new("can0")).unwrap();
     bulk_send_sync(&mut adapter);
 }
 
@@ -213,7 +215,8 @@ fn socketcan_bulk_send_sync() {
 #[tokio::test]
 #[serial_test::serial]
 async fn socketcan_bulk_send_async() {
-    let adapter = automotive::socketcan::SocketCan::new_async("can0").unwrap();
+    let adapter =
+        automotive::socketcan::SocketCan::new_async(SocketCanConfig::new("can0")).unwrap();
     bulk_send(&adapter).await;
 }
 
@@ -221,7 +224,7 @@ async fn socketcan_bulk_send_async() {
 #[test]
 #[serial_test::serial]
 fn vcan_bulk_send_sync() {
-    let mut adapter = automotive::socketcan::SocketCan::new("vcan0").unwrap();
+    let mut adapter = automotive::socketcan::SocketCan::new(SocketCanConfig::new("vcan0")).unwrap();
     bulk_send_sync(&mut adapter);
 }
 
@@ -229,7 +232,8 @@ fn vcan_bulk_send_sync() {
 #[tokio::test]
 #[serial_test::serial]
 async fn vcan_bulk_send_async() {
-    let adapter = automotive::socketcan::SocketCan::new_async("vcan0").unwrap();
+    let adapter =
+        automotive::socketcan::SocketCan::new_async(SocketCanConfig::new("vcan0")).unwrap();
     bulk_send(&adapter).await;
 }
 
@@ -237,7 +241,8 @@ async fn vcan_bulk_send_async() {
 #[tokio::test]
 #[serial_test::serial]
 async fn vcan_send_fd() {
-    let adapter = automotive::socketcan::SocketCan::new_async("vcan0").unwrap();
+    let adapter =
+        automotive::socketcan::SocketCan::new_async(SocketCanConfig::new("vcan0")).unwrap();
     adapter
         .send(&Frame::new(0, 0x123.into(), &[0u8; 64]).unwrap())
         .await;
@@ -247,7 +252,7 @@ async fn vcan_send_fd() {
 #[tokio::test]
 #[serial_test::serial]
 async fn socketcan_open_nonexistent() {
-    let e = automotive::socketcan::SocketCan::new("doestnotexist");
+    let e = automotive::socketcan::SocketCan::new(SocketCanConfig::new("doestnotexist"));
 
     match e {
         Err(automotive::Error::NotFound) => {}

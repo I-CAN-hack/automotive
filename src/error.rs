@@ -48,6 +48,12 @@ pub enum Error {
     PeakError(#[from] crate::peak::Error),
 }
 
+impl From<crate::can::bitrate::BitrateError> for Error {
+    fn from(error: crate::can::bitrate::BitrateError) -> Self {
+        Self::InvalidBitrate(error.to_string())
+    }
+}
+
 impl From<tokio_stream::Elapsed> for Error {
     fn from(_: tokio_stream::Elapsed) -> Error {
         Error::Timeout

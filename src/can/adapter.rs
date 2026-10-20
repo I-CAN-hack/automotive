@@ -1,5 +1,20 @@
 //! Convenience functions to get a CAN adapter.
 
+#[cfg(any(
+    feature = "panda",
+    feature = "peak",
+    all(target_os = "windows", feature = "vector-xl")
+))]
+pub(crate) fn default_bitrate(
+    bitrate: crate::can::bitrate::BitrateBuilder,
+) -> crate::can::bitrate::BitrateBuilder {
+    bitrate
+        .bitrate(500_000)
+        .sample_point(0.8)
+        .data_bitrate(2_000_000)
+        .data_sample_point(0.8)
+}
+
 /// Convenience function to get the first available adapter on the system.
 ///
 /// Adapter backends are feature-gated. If no adapter features are enabled, or no
@@ -7,30 +22,16 @@
 pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error> {
     #[cfg(feature = "panda")]
     {
-        let bitrate_cfg = crate::can::bitrate::BitrateBuilder::new::<crate::panda::Panda>()
-            .bitrate(500_000)
-            .sample_point(0.8)
-            .data_bitrate(2_000_000)
-            .data_sample_point(0.8)
-            .build()
-            .unwrap();
-
-        if let Ok(panda) = crate::panda::Panda::new_async(bitrate_cfg) {
+        let config = crate::panda::PandaConfig::builder().build().unwrap();
+        if let Ok(panda) = crate::panda::Panda::new_async(config) {
             return Ok(panda);
         }
     }
 
     #[cfg(feature = "peak")]
     {
-        let bitrate_cfg = crate::can::bitrate::BitrateBuilder::new::<crate::peak::Peak>()
-            .bitrate(500_000)
-            .sample_point(0.8)
-            .data_bitrate(2_000_000)
-            .data_sample_point(0.8)
-            .build()
-            .unwrap();
-
-        if let Ok(peak) = crate::peak::Peak::new_async(bitrate_cfg) {
+        let config = crate::peak::PeakConfig::builder().build().unwrap();
+        if let Ok(peak) = crate::peak::Peak::new_async(config) {
             return Ok(peak);
         }
     }
@@ -39,7 +40,8 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
     {
         // TODO: iterate over all available SocketCAN adapters to also find things like vcan0
         for iface in ["can0", "vcan0"] {
-            if let Ok(socket) = crate::socketcan::SocketCan::new_async(iface) {
+            let config = crate::socketcan::SocketCanConfig::builder(iface).build();
+            if let Ok(socket) = crate::socketcan::SocketCan::new_async(config) {
                 return Ok(socket);
             }
         }
@@ -47,15 +49,11 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
 
     #[cfg(all(target_os = "windows", feature = "vector-xl"))]
     {
-        let bitrate_cfg = crate::can::bitrate::BitrateBuilder::new::<crate::vector::VectorCan>()
-            .bitrate(500_000)
-            .sample_point(0.8)
-            .data_bitrate(2_000_000)
-            .data_sample_point(0.8)
+        let config = crate::vector::VectorConfig::builder(0)
+            .bitrate(default_bitrate)
             .build()
             .unwrap();
-
-        if let Ok(adapter) = crate::vector::VectorCan::new_async(0, Some(bitrate_cfg)) {
+        if let Ok(adapter) = crate::vector::VectorCan::new_async(config) {
             return Ok(adapter);
         };
     }

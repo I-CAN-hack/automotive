@@ -50,6 +50,57 @@ async fn can_example() -> automotive::Result<()> {
 }
 ```
 
+## Adapter configuration
+
+`BitrateBuilder` produces a `BitrateConfig` containing nominal and optional CAN-FD
+data-phase timings. Adapter settings are supplied separately to each adapter's
+`new` or `new_async` constructor:
+
+- `PeakConfig::new(bitrate)` and `PandaConfig::new(bitrate)` require bus timing.
+- `SocketCanConfig::new("can0")` selects an existing interface; bus timing is
+  configured through the operating system.
+- `VectorConfig::new(channel)` opens a channel with shared access and retains its
+  existing bus timing. The `VectorAccess` enum ties initialization access to a
+  required bitrate.
+
+The configs also provide `builder(...)` constructors. PEAK, panda, and Vector
+builders accept a nested bitrate builder through `.bitrate(|bitrate| ...)`,
+automatically selecting the adapter's timing capabilities. Vector requests
+initialization access when a bitrate is supplied; omitting `.bitrate(...)` keeps
+shared access. SocketCAN's builder selects an existing interface.
+
+Omitting `.bitrate(...)` on PEAK or panda uses 500 kbit/s nominal and 2 Mbit/s
+data, with an 80% sample point for both phases:
+
+```rust
+let config = automotive::peak::PeakConfig::builder().build()?;
+let adapter = automotive::peak::Peak::new_async(config)?;
+```
+
+An explicit `.bitrate(...)` callback starts without preset timing. Supplying only
+a nominal bitrate selects classic CAN; direct timing parameters are also
+supported. `get_adapter()` uses the same defaults when configuring PEAK, panda,
+or Vector.
+
+For example, to configure a Vector channel without selecting a generic adapter
+type for the bitrate builder:
+
+```rust
+use automotive::vector::{VectorCan, VectorConfig};
+
+let config = VectorConfig::builder(0)
+    .bitrate(|bitrate| {
+        bitrate
+            .bitrate(500_000)
+            .data_bitrate(2_000_000)
+    })
+    .build()?;
+let adapter = VectorCan::new_async(config)?;
+```
+
+Each adapter's configuration types live in its `config.rs` module and are
+re-exported from the adapter module.
+
 ## UDS Example
 The automotive crate also supplies interfaces for various diagnostic protocols such as UDS. The adapter is first wrapped to support the ISO Transport Layer, then a UDS Client is created. All methods are fully async, making it easy to communicate with multiple ECUs in parallel. See [automotive#21](https://github.com/I-CAN-hack/automotive/issues/21) for progress on the supported SIDs.
 

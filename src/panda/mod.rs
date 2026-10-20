@@ -1,9 +1,11 @@
 //! Panda CAN adapter support
 
+mod config;
 mod constants;
 mod error;
 mod usb_protocol;
 
+pub use config::{PandaConfig, PandaConfigBuilder};
 pub use error::Error;
 use std::collections::VecDeque;
 
@@ -69,13 +71,14 @@ unsafe impl Send for Panda {}
 
 impl Panda {
     /// Convenience function to create a new panda adapter and wrap in an [`AsyncCanAdapter`]
-    pub fn new_async(bitrate_cfg: BitrateConfig) -> Result<AsyncCanAdapter> {
-        let panda = Panda::new(bitrate_cfg)?;
+    pub fn new_async(config: PandaConfig) -> Result<AsyncCanAdapter> {
+        let panda = Panda::new(config)?;
         Ok(AsyncCanAdapter::new(panda))
     }
 
     /// Connect to the first available panda. This function will set the safety mode to ALL_OUTPUT and clear all buffers.
-    pub fn new(bitrate_cfg: BitrateConfig) -> Result<Panda> {
+    pub fn new(config: PandaConfig) -> Result<Panda> {
+        let bitrate_cfg = config.bitrate;
         let resolved_bitrate_cfg = resolve_bitrate_config(&bitrate_cfg)?;
         warn_if_non_default_sample_points(&bitrate_cfg);
 

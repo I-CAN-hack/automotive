@@ -5,8 +5,11 @@ use crate::Result;
 
 use std::collections::VecDeque;
 
+mod config;
 mod frame;
 mod socket;
+
+pub use config::{SocketCanConfig, SocketCanConfigBuilder};
 
 const IFF_ECHO: u64 = 1 << 18; // include/uapi/linux/if.h
 
@@ -33,15 +36,15 @@ fn read_iff_echo(if_name: &str) -> Option<bool> {
 }
 
 impl SocketCan {
-    /// Creates a new [`AsyncCanAdapter`] from a SocketCAN iface name (e.g. `can0`)
-    pub fn new_async(name: &str) -> Result<AsyncCanAdapter> {
-        let socket = SocketCan::new(name)?;
+    /// Creates an [`AsyncCanAdapter`] for the configured SocketCAN interface.
+    pub fn new_async(config: SocketCanConfig) -> Result<AsyncCanAdapter> {
+        let socket = SocketCan::new(config)?;
         Ok(AsyncCanAdapter::new(socket))
     }
 
-    /// Creates a new blocking [`SocketCan`] from a SocketCAN iface name (e.g. `can0`)
-    pub fn new(name: &str) -> Result<SocketCan> {
-        let socket = match CanFdSocket::open(name) {
+    /// Creates a blocking [`SocketCan`] for the configured interface.
+    pub fn new(config: SocketCanConfig) -> Result<SocketCan> {
+        let socket = match CanFdSocket::open(&config.interface) {
             Ok(socket) => socket,
             Err(_) => return Err(crate::error::Error::NotFound),
         };
@@ -58,7 +61,7 @@ impl SocketCan {
         }
 
         // Read IFF_ECHO flag from interface
-        let iff_echo = match read_iff_echo(name) {
+        let iff_echo = match read_iff_echo(&config.interface) {
             Some(iff_echo) => iff_echo,
             None => {
                 tracing::warn!("Could not read flags for interface. Assuming IFF_ECHO is not set.");
