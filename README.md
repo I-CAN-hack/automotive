@@ -69,6 +69,19 @@ automatically selecting the adapter's timing capabilities. Vector requests
 initialization access when a bitrate is supplied; omitting `.bitrate(...)` keeps
 shared access. SocketCAN's builder selects an existing interface.
 
+Omitting `.bitrate(...)` on PEAK or panda uses 500 kbit/s nominal and 2 Mbit/s
+data, with an 80% sample point for both phases:
+
+```rust
+let config = automotive::peak::PeakConfig::builder().build()?;
+let adapter = automotive::peak::Peak::new_async(config)?;
+```
+
+An explicit `.bitrate(...)` callback starts without preset timing. Supplying only
+a nominal bitrate selects classic CAN; direct timing parameters are also
+supported. `get_adapter()` uses the same defaults when configuring PEAK, panda,
+or Vector.
+
 For example, to configure a Vector channel without selecting a generic adapter
 type for the bitrate builder:
 

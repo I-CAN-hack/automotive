@@ -1,4 +1,5 @@
 use super::Panda;
+use crate::can::adapter::default_bitrate;
 use crate::can::bitrate::{BitrateBuilder, BitrateConfig, BitrateError};
 
 /// Configuration for a panda CAN adapter.
@@ -15,10 +16,10 @@ impl PandaConfig {
     }
 
     /// Build a configuration using panda's bit timing capabilities.
+    /// Omitting bus timing uses 500 kbit/s nominal and 2 Mbit/s data, both with
+    /// an 80% sample point.
     pub fn builder() -> PandaConfigBuilder {
-        PandaConfigBuilder {
-            bitrate: BitrateBuilder::new::<Panda>(),
-        }
+        PandaConfigBuilder { bitrate: None }
     }
 }
 
@@ -26,18 +27,23 @@ impl PandaConfig {
 #[derive(Debug, Clone, Copy)]
 #[must_use]
 pub struct PandaConfigBuilder {
-    bitrate: BitrateBuilder,
+    bitrate: Option<BitrateBuilder>,
 }
 
 impl PandaConfigBuilder {
-    /// Configure bus timing using panda's timing capabilities.
+    /// Configure bus timing using panda's timing capabilities, starting without
+    /// preset timing. Setting only a nominal bitrate selects classic CAN.
     pub fn bitrate(mut self, configure: impl FnOnce(BitrateBuilder) -> BitrateBuilder) -> Self {
-        self.bitrate = configure(self.bitrate);
+        let bitrate = self.bitrate.unwrap_or_else(BitrateBuilder::new::<Panda>);
+        self.bitrate = Some(configure(bitrate));
         self
     }
 
     /// Calculate bus timing and build the adapter configuration.
     pub fn build(self) -> Result<PandaConfig, BitrateError> {
-        Ok(PandaConfig::new(self.bitrate.build()?))
+        let bitrate = self
+            .bitrate
+            .unwrap_or_else(|| default_bitrate(BitrateBuilder::new::<Panda>()));
+        Ok(PandaConfig::new(bitrate.build()?))
     }
 }

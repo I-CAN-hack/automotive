@@ -1,5 +1,20 @@
 //! Convenience functions to get a CAN adapter.
 
+#[cfg(any(
+    feature = "panda",
+    feature = "peak",
+    all(target_os = "windows", feature = "vector-xl")
+))]
+pub(crate) fn default_bitrate(
+    bitrate: crate::can::bitrate::BitrateBuilder,
+) -> crate::can::bitrate::BitrateBuilder {
+    bitrate
+        .bitrate(500_000)
+        .sample_point(0.8)
+        .data_bitrate(2_000_000)
+        .data_sample_point(0.8)
+}
+
 /// Convenience function to get the first available adapter on the system.
 ///
 /// Adapter backends are feature-gated. If no adapter features are enabled, or no
@@ -7,16 +22,7 @@
 pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error> {
     #[cfg(feature = "panda")]
     {
-        let config = crate::panda::PandaConfig::builder()
-            .bitrate(|bitrate| {
-                bitrate
-                    .bitrate(500_000)
-                    .sample_point(0.8)
-                    .data_bitrate(2_000_000)
-                    .data_sample_point(0.8)
-            })
-            .build()
-            .unwrap();
+        let config = crate::panda::PandaConfig::builder().build().unwrap();
         if let Ok(panda) = crate::panda::Panda::new_async(config) {
             return Ok(panda);
         }
@@ -24,16 +30,7 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
 
     #[cfg(feature = "peak")]
     {
-        let config = crate::peak::PeakConfig::builder()
-            .bitrate(|bitrate| {
-                bitrate
-                    .bitrate(500_000)
-                    .sample_point(0.8)
-                    .data_bitrate(2_000_000)
-                    .data_sample_point(0.8)
-            })
-            .build()
-            .unwrap();
+        let config = crate::peak::PeakConfig::builder().build().unwrap();
         if let Ok(peak) = crate::peak::Peak::new_async(config) {
             return Ok(peak);
         }
@@ -53,13 +50,7 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
     #[cfg(all(target_os = "windows", feature = "vector-xl"))]
     {
         let config = crate::vector::VectorConfig::builder(0)
-            .bitrate(|bitrate| {
-                bitrate
-                    .bitrate(500_000)
-                    .sample_point(0.8)
-                    .data_bitrate(2_000_000)
-                    .data_sample_point(0.8)
-            })
+            .bitrate(default_bitrate)
             .build()
             .unwrap();
         if let Ok(adapter) = crate::vector::VectorCan::new_async(config) {
