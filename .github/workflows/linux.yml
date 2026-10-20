@@ -13,7 +13,12 @@ jobs:
       - uses: actions/checkout@v3
       - name: Setup SocketCAN
         run: |
-          sudo apt-get -y install linux-modules-extra-$(uname -r) can-utils
+          sudo apt-get update
+          sudo apt-get -y install "linux-modules-$(uname -r)" can-utils
+          # Newer Azure kernels include CAN drivers in linux-modules; older kernels need extras.
+          if apt-cache show "linux-modules-extra-$(uname -r)" >/dev/null 2>&1; then
+            sudo apt-get -y install "linux-modules-extra-$(uname -r)"
+          fi
           pip install --user scapy==2.6.1
           scripts/build_can_isotp.sh
           scripts/set_up_vcan.sh
