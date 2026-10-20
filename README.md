@@ -177,6 +177,7 @@ This library supports awaiting a sent frame and waiting for the ACK on the CAN b
    - The panda does not retry frames that are not ACKed, and drops them instead. This can cause panics in some internal parts of the library when frames are dropped. [panda#1922](https://github.com/commaai/panda/issues/1922) tracks this issue.
  - PEAK PCAN-USB FD (raw USB, `peak` feature)
    - This driver talks to the device directly over USB instead of through SocketCAN, so it does not need the `peak_usb` kernel module to be unloaded; the in-kernel driver is detached automatically when the device is opened.
+   - To temporarily unload `peak_usb` or the out-of-tree `pcan` driver for testing, run `scripts/unload_peak_driver.sh`. Test raw USB in another terminal, then press Enter to restore the drivers. The script also restores them on Ctrl+C or ordinary errors, and only reloads drivers that were initially loaded.
    - On Linux the USB device node is owned by root by default. To use the adapter without running as root, install a udev rule granting access to your user, e.g. in `/etc/udev/rules.d/70-pcan-usb-fd.rules`:
      ```
      # PEAK System PCAN-USB FD family
