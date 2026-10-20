@@ -11,10 +11,12 @@
 //! Both classic CAN and CAN-FD are supported, including full control over the
 //! nominal and data-phase bit timing via [`crate::can::bitrate::BitrateBuilder`].
 
+mod config;
 mod constants;
 pub mod error;
 mod protocol;
 
+pub use config::{PeakConfig, PeakConfigBuilder};
 pub use error::Error;
 
 use std::collections::VecDeque;
@@ -92,15 +94,16 @@ unsafe impl Send for Peak {}
 impl Peak {
     /// Connect to the first available PCAN-USB FD family adapter and wrap it in
     /// an [`AsyncCanAdapter`].
-    pub fn new_async(bitrate_cfg: BitrateConfig) -> Result<AsyncCanAdapter> {
-        let peak = Peak::new(bitrate_cfg)?;
+    pub fn new_async(config: PeakConfig) -> Result<AsyncCanAdapter> {
+        let peak = Peak::new(config)?;
         Ok(AsyncCanAdapter::new(peak))
     }
 
     /// Connect to the first available PCAN-USB FD family adapter.
     ///
     /// The in-kernel `peak_usb` driver, if bound, is detached automatically.
-    pub fn new(bitrate_cfg: BitrateConfig) -> Result<Peak> {
+    pub fn new(config: PeakConfig) -> Result<Peak> {
+        let bitrate_cfg = config.bitrate;
         for device in rusb::devices()?.iter() {
             let desc = match device.device_descriptor() {
                 Ok(desc) => desc,

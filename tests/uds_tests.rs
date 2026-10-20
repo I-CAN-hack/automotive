@@ -2,6 +2,8 @@
 use automotive::can::AsyncCanAdapter;
 use automotive::can::Identifier;
 use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
+#[cfg(all(target_os = "linux", feature = "socketcan"))]
+use automotive::socketcan::SocketCanConfig;
 use automotive::uds::Error as UDSError;
 use automotive::uds::NegativeResponseCode;
 use automotive::uds::UDSClient;
@@ -34,7 +36,8 @@ async fn vecu_spawn(adapter: &AsyncCanAdapter) -> ChildGuard {
 #[tokio::test]
 #[serial_test::serial]
 async fn uds_test_sids() {
-    let adapter = automotive::socketcan::SocketCan::new_async("vcan0").unwrap();
+    let adapter =
+        automotive::socketcan::SocketCan::new_async(SocketCanConfig::new("vcan0")).unwrap();
     let _vecu = vecu_spawn(&adapter).await;
 
     let mut isotp_config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));

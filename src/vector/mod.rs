@@ -1,14 +1,16 @@
 //! Vector CAN Adapter support through the XL Driver
 mod bindings;
+mod config;
 pub mod error;
 pub mod types;
 mod vxlapi;
 
+pub use config::{VectorAccess, VectorConfig, VectorConfigBuilder};
 pub use error::Error;
 
 use std::collections::VecDeque;
 
-use crate::can::bitrate::{AdapterTimingConst, BitTimingConst, BitrateConfig};
+use crate::can::bitrate::{AdapterTimingConst, BitTimingConst};
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
 use crate::vector::bindings::XLcanFdConf;
 use crate::vector::types::{PortHandle, XLaccess, XLcanTxEvent};
@@ -50,16 +52,18 @@ pub struct VectorCan {
 
 impl VectorCan {
     /// Convenience function to create a new adapter and wrap in an [`AsyncCanAdapter`]
-    pub fn new_async(channel_idx: usize, conf: Option<BitrateConfig>) -> Result<AsyncCanAdapter> {
-        let vector = VectorCan::new(channel_idx, conf)?;
+    pub fn new_async(config: VectorConfig) -> Result<AsyncCanAdapter> {
+        let vector = VectorCan::new(config)?;
         Ok(AsyncCanAdapter::new(vector))
     }
 
-    /// Create a new Vector Adapter based on the global channel ID
-    /// If conf is provided, the channel will be initialized with the provided configuration.
-    /// If not, the channel will be opened without requesting init (exclusive) access,
-    /// and can be configured using other tools (e.g. Vector's CANalyzer).
-    pub fn new(channel_idx: usize, conf: Option<BitrateConfig>) -> Result<VectorCan> {
+    /// Open a shared Vector channel or request initialization access and
+    /// configure its bus timing. Shared channels retain their existing timing.
+    pub fn new(config: VectorConfig) -> Result<VectorCan> {
+        let conf = match config.access {
+            VectorAccess::Shared => None,
+            VectorAccess::Init { bitrate } => Some(bitrate),
+        };
         if conf.as_ref().is_some_and(|conf| conf.data.is_none()) {
             return Err(crate::Error::InvalidBitrate(
                 "Vector bitrate configuration requires a CAN-FD data phase".to_string(),
@@ -69,7 +73,7 @@ impl VectorCan {
         xl_open_driver()?;
 
         // Get config based on global channel number
-        let config = xl_get_driver_config(channel_idx)?;
+        let config = xl_get_driver_config(config.channel)?;
         info!("Got Application Config: {:?}", config);
 
         // TODO: This produces weird errors
@@ -182,14 +186,12 @@ mod tests {
 
     #[test]
     fn rejects_nominal_only_bitrate_config() {
-        let bitrate_cfg = BitrateBuilder::new::<VectorCan>()
-            .bitrate(500_000)
-            .sample_point(0.8)
-            .sjw(1)
+        let config = VectorConfig::builder(0)
+            .bitrate(|bitrate| bitrate.bitrate(500_000).sample_point(0.8).sjw(1))
             .build()
             .unwrap();
 
-        match VectorCan::new(0, Some(bitrate_cfg)) {
+        match VectorCan::new(config) {
             Err(crate::Error::InvalidBitrate(msg)) => {
                 assert_eq!(
                     msg,
