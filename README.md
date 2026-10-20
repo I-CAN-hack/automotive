@@ -111,11 +111,12 @@ field; `None` disables the deadline. A zero timeout is rejected with
 J2534 do not support TX cancellation and expose no TX timeout setting.
 
 `adapter.send(&frame).await` returns `Result<()>`. `Error::Timeout` means the
-queue/confirmation deadline expired. `Error::Cancelled` means the send was
-invalidated by a transmit queue clear. Adapter errors retain their original
-error variant. A queue clear invalidates all pending sends,
-including software-queued frames and callers waiting for queue capacity. ISO-TP
-and UDS propagate CAN transmit failures.
+send was still unconfirmed when its expired deadline was checked. A matching TX
+confirmation received before cancellation succeeds even if its deadline has
+passed. `Error::Cancelled` means the send was invalidated by a transmit queue
+clear. Adapter errors retain their original error variant. A queue clear
+invalidates all pending sends, including software-queued frames and callers
+waiting for queue capacity. ISO-TP and UDS propagate CAN transmit failures.
 
 Supported adapters also clear TX on startup. PEAK uses TX_ABORT/FLUSH and an RX
 barrier. Vector sends the first real frame with HIGHPRIO, which clears its send

@@ -42,10 +42,7 @@ async fn main() -> automotive::Result<()> {
 
         let mut retry = false;
         let mut adapter_error = None;
-        for (frame, result) in [
-            (&first, first_result),
-            (&second, second_result),
-        ] {
+        for (frame, result) in [(&first, first_result), (&second, second_result)] {
             match result {
                 Ok(()) => println!("{:?} (counter {counter}): TX confirmed", frame.id),
                 Err(Error::Timeout) => {

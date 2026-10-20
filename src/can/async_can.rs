@@ -67,6 +67,55 @@ fn process<T: CanAdapter>(
                 return Ok(());
             }
 
+            for frame in adapter.recv()? {
+                if frame.loopback {
+                    // Startup/queue clearing can leave old echoes buffered in
+                    // RX, even though their TX requests have been discarded.
+                    // Warn and ignore unmatched echoes until the first current
+                    // TX is CONFIRMED (merely submitting it is not enough).
+                    // After that, an unmatched echo violates the adapter's
+                    // completion/order contract and must panic. A queue clear
+                    // resets first_tx_confirmed and opens this grace period
+                    // again. Never consume a callback or credit for an
+                    // unmatched echo.
+                    let key = (frame.bus, frame.id);
+                    if let Some(txs) = pending.get_mut(&key) {
+                        if txs.front().is_some_and(|tx| {
+                            let mut expected = tx.frame.clone();
+                            expected.loopback = true;
+                            expected == frame
+                        }) {
+                            // A matching echo confirms TX even if recv() crossed
+                            // its deadline. Check timeouts only after processing
+                            // received confirmations, for sends still pending.
+                            let tx = txs.pop_front().unwrap();
+                            in_flight -= 1;
+                            tx.finish(Ok(()));
+                            first_tx_confirmed = true;
+                        } else {
+                            assert!(
+                                !first_tx_confirmed,
+                                "Unmatched transmit echo after first TX confirmation: {frame:?}"
+                            );
+                            tracing::warn!(
+                                ?frame,
+                                "Ignoring unmatched echo before first TX confirmation"
+                            );
+                        }
+                        if txs.is_empty() {
+                            pending.remove(&key);
+                        }
+                    } else {
+                        assert!(!first_tx_confirmed, "Transmit echo without a pending send after first TX confirmation: {frame:?}");
+                        tracing::warn!(
+                            ?frame,
+                            "Ignoring unmatched echo before first TX confirmation"
+                        );
+                    }
+                }
+                let _ = rx_sender.send(frame);
+            }
+
             let now = Instant::now();
             // A channel-wide clear invalidates the ENTIRE session, including
             // requests still waiting for admission to the bounded TX channel.
@@ -99,57 +148,6 @@ fn process<T: CanAdapter>(
                 first_tx_confirmed = false;
             }
 
-            for frame in adapter.recv()? {
-                if frame.loopback {
-                    // Startup/queue clearing can leave old echoes buffered in
-                    // RX, even though their TX requests have been discarded.
-                    // Warn and ignore unmatched echoes until the first current
-                    // TX is CONFIRMED (merely submitting it is not enough).
-                    // After that, an unmatched echo violates the adapter's
-                    // completion/order contract and must panic. A queue clear
-                    // resets first_tx_confirmed and opens this grace period
-                    // again. Never consume a callback or credit for an
-                    // unmatched echo.
-                    let key = (frame.bus, frame.id);
-                    if let Some(txs) = pending.get_mut(&key) {
-                        if txs.front().is_some_and(|tx| {
-                            let mut expected = tx.frame.clone();
-                            expected.loopback = true;
-                            expected == frame
-                        }) {
-                            // recv() may span the deadline. Leave an expired
-                            // matching send for cancellation next iteration;
-                            // this is a timeout, not an unmatched-echo bug.
-                            if !txs.front().unwrap().expired(Instant::now()) {
-                                let tx = txs.pop_front().unwrap();
-                                in_flight -= 1;
-                                tx.finish(Ok(()));
-                                first_tx_confirmed = true;
-                            }
-                        } else {
-                            assert!(
-                                !first_tx_confirmed,
-                                "Unmatched transmit echo after first TX confirmation: {frame:?}"
-                            );
-                            tracing::warn!(
-                                ?frame,
-                                "Ignoring unmatched echo before first TX confirmation"
-                            );
-                        }
-                        if txs.is_empty() {
-                            pending.remove(&key);
-                        }
-                    } else {
-                        assert!(!first_tx_confirmed, "Transmit echo without a pending send after first TX confirmation: {frame:?}");
-                        tracing::warn!(
-                            ?frame,
-                            "Ignoring unmatched echo before first TX confirmation"
-                        );
-                    }
-                }
-                let _ = rx_sender.send(frame);
-            }
-
             // Bound software staging independently of hardware capacity. Check
             // generations even when hardware is full so clears unblock waiters.
             while queued.len() < CAN_TX_BUFFER_SIZE {
@@ -164,11 +162,8 @@ fn process<T: CanAdapter>(
             }
             queued.retain(|tx| !tx.completion.is_closed());
 
-            // Expired queued requests must never be submitted, including ones
-            // just admitted above. The next iteration cancels the session.
-            if queued.iter().any(|tx| tx.expired(Instant::now())) {
-                continue;
-            }
+            // Newly admitted sends are checked for expiry next iteration,
+            // after giving their received confirmations a chance to complete.
             let count = queued.len().min(buffer_size.saturating_sub(in_flight));
             if count > 0 {
                 let mut frames: VecDeque<_> = queued
@@ -187,7 +182,7 @@ fn process<T: CanAdapter>(
                 }
                 in_flight += sent;
             }
-            std::thread::sleep(Duration::from_micros(50));
+            std::thread::sleep(Duration::from_micros(1));
         }
     })();
 
@@ -255,6 +250,8 @@ impl AsyncCanAdapter {
     /// queue admission and confirmation. A timeout triggers cancellation of all
     /// pending TX; other affected sends return [`Error::Cancelled`]. Vector
     /// defers its hardware clear until the next real frame, using HIGHPRIO.
+    /// A matching confirmation received before cancellation succeeds even if
+    /// its deadline has passed.
     /// Adapter failures retain their original error variant.
     pub async fn send(&self, frame: &Frame) -> Result<()> {
         let deadline = self.tx_timeout.map(|timeout| Instant::now() + timeout);
@@ -285,19 +282,13 @@ impl AsyncCanAdapter {
                 Error::Cancelled
             }
         };
-        let wait = async {
-            tokio::select! {
-                biased;
-                result = send => result,
-                error = cancelled => Err(error),
-            }
-        };
-        if let Some(deadline) = deadline {
-            tokio::time::timeout_at(deadline.into(), wait)
-                .await
-                .map_err(|_| Error::Timeout)?
-        } else {
-            wait.await
+        // The worker decides between confirmations and timeout cancellation.
+        // A caller-side timer could return Timeout before it processes a
+        // matching echo received across the deadline.
+        tokio::select! {
+            biased;
+            result = send => result,
+            error = cancelled => Err(error),
         }
     }
 
