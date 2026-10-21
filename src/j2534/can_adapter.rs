@@ -139,15 +139,20 @@ impl CanAdapter for J2534CanAdapter {
         }
 
         while let Some(frame) = frames.pop_front() {
-            let arb_id: u32 = frame.id.into();
+            if !frame.is_data() || frame.is_fd() {
+                frames.push_front(frame);
+                return Err(crate::Error::NotSupported);
+            }
+            let id = frame.id().ok_or(crate::Error::NotSupported)?;
+            let arb_id = id.as_raw();
             tracing::debug!(
                 id = format_args!("{arb_id:08X}"),
-                payload = %hex::encode(&frame.data),
+                payload = %hex::encode(frame.data()),
                 "J2534 TX"
             );
 
-            let mut msg = PassThruMsg::new(Protocol::Can.into(), frame.id, &frame.data);
-            msg.tx_flags = can_id_flags(frame.id);
+            let mut msg = PassThruMsg::new(Protocol::Can.into(), id, frame.data());
+            msg.tx_flags = can_id_flags(id);
             let (status, count) = self.channel.write_message(&mut msg, IO_TIMEOUT_MS);
             tracing::trace!(ret = %status, count, "PassThruWriteMsgs");
 
@@ -196,16 +201,16 @@ impl CanAdapter for J2534CanAdapter {
                             "J2534 RX skipped (frame too short)"
                         );
                     } else {
-                        let id = parse_can_id(&msg);
-                        let data = msg.data[4..len].to_vec();
+                        let Ok(id) = parse_can_id(&msg) else { continue };
+                        let data = &msg.data[4..len];
                         let arb_id: u32 = id.into();
                         tracing::debug!(
                             id = format_args!("{arb_id:08X}"),
-                            payload = %hex::encode(&data),
+                            payload = %hex::encode(data),
                             "J2534 RX"
                         );
 
-                        if let Ok(frame) = Frame::new(0, id, &data) {
+                        if let Ok(frame) = Frame::builder(id).data(data).build() {
                             frames.push(frame);
                         }
                     }

@@ -33,22 +33,17 @@ pub fn pack_can_buffer(frames: &[Frame]) -> Result<Vec<Vec<u8>>, Error> {
     ret.push(vec![]);
 
     for frame in frames {
-        let extended: u32 = match frame.id {
-            Identifier::Standard(_) => 0,
-            Identifier::Extended(_) => 1,
-        };
-
-        let id: u32 = frame.id.into();
-
-        // Check if the id is valid
-        if id > 0x7ff && extended == 0 {
-            return Err(Error::MalformedFrame);
+        if !frame.is_data() {
+            return Err(Error::NotSupported);
         }
+        let id = frame.id().ok_or(Error::NotSupported)?;
+        let extended = u32::from(id.is_extended());
+        let id = id.as_raw();
 
-        let fd = frame.fd as u8;
+        // Panda controls BRS/ESI; the USB protocol only carries the FD bit.
+        let fd = frame.is_fd() as u8;
 
-        let dlc = DLC_TO_LEN.iter().position(|&x| x == frame.data.len());
-        let dlc = dlc.ok_or(Error::MalformedFrame)? as u8;
+        let dlc = frame.dlc().ok_or(Error::NotSupported)?;
 
         let word_4b: u32 = (id << 3) | (extended << 2);
 
@@ -60,12 +55,12 @@ pub fn pack_can_buffer(frames: &[Frame]) -> Result<Vec<Vec<u8>>, Error> {
             ((word_4b >> 24) & 0xff) as u8,
         ];
 
-        let checksum = calculate_checksum(&header) ^ calculate_checksum(&frame.data);
+        let checksum = calculate_checksum(&header) ^ calculate_checksum(frame.data());
 
         let last = ret.last_mut().unwrap();
         last.extend_from_slice(&header);
         last.push(checksum);
-        last.extend_from_slice(&frame.data);
+        last.extend_from_slice(frame.data());
 
         if last.len() > CANPACKET_MAX_CHUNK_SIZE {
             ret.push(vec![]);
@@ -96,8 +91,8 @@ pub fn unpack_can_buffer(dat: &mut Vec<u8>) -> Result<Vec<Frame>, Error> {
         }
 
         let id = match extended {
-            true => Identifier::Extended(id),
-            false => Identifier::Standard(id),
+            true => Identifier::extended(id)?,
+            false => Identifier::standard(id)?,
         };
 
         // Check if we have enough data to unpack the whole frame
@@ -112,13 +107,14 @@ pub fn unpack_can_buffer(dat: &mut Vec<u8>) -> Result<Vec<Frame>, Error> {
             ));
         }
 
-        ret.push(Frame {
-            id,
-            bus,
-            data: dat[CANPACKET_HEAD_SIZE..(CANPACKET_HEAD_SIZE + data_len)].to_vec(),
-            loopback: returned,
-            fd,
-        });
+        ret.push(
+            Frame::builder(id)
+                .bus(bus)
+                .loopback(returned)
+                .data(&dat[CANPACKET_HEAD_SIZE..(CANPACKET_HEAD_SIZE + data_len)])
+                .fd(fd)
+                .build()?,
+        );
 
         dat.drain(0..(CANPACKET_HEAD_SIZE + data_len));
     }
@@ -133,7 +129,7 @@ mod tests {
     #[test]
     fn test_unpack_single() {
         let mut buffer = vec![
-            208, 128, 1, 0, 0, 171, 0, 0, 0, 0, 0, 0, 13, 69, 0, 0, 8, 0, 0, 27, 0, 0, 0, 0, 0, 1,
+            209, 128, 1, 0, 0, 170, 0, 0, 0, 0, 0, 0, 13, 69, 0, 0, 8, 0, 0, 27, 0, 0, 0, 0, 0, 1,
             0, 0, 255, 250, 0, 0, 0, 0, 199, 116, 151, 129,
         ];
         let frames = unpack_can_buffer(&mut buffer).unwrap();
@@ -142,10 +138,10 @@ mod tests {
         assert_eq!(buffer.len(), 0);
 
         assert_eq!(frames.len(), 1);
-        assert_eq!(frames[0].id, Identifier::Standard(48));
+        assert_eq!(frames[0].id(), Some(Identifier::standard(48).unwrap()));
         assert_eq!(frames[0].bus, 0);
         assert_eq!(
-            frames[0].data,
+            frames[0].data(),
             vec![
                 0, 0, 0, 0, 0, 0, 13, 69, 0, 0, 8, 0, 0, 27, 0, 0, 0, 0, 0, 1, 0, 0, 255, 250, 0,
                 0, 0, 0, 199, 116, 151, 129
@@ -156,7 +152,7 @@ mod tests {
     #[test]
     fn test_remaining_data() {
         let mut buffer = vec![
-            208, 128, 1, 0, 0, 171, 0, 0, 0, 0, 0, 0, 13, 69, 0, 0, 8, 0, 0, 27, 0, 0, 0, 0, 0, 1,
+            209, 128, 1, 0, 0, 170, 0, 0, 0, 0, 0, 0, 13, 69, 0, 0, 8, 0, 0, 27, 0, 0, 0, 0, 0, 1,
             0, 0, 255, 250, 0, 0, 0, 0, 199, 116, 151, 129, // Extra
             208, 128,
         ];
@@ -167,60 +163,69 @@ mod tests {
 
     #[test]
     fn test_round_trip() {
+        let id = Identifier::standard(0x123).unwrap();
+        let extended = Identifier::extended(0x123).unwrap();
         let frames = vec![
-            Frame {
-                bus: 0,
-                id: Identifier::Standard(0x123),
-                data: vec![1, 2, 3, 4, 5, 6, 7, 8],
-                loopback: false,
-                fd: false,
-            },
-            Frame {
-                bus: 1,
-                id: Identifier::Extended(0x123),
-                data: vec![1, 2, 3, 4],
-                loopback: false,
-                fd: false,
-            },
-            Frame {
-                bus: 1,
-                id: Identifier::Extended(0x123),
-                data: vec![1, 2, 3, 4],
-                loopback: false,
-                fd: true,
-            },
+            Frame::builder(id)
+                .data(&[1, 2, 3, 4, 5, 6, 7, 8])
+                .build()
+                .unwrap(),
+            Frame::builder(extended)
+                .bus(1)
+                .data(&[1, 2, 3, 4])
+                .build()
+                .unwrap(),
+            Frame::builder(extended)
+                .bus(1)
+                .fd(true)
+                .data(&[1, 2, 3, 4])
+                .build()
+                .unwrap(),
         ];
 
         let buffer = pack_can_buffer(&frames).unwrap();
         let mut buffer = buffer.concat();
         let unpacked = unpack_can_buffer(&mut buffer).unwrap();
-
         assert_eq!(frames, unpacked);
     }
 
     #[test]
-    fn test_round_malformed_dlc() {
-        let frames = vec![Frame {
-            bus: 0,
-            id: Identifier::Standard(0x123),
-            data: vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
-            loopback: false,
-            fd: false,
-        }];
-        let r = pack_can_buffer(&frames);
-        assert!(matches!(r, Err(Error::MalformedFrame)));
+    fn rejects_classic_frame_with_fd_length() {
+        let mut buffer = vec![
+            208, 128, 1, 0, 0, 171, 0, 0, 0, 0, 0, 0, 13, 69, 0, 0, 8, 0, 0, 27, 0, 0, 0, 0, 0, 1,
+            0, 0, 255, 250, 0, 0, 0, 0, 199, 116, 151, 129,
+        ];
+        assert!(matches!(
+            unpack_can_buffer(&mut buffer),
+            Err(Error::MalformedFrame)
+        ));
     }
 
     #[test]
-    fn test_round_malformed_id() {
-        let frames = vec![Frame {
-            bus: 0,
-            id: Identifier::Standard(0xfff),
-            data: vec![1, 2, 3, 4, 5, 6, 7, 8],
-            loopback: false,
-            fd: false,
-        }];
-        let r = pack_can_buffer(&frames);
-        assert!(matches!(r, Err(Error::MalformedFrame)));
+    fn fd_flags_do_not_change_usb_encoding() {
+        let id = Identifier::standard(0x123).unwrap();
+        for len in [0, 8, 12, 64] {
+            let data = vec![0xaa; len];
+            let builder = Frame::builder(id).bus(1).fd(true).data(&data);
+            let expected = pack_can_buffer(&[builder.clone().build().unwrap()]).unwrap();
+            for (brs, esi) in [(false, false), (true, false), (false, true), (true, true)] {
+                let frame = builder.clone().brs(brs).esi(esi).build().unwrap();
+                assert_eq!(pack_can_buffer(&[frame]).unwrap(), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_unsupported_frames() {
+        let id = Identifier::standard(0x123).unwrap();
+        for frame in [
+            Frame::remote(0, id, 8).unwrap(),
+            Frame::error(0, crate::can::ErrorFlag::Active),
+        ] {
+            assert!(matches!(
+                pack_can_buffer(&[frame]),
+                Err(Error::NotSupported)
+            ));
+        }
     }
 }

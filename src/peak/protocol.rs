@@ -5,7 +5,7 @@
 //! message endpoints. Both are little-endian.
 
 use crate::can::bitrate::AdapterBitTiming;
-use crate::can::{Frame, Identifier, DLC_TO_LEN};
+use crate::can::{Frame, FrameContent, Identifier, DLC_TO_LEN};
 use crate::peak::constants::*;
 use crate::peak::error::Error;
 
@@ -17,15 +17,6 @@ fn align4(n: usize) -> usize {
 /// Build the 16-bit `opcode_channel` field shared by every command/message.
 fn opcode_channel(channel: u8, opcode: u16) -> u16 {
     ((channel as u16) << 12) | (opcode & 0x3ff)
-}
-
-/// Look up the DLC (data length code) for a given payload length.
-fn len_to_dlc(len: usize) -> Result<u8, Error> {
-    DLC_TO_LEN
-        .iter()
-        .position(|&l| l == len)
-        .map(|dlc| dlc as u8)
-        .ok_or(Error::MalformedFrame)
 }
 
 /// Convert a DLC back to a payload length, honoring the CAN-FD lookup table for
@@ -140,29 +131,34 @@ pub fn cmd_timing_fast(channel: u8, t: &AdapterBitTiming) -> Command {
 
 /// Encode one CAN frame into a transmit message record.
 ///
-/// `brs` requests bitrate switching for CAN-FD frames. `LOOPED_BACK` is always
-/// set so the device echoes the frame back once it has been transmitted on the
-/// bus, which the async layer uses as the ACK signal.
-pub fn encode_tx_frame(frame: &Frame, brs: bool) -> Result<Vec<u8>, Error> {
-    let dlc = len_to_dlc(frame.data.len())?;
+/// `brs_supported` indicates whether a data bitrate is configured. The device
+/// echoes transmitted frames (`LOOPED_BACK`) so the async layer can confirm TX.
+pub fn encode_tx_frame(frame: &Frame, brs_supported: bool) -> Result<Vec<u8>, Error> {
+    let dlc = frame.dlc().ok_or(Error::UnsupportedFrame)?;
 
     let mut flags = FLAG_LOOPED_BACK;
-    let id: u32 = match frame.id {
-        Identifier::Extended(id) => {
-            flags |= FLAG_EXT_ID;
-            id
-        }
-        Identifier::Standard(id) => id,
-    };
+    let id = frame.id().ok_or(Error::UnsupportedFrame)?;
+    if id.is_extended() {
+        flags |= FLAG_EXT_ID;
+    }
+    let id = id.as_raw();
 
-    if frame.fd {
+    if let FrameContent::Fd { brs, esi, .. } = frame.content() {
         flags |= FLAG_EXT_DATA_LEN;
-        if brs {
+        if *brs {
+            if !brs_supported {
+                return Err(Error::MissingDataBitrate);
+            }
             flags |= FLAG_BITRATE_SWITCH;
         }
+        if *esi {
+            flags |= FLAG_ERROR_STATE_IND;
+        }
+    } else if frame.is_remote() {
+        flags |= FLAG_RTR;
     }
 
-    let msg_size = align4(TX_MSG_HEADER_SIZE + frame.data.len());
+    let msg_size = align4(TX_MSG_HEADER_SIZE + frame.data().len());
     let mut buf = vec![0u8; msg_size];
 
     buf[0..2].copy_from_slice(&(msg_size as u16).to_le_bytes());
@@ -172,7 +168,7 @@ pub fn encode_tx_frame(frame: &Frame, brs: bool) -> Result<Vec<u8>, Error> {
                                               // byte 13: client (echo index, unused)
     buf[14..16].copy_from_slice(&flags.to_le_bytes());
     buf[16..20].copy_from_slice(&id.to_le_bytes());
-    buf[20..20 + frame.data.len()].copy_from_slice(&frame.data);
+    buf[20..20 + frame.data().len()].copy_from_slice(frame.data());
 
     Ok(buf)
 }
@@ -217,27 +213,34 @@ pub fn parse_rx_buffer(data: &[u8]) -> (Vec<Frame>, u32) {
                 let loopback = flags & FLAG_LOOPED_BACK != 0;
 
                 let id = if flags & FLAG_EXT_ID != 0 {
-                    Identifier::Extended(id & 0x1fff_ffff)
+                    Identifier::extended(id & 0x1fff_ffff).expect("ID is masked to 29 bits")
                 } else {
-                    Identifier::Standard(id & 0x7ff)
+                    Identifier::standard(id & 0x7ff).expect("ID is masked to 11 bits")
                 };
 
-                let payload = if rtr {
-                    Vec::new()
+                let parsed = if rtr && !fd {
+                    Frame::remote(channel, id, dlc)
+                } else if rtr {
+                    Err(crate::Error::MalformedFrame)
                 } else {
                     let want = dlc_to_len(dlc, fd);
                     let avail = size - RX_MSG_HEADER_SIZE;
-                    let n = want.min(avail);
-                    data[off + RX_MSG_HEADER_SIZE..off + RX_MSG_HEADER_SIZE + n].to_vec()
+                    if want > avail {
+                        off += align4(size);
+                        continue;
+                    }
+                    Frame::builder(id)
+                        .bus(channel)
+                        .data(&data[off + RX_MSG_HEADER_SIZE..off + RX_MSG_HEADER_SIZE + want])
+                        .fd(fd)
+                        .brs(fd && flags & FLAG_BITRATE_SWITCH != 0)
+                        .esi(fd && flags & FLAG_ERROR_STATE_IND != 0)
+                        .build()
                 };
-
-                frames.push(Frame {
-                    bus: channel,
-                    id,
-                    data: payload,
-                    loopback,
-                    fd,
-                });
+                if let Ok(mut frame) = parsed {
+                    frame.loopback = loopback;
+                    frames.push(frame);
+                }
             }
             MSG_OVERRUN => overruns += 1,
             _ => {} // status / error / calibration / unknown: ignore
@@ -310,7 +313,12 @@ mod tests {
 
     #[test]
     fn encode_standard_frame_sets_looped_back() {
-        let frame = Frame::new(0, Identifier::Standard(0x123), &[1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
+        let frame = Frame::new(
+            0,
+            Identifier::standard(0x123).unwrap(),
+            &[1, 2, 3, 4, 5, 6, 7, 8],
+        )
+        .unwrap();
         let buf = encode_tx_frame(&frame, false).unwrap();
 
         assert_eq!(buf.len(), align4(TX_MSG_HEADER_SIZE + 8));
@@ -329,8 +337,13 @@ mod tests {
 
     #[test]
     fn encode_extended_fd_frame_sets_flags() {
-        let frame = Frame::new(0, Identifier::Extended(0x1234), &[0xAA; 16]).unwrap();
-        assert!(frame.fd);
+        let frame = Frame::builder(Identifier::extended(0x1234).unwrap())
+            .fd(true)
+            .brs(true)
+            .data(&[0xAA; 16])
+            .build()
+            .unwrap();
+        assert!(frame.is_fd());
         let buf = encode_tx_frame(&frame, true).unwrap();
 
         let flags = u16::from_le_bytes([buf[14], buf[15]]);
@@ -342,39 +355,92 @@ mod tests {
     }
 
     #[test]
-    fn encode_rejects_invalid_length() {
-        let frame = Frame {
-            bus: 0,
-            id: Identifier::Standard(0x1),
-            data: vec![0; 9], // 9 is not a valid CAN length
-            loopback: false,
-            fd: false,
-        };
+    fn encode_rejects_error_frames() {
+        let frame = Frame::error(0, crate::can::ErrorFlag::Active);
         assert!(matches!(
             encode_tx_frame(&frame, false),
-            Err(Error::MalformedFrame)
+            Err(Error::UnsupportedFrame)
         ));
+    }
+
+    #[test]
+    fn remote_requests_keep_dlc_and_have_no_payload() {
+        for dlc in 0..=15 {
+            let frame = Frame::remote(0, Identifier::standard(0x123).unwrap(), dlc).unwrap();
+            let tx = encode_tx_frame(&frame, false).unwrap();
+            assert_eq!(tx.len(), TX_MSG_HEADER_SIZE);
+            assert_eq!(tx[12] >> 4, dlc);
+            assert_ne!(u16::from_le_bytes([tx[14], tx[15]]) & FLAG_RTR, 0);
+            let (decoded, _) = parse_rx_buffer(&build_rx_record(&frame));
+            assert_eq!(decoded, vec![frame]);
+        }
+    }
+
+    #[test]
+    fn fd_flags_are_preserved_and_brs_requires_data_timing() {
+        let frame = Frame::builder(Identifier::standard(0x123).unwrap())
+            .fd(true)
+            .brs(true)
+            .esi(true)
+            .data(&[0xaa; 4])
+            .build()
+            .unwrap();
+        assert!(matches!(
+            encode_tx_frame(&frame, false),
+            Err(Error::MissingDataBitrate)
+        ));
+        let tx = encode_tx_frame(&frame, true).unwrap();
+        let flags = u16::from_le_bytes([tx[14], tx[15]]);
+        assert_ne!(flags & FLAG_BITRATE_SWITCH, 0);
+        assert_ne!(flags & FLAG_ERROR_STATE_IND, 0);
+        let (decoded, _) = parse_rx_buffer(&build_rx_record(&frame));
+        assert_eq!(decoded, vec![frame]);
+
+        let frame = Frame::builder(Identifier::standard(0x123).unwrap())
+            .fd(true)
+            .build()
+            .unwrap();
+        let tx = encode_tx_frame(&frame, true).unwrap();
+        assert_eq!(
+            u16::from_le_bytes([tx[14], tx[15]]) & FLAG_BITRATE_SWITCH,
+            0
+        );
+    }
+
+    #[test]
+    fn fd_remote_requests_are_rejected_on_receive() {
+        let frame = Frame::remote(0, Identifier::standard(0x123).unwrap(), 8).unwrap();
+        let mut record = build_rx_record(&frame);
+        let flags = FLAG_RTR | FLAG_EXT_DATA_LEN;
+        record[22..24].copy_from_slice(&flags.to_le_bytes());
+        assert!(parse_rx_buffer(&record).0.is_empty());
     }
 
     /// Build a received CAN record the way the device would, for round-trip tests.
     fn build_rx_record(frame: &Frame) -> Vec<u8> {
-        let dlc = len_to_dlc(frame.data.len()).unwrap();
-        let size = align4(RX_MSG_HEADER_SIZE + frame.data.len());
+        let dlc = frame.dlc().unwrap();
+        let size = align4(RX_MSG_HEADER_SIZE + frame.data().len());
         let mut buf = vec![0u8; size];
 
         let mut flags = 0u16;
         if frame.loopback {
             flags |= FLAG_LOOPED_BACK;
         }
-        let id: u32 = match frame.id {
-            Identifier::Extended(id) => {
-                flags |= FLAG_EXT_ID;
-                id
-            }
-            Identifier::Standard(id) => id,
-        };
-        if frame.fd {
+        let id = frame.id().unwrap();
+        if id.is_extended() {
+            flags |= FLAG_EXT_ID;
+        }
+        let id = id.as_raw();
+        if let FrameContent::Fd { brs, esi, .. } = frame.content() {
             flags |= FLAG_EXT_DATA_LEN;
+            if *brs {
+                flags |= FLAG_BITRATE_SWITCH;
+            }
+            if *esi {
+                flags |= FLAG_ERROR_STATE_IND;
+            }
+        } else if frame.is_remote() {
+            flags |= FLAG_RTR;
         }
 
         buf[0..2].copy_from_slice(&(size as u16).to_le_bytes());
@@ -382,13 +448,18 @@ mod tests {
         buf[20] = (frame.bus & 0xf) | (dlc << 4);
         buf[22..24].copy_from_slice(&flags.to_le_bytes());
         buf[24..28].copy_from_slice(&id.to_le_bytes());
-        buf[28..28 + frame.data.len()].copy_from_slice(&frame.data);
+        buf[28..28 + frame.data().len()].copy_from_slice(frame.data());
         buf
     }
 
     #[test]
     fn decode_single_standard_frame() {
-        let frame = Frame::new(0, Identifier::Standard(0x123), &[1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
+        let frame = Frame::new(
+            0,
+            Identifier::standard(0x123).unwrap(),
+            &[1, 2, 3, 4, 5, 6, 7, 8],
+        )
+        .unwrap();
         let record = build_rx_record(&frame);
 
         let (frames, overruns) = parse_rx_buffer(&record);
@@ -399,8 +470,13 @@ mod tests {
 
     #[test]
     fn decode_multiple_records_and_stops_at_terminator() {
-        let f1 = Frame::new(0, Identifier::Standard(0x100), &[0xDE, 0xAD]).unwrap();
-        let f2 = Frame::new(0, Identifier::Extended(0x1abcd), &[0xBE, 0xEF, 0x00, 0x11]).unwrap();
+        let f1 = Frame::new(0, Identifier::standard(0x100).unwrap(), &[0xDE, 0xAD]).unwrap();
+        let f2 = Frame::new(
+            0,
+            Identifier::extended(0x1abcd).unwrap(),
+            &[0xBE, 0xEF, 0x00, 0x11],
+        )
+        .unwrap();
 
         let mut buf = build_rx_record(&f1);
         buf.extend_from_slice(&build_rx_record(&f2));
@@ -413,7 +489,7 @@ mod tests {
 
     #[test]
     fn decode_marks_loopback_frames() {
-        let mut frame = Frame::new(0, Identifier::Standard(0x321), &[0xCA, 0xFE]).unwrap();
+        let mut frame = Frame::new(0, Identifier::standard(0x321).unwrap(), &[0xCA, 0xFE]).unwrap();
         frame.loopback = true;
         let record = build_rx_record(&frame);
 
@@ -426,10 +502,15 @@ mod tests {
     #[test]
     fn encode_decode_round_trip() {
         let frames = vec![
-            Frame::new(0, Identifier::Standard(0x123), &[1, 2, 3, 4, 5, 6, 7, 8]).unwrap(),
-            Frame::new(0, Identifier::Extended(0x1234), &[0xAA; 8]).unwrap(),
-            Frame::new(0, Identifier::Standard(0x0), &[]).unwrap(),
-            Frame::new(0, Identifier::Extended(0x18DAF110), &[0u8; 64]).unwrap(),
+            Frame::new(
+                0,
+                Identifier::standard(0x123).unwrap(),
+                &[1, 2, 3, 4, 5, 6, 7, 8],
+            )
+            .unwrap(),
+            Frame::new(0, Identifier::extended(0x1234).unwrap(), &[0xAA; 8]).unwrap(),
+            Frame::new(0, Identifier::standard(0x0).unwrap(), &[]).unwrap(),
+            Frame::new(0, Identifier::extended(0x18DAF110).unwrap(), &[0u8; 64]).unwrap(),
         ];
 
         for frame in frames {
@@ -448,7 +529,12 @@ mod tests {
 
     #[test]
     fn decode_truncated_record_is_ignored() {
-        let frame = Frame::new(0, Identifier::Standard(0x123), &[1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
+        let frame = Frame::new(
+            0,
+            Identifier::standard(0x123).unwrap(),
+            &[1, 2, 3, 4, 5, 6, 7, 8],
+        )
+        .unwrap();
         let mut record = build_rx_record(&frame);
         record.truncate(record.len() - 4); // cut off part of the payload
 

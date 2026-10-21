@@ -352,16 +352,12 @@ impl PassThruMsg {
 }
 
 /// Parse a CAN identifier from a J2534 message.
-pub fn parse_can_id(msg: &PassThruMsg) -> Identifier {
+pub fn parse_can_id(msg: &PassThruMsg) -> crate::Result<Identifier> {
     let raw = u32::from_be_bytes([msg.data[0], msg.data[1], msg.data[2], msg.data[3]]);
     if msg.rx_status & CAN_29BIT_ID_FLAG != 0 {
-        Identifier::Extended(raw)
+        Identifier::extended(raw)
     } else {
-        assert!(
-            raw <= 0x7FF,
-            "J2534 message missing 29-bit flag for non-standard CAN ID 0x{raw:08X}"
-        );
-        Identifier::Standard(raw)
+        Identifier::standard(raw)
     }
 }
 

@@ -136,7 +136,13 @@ impl CanAdapter for VectorCan {
 
     fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
         while let Some(frame) = frames.pop_front() {
-            let mut xl_frame: XLcanTxEvent = frame.clone().into();
+            let mut xl_frame = match XLcanTxEvent::try_from(&frame) {
+                Ok(frame) => frame,
+                Err(error) => {
+                    frames.push_front(frame);
+                    return Err(error);
+                }
+            };
             if self.replace_pending {
                 unsafe {
                     xl_frame.tagData.canMsg.msgFlags |= bindings::XL_CAN_TXMSG_FLAG_HIGHPRIO;

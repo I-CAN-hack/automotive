@@ -5,3 +5,4 @@
 
 # Workflow
  - Make sure to run all tests after making a series of code changes.
+ - Keep `README.md` and the crate-level documentation in `src/lib.rs` in sync.

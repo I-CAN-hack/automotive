@@ -20,8 +20,12 @@ async fn main() -> automotive::Result<()> {
     let mut counter = 0_u64;
 
     loop {
-        let first = Frame::new(0, Identifier::Standard(0x123), &counter.to_le_bytes())?;
-        let second = Frame::new(0, Identifier::Standard(0x124), &counter.to_le_bytes())?;
+        let first = Frame::builder(Identifier::standard(0x123)?)
+            .data(&counter.to_le_bytes())
+            .build()?;
+        let second = Frame::builder(Identifier::standard(0x124)?)
+            .data(&counter.to_le_bytes())
+            .build()?;
         counter = counter.wrapping_add(1);
 
         // Await both results: try_join! would drop the other send on the first
@@ -44,20 +48,20 @@ async fn main() -> automotive::Result<()> {
         let mut adapter_error = None;
         for (frame, result) in [(&first, first_result), (&second, second_result)] {
             match result {
-                Ok(()) => println!("{:?} (counter {counter}): TX confirmed", frame.id),
+                Ok(()) => println!("{:?} (counter {counter}): TX confirmed", frame.id()),
                 Err(Error::Timeout) => {
-                    println!("{:?} (counter {counter}): Timeout", frame.id);
+                    println!("{:?} (counter {counter}): Timeout", frame.id());
                     retry = true;
                 }
                 Err(Error::Cancelled) => {
                     println!(
                         "{:?} (counter {counter}): Cancelled by the transmit queue clear",
-                        frame.id
+                        frame.id()
                     );
                     retry = true;
                 }
                 Err(error) => {
-                    eprintln!("{:?} (counter {counter}): {error}", frame.id);
+                    eprintln!("{:?} (counter {counter}): {error}", frame.id());
                     adapter_error = Some(error);
                 }
             }

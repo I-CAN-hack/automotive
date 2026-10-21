@@ -13,7 +13,7 @@ const CAN_TX_BUFFER_SIZE: usize = 128;
 // Enough to receive a complete multi-frame ISO-TP exchange while sending.
 const CAN_RX_BUFFER_SIZE: usize = 8192;
 
-type BusIdentifier = (u8, Identifier);
+type BusIdentifier = (u8, Option<Identifier>);
 
 #[derive(Default)]
 struct WorkerState {
@@ -81,13 +81,12 @@ fn process<T: CanAdapter>(
                     // resets first_tx_confirmed and opens this grace period
                     // again. Never consume a callback or credit for an
                     // unmatched echo.
-                    let key = (frame.bus, frame.id);
+                    let key = (frame.bus, frame.id());
+                    // Adapters may lose or change frame flags in TX echoes.
+                    // Bus and identifier select the FIFO; match payload only.
                     if let Some(txs) = pending.get_mut(&key).filter(|txs| {
-                        txs.front().is_some_and(|tx| {
-                            let mut expected = tx.frame.clone();
-                            expected.loopback = true;
-                            expected == frame
-                        })
+                        txs.front()
+                            .is_some_and(|tx| tx.frame.data() == frame.data())
                     }) {
                         // A matching echo confirms TX even if recv() crossed
                         // its deadline. Check timeouts only after processing
@@ -181,7 +180,7 @@ fn process<T: CanAdapter>(
                 // Only frames accepted by the backend can have completions.
                 for tx in queued.drain(..sent) {
                     pending
-                        .entry((tx.frame.bus, tx.frame.id))
+                        .entry((tx.frame.bus, tx.frame.id()))
                         .or_default()
                         .push_back(tx);
                 }
@@ -246,7 +245,9 @@ impl AsyncCanAdapter {
     /// Send a frame and await the adapter's transmit confirmation.
     ///
     /// Confirmation strength depends on the backend: some adapters emulate it
-    /// when accepting the frame. The adapter config's optional TX timeout covers
+    /// when accepting the frame. Echoes match the oldest pending send for their
+    /// bus and identifier by payload, ignoring frame type and flags.
+    /// The adapter config's optional TX timeout covers
     /// queue admission and confirmation. A timeout triggers cancellation of all
     /// pending TX; other affected sends return [`Error::Cancelled`]. Vector
     /// defers its hardware clear until the next real frame, using HIGHPRIO.
@@ -254,6 +255,9 @@ impl AsyncCanAdapter {
     /// its deadline has passed.
     /// Adapter failures retain their original error variant.
     pub async fn send(&self, frame: &Frame) -> Result<()> {
+        if frame.is_error() {
+            return Err(Error::NotSupported);
+        }
         let deadline = self.tx_timeout.map(|timeout| Instant::now() + timeout);
         let mut state = self.state.clone();
         let current_generation = state.borrow_and_update().generation;

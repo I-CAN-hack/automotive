@@ -4,7 +4,7 @@
 //! use automotive::StreamExt;
 //! async fn isotp_example() {
 //!    let adapter = automotive::can::get_adapter().unwrap();
-//!    let config = automotive::isotp::IsoTPConfig::new(0, automotive::can::Identifier::Standard(0x7a1));
+//!    let config = automotive::isotp::IsoTPConfig::new(0, automotive::can::Identifier::standard(0x7a1).unwrap());
 //!    let isotp = automotive::isotp::IsoTPAdapter::new(&adapter, config);
 //!
 //!    let mut stream = isotp.recv(); // Create receiver before sending request
@@ -24,6 +24,7 @@ use crate::can::AsyncCanAdapter;
 use crate::can::{Frame, Identifier, DLC_TO_LEN};
 use crate::Result;
 use crate::{Stream, StreamExt, Timeout};
+use arrayvec::ArrayVec;
 use async_stream::stream;
 use tracing::debug;
 
@@ -124,24 +125,40 @@ pub struct IsoTPConfig {
 }
 
 impl IsoTPConfig {
+    /// Derive the receive ID by adding eight to a standard ID or swapping
+    /// the address bytes of an extended ID.
+    ///
+    /// # Panics
+    /// Panics if the derived standard receive ID exceeds 11 bits. Use
+    /// [`Self::new_from_tx_rx`] to specify a different receive ID explicitly.
     pub fn new(bus: u8, id: Identifier) -> Self {
         let tx_id = id;
         let rx_id = match id {
-            Identifier::Standard(id) => Identifier::Standard(id + 8),
+            Identifier::Standard(id) => Identifier::standard(id.as_raw() + 8)
+                .expect("ISO-TP receive identifier exceeds 11 bits"),
             Identifier::Extended(id) => {
-                let bytes = id.to_be_bytes();
+                let bytes = id.as_raw().to_be_bytes();
                 let id = u32::from_be_bytes([bytes[0], bytes[1], bytes[3], bytes[2]]); // Swap last two bytes
-                Identifier::Extended(id)
+                Identifier::extended(id).expect("swapping address bytes preserves a 29-bit ID")
             }
         };
 
         Self::new_from_tx_rx(bus, tx_id, rx_id)
     }
 
+    /// Derive the receive ID by adding `offset` to a standard transmit ID.
+    ///
+    /// # Panics
+    /// Panics for extended IDs or if the receive ID exceeds 11 bits.
     pub fn new_from_offset(bus: u8, id: Identifier, offset: u32) -> Self {
         let tx_id = id;
         let rx_id = match id {
-            Identifier::Standard(id) => Identifier::Standard(id + offset),
+            Identifier::Standard(id) => Identifier::standard(
+                id.as_raw()
+                    .checked_add(offset)
+                    .expect("ISO-TP ID offset overflow"),
+            )
+            .expect("ISO-TP receive identifier exceeds 11 bits"),
             Identifier::Extended(_) => panic!("Extended IDs do not support offset"),
         };
 
@@ -171,8 +188,12 @@ pub struct IsoTPAdapter<'a> {
 
 impl<'a> IsoTPAdapter<'a> {
     /// Convenience method for creating a new IsoTPAdapter from a CAN adapter and an Arbitration ID.
+    ///
+    /// # Panics
+    /// Panics if the transmit ID exceeds 29 bits or the standard receive ID
+    /// derived by [`IsoTPConfig::new`] exceeds 11 bits.
     pub fn from_id(adapter: &'a AsyncCanAdapter, id: u32) -> Self {
-        let config = IsoTPConfig::new(0, id.into());
+        let config = IsoTPConfig::new(0, id.try_into().expect("CAN identifier exceeds 29 bits"));
         Self::new(adapter, config)
     }
 
@@ -181,7 +202,7 @@ impl<'a> IsoTPAdapter<'a> {
         Self { adapter, config }
     }
 
-    fn pad(&self, data: &mut Vec<u8>) {
+    fn pad(&self, data: &mut ArrayVec<u8, CAN_FD_MAX_DLEN>) -> Result<()> {
         // Ensure we leave space for the extended address
         let offset = self.config.ext_address.is_some() as usize;
         let len = data.len() + offset;
@@ -196,11 +217,15 @@ impl<'a> IsoTPAdapter<'a> {
 
         // Pad to next valid DLC for CAN-FD
         if !DLC_TO_LEN.contains(&len) {
-            let idx = DLC_TO_LEN.iter().position(|&x| x > data.len()).unwrap();
+            let idx = DLC_TO_LEN
+                .iter()
+                .position(|&x| x > data.len())
+                .ok_or(crate::Error::MalformedFrame)?;
             let padding = self.config.padding.unwrap_or(DEFAULT_PADDING_BYTE);
             let padding_len = DLC_TO_LEN[idx] - len;
             data.extend(std::iter::repeat(padding).take(padding_len));
         }
+        Ok(())
     }
 
     /// Ofset from the start of the frame. 1 in case of extended address, 0 otherwise.
@@ -241,70 +266,61 @@ impl<'a> IsoTPAdapter<'a> {
         }
     }
 
-    /// Build a CAN frame from the payload. Inserts extended address and padding if needed.
-    fn frame(&self, data: &[u8]) -> Result<Frame> {
-        let mut data = data.to_vec();
-
+    /// Build a CAN frame from the payload, inserting the extended address if needed.
+    fn frame(&self, data: &mut ArrayVec<u8, CAN_FD_MAX_DLEN>) -> Result<Frame> {
         if let Some(ext_address) = self.config.ext_address {
-            data.insert(0, ext_address);
+            data.try_insert(0, ext_address)
+                .map_err(|_| crate::Error::MalformedFrame)?;
         }
 
-        // Check if the data length is valid
-        if !DLC_TO_LEN.contains(&data.len()) {
-            println!("len {}", data.len());
-            return Err(crate::Error::MalformedFrame);
-        }
-
-        let frame = Frame {
-            bus: self.config.bus,
-            id: self.config.tx_id,
-            data,
-            loopback: false,
-            fd: self.config.fd,
-        };
-
-        Ok(frame)
+        Frame::builder(self.config.tx_id)
+            .bus(self.config.bus)
+            .data(data)
+            .fd(self.config.fd)
+            .build()
     }
 
     pub async fn send_single_frame(&self, data: &[u8]) -> Result<()> {
-        let mut buf;
+        let mut buf = ArrayVec::new();
 
         if data.len() < self.can_max_dlen() {
             // Len fits in classic CAN message
-            buf = vec![FrameType::Single as u8 | data.len() as u8];
+            buf.push(FrameType::Single as u8 | data.len() as u8);
         } else {
             // Use escape sequence for length, length is in the next byte
-            buf = vec![FrameType::Single as u8, data.len() as u8];
+            buf.extend([FrameType::Single as u8, data.len() as u8]);
         }
 
-        buf.extend(data);
-        self.pad(&mut buf);
+        buf.try_extend_from_slice(data)
+            .map_err(|_| crate::Error::MalformedFrame)?;
+        self.pad(&mut buf)?;
 
         debug!("TX SF, length: {} data {}", data.len(), hex::encode(&buf));
 
-        let frame = self.frame(&buf)?;
+        let frame = self.frame(&mut buf)?;
         self.adapter.send(&frame).await?;
         Ok(())
     }
 
     pub async fn send_first_frame(&self, data: &[u8]) -> Result<usize> {
-        let mut buf;
+        let mut buf = ArrayVec::new();
         if data.len() <= ISO_TP_MAX_DLEN {
             let b0: u8 = FrameType::First as u8 | ((data.len() >> 8) & 0xF) as u8;
             let b1: u8 = (data.len() & 0xFF) as u8;
-            buf = vec![b0, b1];
+            buf.extend([b0, b1]);
         } else {
             let b0: u8 = FrameType::First as u8;
             let b1: u8 = 0x00;
-            buf = vec![b0, b1];
+            buf.extend([b0, b1]);
             buf.extend((data.len() as u32).to_be_bytes());
         }
         let offset = buf.len();
-        buf.extend(&data[..self.max_can_data_length() - buf.len()]);
+        buf.try_extend_from_slice(&data[..self.max_can_data_length() - buf.len()])
+            .map_err(|_| crate::Error::MalformedFrame)?;
 
         debug!("TX FF, length: {} data {}", data.len(), hex::encode(&buf));
 
-        let frame = self.frame(&buf)?;
+        let frame = self.frame(&mut buf)?;
         self.adapter.send(&frame).await?;
         Ok(offset)
     }
@@ -312,13 +328,15 @@ impl<'a> IsoTPAdapter<'a> {
     pub async fn send_consecutive_frame(&self, data: &[u8], idx: usize) -> Result<()> {
         let idx = ((idx + 1) & 0xF) as u8;
 
-        let mut buf = vec![FrameType::Consecutive as u8 | idx];
-        buf.extend(data);
-        self.pad(&mut buf);
+        let mut buf = ArrayVec::new();
+        buf.push(FrameType::Consecutive as u8 | idx);
+        buf.try_extend_from_slice(data)
+            .map_err(|_| crate::Error::MalformedFrame)?;
+        self.pad(&mut buf)?;
 
         debug!("TX CF, idx: {} data {}", idx, hex::encode(&buf));
 
-        let frame = self.frame(&buf)?;
+        let frame = self.frame(&mut buf)?;
 
         self.adapter.send(&frame).await?;
 
@@ -330,21 +348,24 @@ impl<'a> IsoTPAdapter<'a> {
         stream: &mut std::pin::Pin<&mut Timeout<impl Stream<Item = Frame>>>,
     ) -> Result<FlowControlConfig> {
         for _ in 0..MAX_WAIT_FC {
-            let mut frame = stream.next().await.unwrap()?;
+            let frame = stream.next().await.unwrap()?;
 
             // Remove extended address from frame
-            frame.data = frame.data.split_off(self.offset());
+            let data = frame
+                .data()
+                .get(self.offset()..)
+                .filter(|data| data.len() >= 3)
+                .ok_or(crate::isotp::error::Error::MalformedFrame)?;
 
-            debug!("RX FC, data {}", hex::encode(&frame.data));
+            debug!("RX FC, data {}", hex::encode(data));
 
             // Check if Flow Control
-            if FrameType::from_repr(frame.data[0] & FRAME_TYPE_MASK) != Some(FrameType::FlowControl)
-            {
+            if FrameType::from_repr(data[0] & FRAME_TYPE_MASK) != Some(FrameType::FlowControl) {
                 return Err(crate::isotp::error::Error::FlowControl.into());
             };
 
             // Check Flow Status
-            match FlowStatus::from_repr(frame.data[0] & FLOW_SATUS_MASK) {
+            match FlowStatus::from_repr(data[0] & FLOW_SATUS_MASK) {
                 Some(FlowStatus::ContinueToSend) => {} // Ok
                 Some(FlowStatus::Wait) => continue,    // Wait for next flow control
                 Some(FlowStatus::Overflow) => {
@@ -354,9 +375,9 @@ impl<'a> IsoTPAdapter<'a> {
             };
 
             // Parse block size and separation time
-            let config = types::FlowControlConfig::try_from(&frame)?;
+            let config = types::FlowControlConfig::try_from(data)?;
 
-            debug!("RX FC, {:?} data {}", config, hex::encode(&frame.data));
+            debug!("RX FC, {:?} data {}", config, hex::encode(data));
             return Ok(config);
         }
 
@@ -368,12 +389,12 @@ impl<'a> IsoTPAdapter<'a> {
         let stream = self
             .adapter
             .recv_filter(|frame| {
-                if frame.id != self.config.rx_id || frame.loopback {
+                if !frame.is_data() || frame.id() != Some(self.config.rx_id) || frame.loopback {
                     return false;
                 }
 
                 if self.config.ext_address.is_some() {
-                    return frame.data.first() == self.config.ext_address.as_ref();
+                    return frame.data().first() == self.config.ext_address.as_ref();
                 }
 
                 true
@@ -472,12 +493,13 @@ impl<'a> IsoTPAdapter<'a> {
         buf.extend(&data[offset..]);
 
         // Send Flow Control
-        let mut flow_control = vec![0x30, 0x00, 0x00];
-        self.pad(&mut flow_control);
+        let mut flow_control = ArrayVec::new();
+        flow_control.extend([0x30, 0x00, 0x00]);
+        self.pad(&mut flow_control)?;
 
         debug!("TX FC, data {}", hex::encode(&flow_control));
 
-        let frame = self.frame(&flow_control)?;
+        let frame = self.frame(&mut flow_control)?;
         self.adapter.send(&frame).await?;
 
         Ok(len)
@@ -536,7 +558,12 @@ impl<'a> IsoTPAdapter<'a> {
 
         while let Some(frame) = stream.next().await {
             // Remove extended address from frame
-            let data = &frame?.data[self.offset()..];
+            let frame = frame?;
+            let data = frame
+                .data()
+                .get(self.offset()..)
+                .filter(|data| !data.is_empty())
+                .ok_or(crate::isotp::error::Error::MalformedFrame)?;
 
             match FrameType::from_repr(data[0] & FRAME_TYPE_MASK) {
                 Some(FrameType::Single) => {
@@ -575,12 +602,12 @@ impl<'a> IsoTPAdapter<'a> {
         let stream = self
             .adapter
             .recv_filter(|frame| {
-                if frame.id != self.config.rx_id || frame.loopback {
+                if !frame.is_data() || frame.id() != Some(self.config.rx_id) || frame.loopback {
                     return false;
                 }
 
                 if self.config.ext_address.is_some() {
-                    return frame.data.first() == self.config.ext_address.as_ref();
+                    return frame.data().first() == self.config.ext_address.as_ref();
                 }
 
                 true
