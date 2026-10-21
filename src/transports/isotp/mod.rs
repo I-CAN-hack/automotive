@@ -28,14 +28,14 @@ use crate::can::AsyncCanAdapter;
 use crate::can::{Frame, DLC_TO_LEN};
 use crate::transports::TransportLayer;
 use crate::Result;
-use crate::{Stream, StreamExt, Timeout};
+use crate::{Stream, StreamExt};
 use arrayvec::ArrayVec;
 use async_stream::stream;
 use tracing::debug;
 
 use self::types::FlowControlConfig;
 
-const DEFAULT_TIMEOUT_MS: u64 = 100;
+const DEFAULT_TIMEOUT_MS: u64 = 1000;
 
 impl TransportLayer for IsoTPAdapter<'_> {
     fn send<'a>(
@@ -51,9 +51,6 @@ impl TransportLayer for IsoTPAdapter<'_> {
 }
 
 const DEFAULT_PADDING_BYTE: u8 = 0xCC;
-
-/// N_WFTmax in ISO 15765-2
-const MAX_WAIT_FC: usize = 10;
 
 const CAN_MAX_DLEN: usize = 8;
 const CAN_FD_MAX_DLEN: usize = 64;
@@ -89,6 +86,14 @@ pub fn duration_to_stmin_byte(duration: std::time::Duration) -> u8 {
         let ms = us.saturating_add(999) / 1_000;
         ms.min(127) as u8
     }
+}
+
+struct Reception {
+    data: Vec<u8>,
+    length: usize,
+    rx_dl: usize,
+    next_sn: u8,
+    block_frames: u8,
 }
 
 /// Wraps a CAN adapter to send and receive ISO-TP messages over Classical CAN or CAN FD.
@@ -170,6 +175,15 @@ impl<'a> IsoTPAdapter<'a> {
         }
     }
 
+    fn max_single_frame_length(&self) -> usize {
+        let header_length = if self.max_can_data_length() + self.offset() > CAN_MAX_DLEN {
+            2
+        } else {
+            1
+        };
+        self.max_can_data_length() - header_length
+    }
+
     /// Maximum data length for an ISO-TP packet based on the current config
     fn max_isotp_data_length(&self) -> usize {
         if self.config.fd {
@@ -193,7 +207,35 @@ impl<'a> IsoTPAdapter<'a> {
             .build()
     }
 
+    fn accepts(&self, frame: &Frame) -> bool {
+        frame.is_data()
+            && !frame.loopback
+            && frame.bus == self.config.bus
+            && frame.id() == Some(self.config.rx_id)
+            && frame.is_fd() == self.config.fd
+            && self
+                .config
+                .rx_ext_address
+                .or(self.config.ext_address)
+                .is_none_or(|address| frame.data().first() == Some(&address))
+    }
+
+    async fn transmit_frame(&self, frame: &Frame) -> Result<()> {
+        // N_As for data frames and N_Ar for flow control bound the wait for
+        // CAN transmit confirmation, independently of subsequent reception.
+        tokio::time::timeout(self.config.timeout, self.adapter.send(frame))
+            .await
+            .map_err(|_| crate::Error::Timeout)?
+    }
+
     pub async fn send_single_frame(&self, data: &[u8]) -> Result<()> {
+        self.config.validate()?;
+        if data.is_empty() {
+            return Err(Error::EmptyPayload.into());
+        }
+        if data.len() > self.max_single_frame_length() {
+            return Err(Error::DataTooLarge.into());
+        }
         let mut buf = ArrayVec::new();
 
         if data.len() < self.can_max_dlen() {
@@ -211,11 +253,18 @@ impl<'a> IsoTPAdapter<'a> {
         debug!("TX SF, length: {} data {}", data.len(), hex::encode(&buf));
 
         let frame = self.frame(&mut buf)?;
-        self.adapter.send(&frame).await?;
+        self.transmit_frame(&frame).await?;
         Ok(())
     }
 
     pub async fn send_first_frame(&self, data: &[u8]) -> Result<usize> {
+        self.config.validate()?;
+        if data.len() <= self.max_single_frame_length() {
+            return Err(Error::MalformedFrame.into());
+        }
+        if data.len() > self.max_isotp_data_length() {
+            return Err(Error::DataTooLarge.into());
+        }
         let mut buf = ArrayVec::new();
         if data.len() <= ISO_TP_MAX_DLEN {
             let b0: u8 = FrameType::First as u8 | ((data.len() >> 8) & 0xF) as u8;
@@ -234,12 +283,19 @@ impl<'a> IsoTPAdapter<'a> {
         debug!("TX FF, length: {} data {}", data.len(), hex::encode(&buf));
 
         let frame = self.frame(&mut buf)?;
-        self.adapter.send(&frame).await?;
+        self.transmit_frame(&frame).await?;
         Ok(offset)
     }
 
     pub async fn send_consecutive_frame(&self, data: &[u8], idx: usize) -> Result<()> {
-        let idx = ((idx + 1) & 0xF) as u8;
+        self.config.validate()?;
+        if data.is_empty() {
+            return Err(Error::EmptyPayload.into());
+        }
+        if data.len() >= self.max_can_data_length() {
+            return Err(Error::DataTooLarge.into());
+        }
+        let idx = (idx.wrapping_add(1) & 0xF) as u8;
 
         let mut buf = ArrayVec::new();
         buf.push(FrameType::Consecutive as u8 | idx);
@@ -251,76 +307,54 @@ impl<'a> IsoTPAdapter<'a> {
 
         let frame = self.frame(&mut buf)?;
 
-        self.adapter.send(&frame).await?;
+        self.transmit_frame(&frame).await?;
 
         Ok(())
     }
 
     async fn receive_flow_control(
         &self,
-        stream: &mut std::pin::Pin<&mut Timeout<impl Stream<Item = Frame>>>,
+        stream: &mut (impl Stream<Item = Frame> + Unpin),
     ) -> Result<FlowControlConfig> {
-        for _ in 0..MAX_WAIT_FC {
-            let frame = stream.next().await.unwrap()?;
-
-            // Remove extended address from frame
-            let data = frame
+        // N_Bs begins after the preceding FF/CF was confirmed. Only WAIT
+        // restarts it; unrelated or truncated PDUs do not extend the deadline.
+        let mut deadline = tokio::time::Instant::now() + self.config.timeout;
+        loop {
+            let frame = tokio::time::timeout_at(deadline, stream.next())
+                .await
+                .map_err(|_| crate::Error::Timeout)?
+                .ok_or(crate::Error::Disconnected)?;
+            let Some(data) = frame
                 .data()
                 .get(self.offset()..)
                 .filter(|data| data.len() >= 3)
-                .ok_or(crate::transports::isotp::error::Error::MalformedFrame)?;
-
-            debug!("RX FC, data {}", hex::encode(data));
-
-            // Check if Flow Control
-            if FrameType::from_repr(data[0] & FRAME_TYPE_MASK) != Some(FrameType::FlowControl) {
-                return Err(crate::transports::isotp::error::Error::FlowControl.into());
+            else {
+                continue;
             };
-
-            // Check Flow Status
+            if data[0] & FRAME_TYPE_MASK != FrameType::FlowControl as u8 {
+                continue;
+            }
             match FlowStatus::from_repr(data[0] & FLOW_SATUS_MASK) {
-                Some(FlowStatus::ContinueToSend) => {} // Ok
-                Some(FlowStatus::Wait) => continue,    // Wait for next flow control
-                Some(FlowStatus::Overflow) => {
-                    return Err(crate::transports::isotp::error::Error::Overflow.into())
+                Some(FlowStatus::ContinueToSend) => return FlowControlConfig::try_from(data),
+                Some(FlowStatus::Wait) => {
+                    // N_WFTmax limits a receiver's WAIT transmissions, not
+                    // how many WAITs a sender may receive.
+                    deadline = tokio::time::Instant::now() + self.config.timeout;
                 }
-                None => return Err(crate::transports::isotp::error::Error::MalformedFrame.into()),
-            };
-
-            // Parse block size and separation time
-            let config = types::FlowControlConfig::try_from(data)?;
-
-            debug!("RX FC, {:?} data {}", config, hex::encode(data));
-            return Ok(config);
+                Some(FlowStatus::Overflow) => return Err(Error::Overflow.into()),
+                None => return Err(Error::MalformedFrame.into()),
+            }
         }
-
-        Err(crate::transports::isotp::error::Error::TooManyFCWait.into())
     }
 
     async fn send_multiple(&self, data: &[u8]) -> Result<()> {
         // Stream for receiving flow control
-        let stream = self
-            .adapter
-            .recv_filter(|frame| {
-                if !frame.is_data()
-                    || frame.bus != self.config.bus
-                    || frame.id() != Some(self.config.rx_id)
-                    || frame.loopback
-                {
-                    return false;
-                }
-
-                if let Some(address) = self.config.rx_ext_address.or(self.config.ext_address) {
-                    return frame.data().first() == Some(&address);
-                }
-
-                true
-            })
-            .timeout(self.config.timeout);
+        let stream = self.adapter.recv_filter(|frame| self.accepts(frame));
         tokio::pin!(stream);
 
         let offset = self.send_first_frame(data).await?;
         let mut fc_config = self.receive_flow_control(&mut stream).await?;
+        let mut fallback_stmin = fc_config.reserved_stmin;
 
         let tx_dl = self.max_can_data_length();
         let chunks = data[tx_dl - offset..].chunks(tx_dl - 1);
@@ -336,27 +370,34 @@ impl<'a> IsoTPAdapter<'a> {
             block_frames = block_frames.saturating_add(1);
             if fc_config.block_size != 0 && block_frames == fc_config.block_size {
                 fc_config = self.receive_flow_control(&mut stream).await?;
+                fallback_stmin |= fc_config.reserved_stmin;
                 block_frames = 0;
             }
             let st_min = self
                 .config
                 .separation_time_min
-                .unwrap_or(fc_config.separation_time_min);
+                .unwrap_or(if fallback_stmin {
+                    std::time::Duration::from_millis(127)
+                } else {
+                    fc_config.separation_time_min
+                });
             tokio::time::sleep(st_min).await;
         }
 
         Ok(())
     }
 
-    /// Asynchronously send an ISO-TP frame of up to 4095 bytes. Returns Timeout if the ECU is not responding in time with flow control messages.
+    /// Send a non-empty ISO-TP message, segmented according to TX_DL.
+    /// Returns Timeout if a CAN transmit confirmation or required flow-control
+    /// frame does not arrive within the configured timeout.
     pub async fn send(&self, data: &[u8]) -> Result<()> {
         debug!("TX {}", hex::encode(data));
 
-        // Single frame has 1 byte of overhead for CAN, and 2 bytes for CAN-FD with escape sequence
-        let fits_in_single_frame =
-            data.len() < self.can_max_dlen() || data.len() < self.max_can_data_length() - 1;
-
-        if fits_in_single_frame {
+        self.config.validate()?;
+        if data.is_empty() {
+            return Err(Error::EmptyPayload.into());
+        }
+        if data.len() <= self.max_single_frame_length() {
             self.send_single_frame(data).await?;
         } else if data.len() <= self.max_isotp_data_length() {
             self.send_multiple(data).await?;
@@ -367,49 +408,67 @@ impl<'a> IsoTPAdapter<'a> {
         Ok(())
     }
 
-    async fn recv_single_frame(&self, data: &[u8]) -> Result<Vec<u8>> {
-        let mut len = (data[0] & 0xF) as usize;
-        let mut offset = 1;
-
-        // CAN-FD Escape sequence
-        if len == 0 {
-            len = data[1] as usize;
-            offset = 2;
-        }
-
-        // Check if the frame contains enough data
-        if len + offset > data.len() {
-            return Err(crate::transports::isotp::error::Error::MalformedFrame.into());
-        }
-
-        debug!("RX SF, length: {} data {}", len, hex::encode(data));
-
-        Ok(data[offset..len + offset].to_vec())
+    fn recv_single_frame(&self, frame: &Frame) -> Option<Vec<u8>> {
+        let address_length = self.offset();
+        let can_dl = frame.data().len();
+        let data = frame.data().get(address_length..)?;
+        let short_length = usize::from(data.first()? & 0x0f);
+        let (length, header_length) = if can_dl <= CAN_MAX_DLEN {
+            // A zero nibble is reserved for Classical-size SingleFrames.
+            if short_length == 0
+                || (can_dl != CAN_MAX_DLEN && can_dl != short_length + 1 + address_length)
+            {
+                return None;
+            }
+            (short_length, 1)
+        } else {
+            // ISO 15765-2:2016, Tables 11 and 13: use the escape encoding
+            // and only the padding needed for this CAN FD DLC.
+            if short_length != 0 {
+                return None;
+            }
+            let length = usize::from(*data.get(1)?);
+            let dlc = DLC_TO_LEN.iter().position(|&length| length == can_dl)?;
+            let minimum = (DLC_TO_LEN[dlc - 1] - 1 - address_length).max(8 - address_length);
+            if length < minimum {
+                return None;
+            }
+            (length, 2)
+        };
+        Some(data.get(header_length..header_length + length)?.to_vec())
     }
 
-    async fn recv_first_frame(&self, data: &[u8], buf: &mut Vec<u8>) -> Result<usize> {
-        let b0 = data[0] as u16;
-        let b1 = data[1] as u16;
-        let mut len = ((b0 << 8 | b1) & 0xFFF) as usize;
-        let mut offset = 2;
-
-        // CAN-FD Escape sequence
-        if len == 0 {
-            offset = 6;
-            len = u32::from_be_bytes([data[2], data[3], data[4], data[5]]) as usize;
+    fn recv_first_frame(&self, frame: &Frame) -> Option<Reception> {
+        let rx_dl = frame.data().len();
+        if rx_dl < CAN_MAX_DLEN {
+            return None;
         }
-        debug!("RX FF, length: {}, data {}", len, hex::encode(data));
-
-        // A FF cannot use CAN frame data optmization, and always needs to be full length.
-        if data.len() < self.max_can_data_length() {
-            return Err(crate::transports::isotp::error::Error::MalformedFrame.into());
+        let data = frame.data().get(self.offset()..)?;
+        let short_length = (usize::from(data.first()? & 0x0f) << 8) | usize::from(*data.get(1)?);
+        let (length, header_length) = if short_length == 0 {
+            let length = u32::from_be_bytes(data.get(2..6)?.try_into().ok()?) as usize;
+            if length <= ISO_TP_MAX_DLEN {
+                return None;
+            }
+            (length, 6)
+        } else {
+            (short_length, 2)
+        };
+        let minimum = if rx_dl == CAN_MAX_DLEN {
+            8 - self.offset()
+        } else {
+            rx_dl - 1 - self.offset()
+        };
+        if length < minimum {
+            return None;
         }
-
-        buf.extend(&data[offset..]);
-
-        self.send_flow_control().await?;
-
-        Ok(len)
+        Some(Reception {
+            data: data.get(header_length..)?.to_vec(),
+            length,
+            rx_dl,
+            next_sn: 1,
+            block_frames: 0,
+        })
     }
 
     async fn send_flow_control(&self) -> Result<()> {
@@ -422,134 +481,128 @@ impl<'a> IsoTPAdapter<'a> {
         self.pad(&mut flow_control)?;
         debug!("TX FC, data {}", hex::encode(&flow_control));
         let frame = self.frame(&mut flow_control)?;
-        self.adapter.send(&frame).await
+        self.transmit_frame(&frame).await
     }
 
-    async fn recv_consecutive_frame(
-        &self,
-        data: &[u8],
-        buf: &mut Vec<u8>,
-        len: usize,
-        idx: u8,
-    ) -> Result<u8> {
-        let msg_idx = data[0] & 0xF;
-        let remaining_len = len - buf.len();
-
-        // Only the last consecutive frame can use CAN frame data optimization
-        let tx_dl = self.max_can_data_length();
-        if remaining_len >= tx_dl - 1 {
-            // Ensure frame is full length
-            if data.len() < tx_dl {
-                return Err(crate::transports::isotp::error::Error::MalformedFrame.into());
+    fn recv_consecutive_frame(&self, frame: &Frame, reception: &mut Reception) -> Result<bool> {
+        let can_dl = frame.data().len();
+        let remaining = reception.length - reception.data.len();
+        let capacity = reception.rx_dl - self.offset() - 1;
+        if can_dl > reception.rx_dl {
+            return Ok(false);
+        }
+        if remaining > capacity {
+            if can_dl != reception.rx_dl {
+                return Ok(false);
             }
         } else {
-            // Ensure frame is long enough to contain the remaining data
-            if data.len() - 1 < remaining_len {
-                return Err(crate::transports::isotp::error::Error::MalformedFrame.into());
+            let required = remaining + 1 + self.offset();
+            let padded = *DLC_TO_LEN
+                .iter()
+                .find(|&&length| length >= required)
+                .unwrap();
+            if can_dl != padded && !(required <= CAN_MAX_DLEN && can_dl == CAN_MAX_DLEN) {
+                return Ok(false);
             }
         }
-
-        let end_idx = std::cmp::min(remaining_len + 1, data.len());
-
-        buf.extend(&data[1..end_idx]);
-        debug!(
-            "RX CF, idx: {}, data {} {}",
-            idx,
-            hex::encode(data),
-            hex::encode(&buf)
-        );
-
-        if msg_idx != idx {
-            return Err(crate::transports::isotp::error::Error::OutOfOrder.into());
+        let data = &frame.data()[self.offset()..];
+        if data[0] & 0x0f != reception.next_sn {
+            return Err(Error::OutOfOrder.into());
         }
-
-        let new_idx = if idx == 0xF { 0 } else { idx + 1 };
-        Ok(new_idx)
+        let length = remaining.min(data.len() - 1);
+        reception.data.extend_from_slice(&data[1..1 + length]);
+        reception.next_sn = (reception.next_sn + 1) & 0x0f;
+        Ok(true)
     }
 
-    /// Helper function to receive a single ISO-TP packet from the provided CAN stream.
-    async fn recv_from_stream(
-        &self,
-        stream: &mut std::pin::Pin<&mut Timeout<impl Stream<Item = Frame>>>,
-    ) -> Result<Vec<u8>> {
-        let mut buf = Vec::new();
-        let mut len: Option<usize> = None;
-        let mut idx: u8 = 1;
-        let mut block_frames = 0u8;
-
-        while let Some(frame) = stream.next().await {
-            // Remove extended address from frame
-            let frame = frame?;
-            let data = frame
-                .data()
-                .get(self.offset()..)
-                .filter(|data| !data.is_empty())
-                .ok_or(crate::transports::isotp::error::Error::MalformedFrame)?;
-
-            match FrameType::from_repr(data[0] & FRAME_TYPE_MASK) {
-                Some(FrameType::Single) => {
-                    return self.recv_single_frame(data).await;
-                }
-                Some(FrameType::First) => {
-                    // If we already received a first frame, something went wrong
-                    if len.is_some() {
-                        return Err(Error::OutOfOrder.into());
-                    }
-                    len = Some(self.recv_first_frame(data, &mut buf).await?);
-                }
-                Some(FrameType::Consecutive) => {
-                    if let Some(len) = len {
-                        idx = self
-                            .recv_consecutive_frame(data, &mut buf, len, idx)
-                            .await?;
-                        if buf.len() >= len {
-                            return Ok(buf);
-                        }
-                        block_frames = block_frames.saturating_add(1);
-                        if self.config.block_size != 0 && block_frames == self.config.block_size {
-                            self.send_flow_control().await?;
-                            block_frames = 0;
-                        }
-                    } else {
-                        return Err(Error::OutOfOrder.into());
-                    }
-                }
-                Some(FrameType::FlowControl) => {} // Ignore flow control frames, these are from a simultaneous transmission
-                _ => {
-                    return Err(Error::UnknownFrameType.into());
-                }
-            };
-        }
-        unreachable!();
-    }
-
-    /// Stream of ISO-TP packets. Can be used if multiple responses are expected from a single request. Returns Timeout if the timeout is exceeded between individual ISO-TP frames. Note the total time to receive a packet may be longer than the timeout.
+    /// Stream of ISO-TP messages, including multiple responses to one request.
+    /// The timeout applies while idle, while confirming outgoing flow control,
+    /// and while awaiting the next valid consecutive frame. Ignored traffic does
+    /// not restart a deadline. A replacement SF/FF yields UnexpectedPdu before
+    /// processing the replacement message.
     pub fn recv(&self) -> impl Stream<Item = Result<Vec<u8>>> + '_ {
-        let stream = self
-            .adapter
-            .recv_filter(|frame| {
-                if !frame.is_data()
-                    || frame.bus != self.config.bus
-                    || frame.id() != Some(self.config.rx_id)
-                    || frame.loopback
-                {
-                    return false;
-                }
-
-                if let Some(address) = self.config.rx_ext_address.or(self.config.ext_address) {
-                    return frame.data().first() == Some(&address);
-                }
-
-                true
-            })
-            .timeout(self.config.timeout);
+        let stream = self.adapter.recv_filter(|frame| self.accepts(frame));
 
         Box::pin(stream! {
-            tokio::pin!(stream);
-
-            loop {
-                yield self.recv_from_stream(&mut stream).await;
+            if let Err(error) = self.config.validate() {
+                yield Err(error);
+                return;
             }
+            tokio::pin!(stream);
+            let mut reception: Option<Reception> = None;
+            let mut deadline = tokio::time::Instant::now() + self.config.timeout;
+            loop {
+                let frame = match tokio::time::timeout_at(deadline, stream.next()).await {
+                    Ok(Some(frame)) => frame,
+                    Ok(None) => break,
+                    Err(_) => {
+                        reception = None;
+                        deadline = tokio::time::Instant::now() + self.config.timeout;
+                        yield Err(crate::Error::Timeout);
+                        continue;
+                    }
+                };
+                let Some(data) = frame.data().get(self.offset()..).filter(|data| !data.is_empty()) else {
+                    continue;
+                };
+                match FrameType::from_repr(data[0] & FRAME_TYPE_MASK) {
+                    Some(FrameType::Single) => {
+                        if let Some(message) = self.recv_single_frame(&frame) {
+                            deadline = tokio::time::Instant::now() + self.config.timeout;
+                            if reception.take().is_some() {
+                                yield Err(Error::UnexpectedPdu.into());
+                            }
+                            yield Ok(message);
+                        }
+                    }
+                    Some(FrameType::First) => {
+                        if let Some(next) = self.recv_first_frame(&frame) {
+                            let interrupted = reception.replace(next).is_some();
+                            let result = self.send_flow_control().await;
+                            // Start N_Cr after the FC transmit confirmation.
+                            deadline = tokio::time::Instant::now() + self.config.timeout;
+                            if interrupted {
+                                yield Err(Error::UnexpectedPdu.into());
+                            }
+                            if let Err(error) = result {
+                                reception = None;
+                                yield Err(error);
+                            }
+                        }
+                    }
+                    Some(FrameType::Consecutive) => {
+                        let Some(current) = &mut reception else { continue };
+                        match self.recv_consecutive_frame(&frame, current) {
+                            Err(error) => {
+                                reception = None;
+                                deadline = tokio::time::Instant::now() + self.config.timeout;
+                                yield Err(error);
+                            }
+                            Ok(false) => {}
+                            Ok(true) => {
+                                deadline = tokio::time::Instant::now() + self.config.timeout;
+                                if current.data.len() == current.length {
+                                    yield Ok(reception.take().unwrap().data);
+                                } else {
+                                    current.block_frames = current.block_frames.saturating_add(1);
+                                    if self.config.block_size != 0 && current.block_frames == self.config.block_size {
+                                        current.block_frames = 0;
+                                        let result = self.send_flow_control().await;
+                                        deadline = tokio::time::Instant::now() + self.config.timeout;
+                                        if let Err(error) = result {
+                                            reception = None;
+                                            yield Err(error);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Table 23: idle CFs, unexpected FCs and unknown PDUs are ignored.
+                    _ => {}
+                }
+            }
+            yield Err(crate::Error::Disconnected);
         })
     }
 }

@@ -94,7 +94,9 @@ pub struct IsoTPConfig {
     pub rx_id: Identifier,
     /// Padding byte. `None` disables optional padding; FD still pads to a valid DLC.
     pub padding: Option<u8>,
-    /// Maximum time to wait for an individual received frame.
+    /// Deadline for each CAN transmit confirmation (N_As/N_Ar), required
+    /// flow-control frame (N_Bs), or consecutive frame (N_Cr), and idle reception.
+    /// Defaults to one second; ignored traffic does not extend a deadline.
     pub timeout: Duration,
     /// Override the peer's STmin for transmitted consecutive frames.
     /// `None` follows the peer's flow-control settings.
@@ -119,7 +121,7 @@ pub struct IsoTPConfig {
 
 impl IsoTPConfig {
     /// Start a configuration with bus zero, Classical CAN, padding enabled,
-    /// a 100 ms frame timeout, and unlimited receive blocks with zero STmin.
+    /// a one-second transport timeout, and unlimited receive blocks with zero STmin.
     ///
     /// Unless overridden, the receive ID is derived by adding eight to a
     /// standard ID or swapping the low two bytes of an extended ID. These are
@@ -144,6 +146,31 @@ impl IsoTPConfig {
             },
             receive_id: ReceiveId::Automatic,
         }
+    }
+
+    /// Validate public fields again before using them for transport arithmetic.
+    pub(super) fn validate(&self) -> Result<()> {
+        let length = self.max_dlen.unwrap_or(if self.fd { 64 } else { 8 });
+        if length < 8 || !DLC_TO_LEN.contains(&length) || (!self.fd && length != 8) {
+            return Err(Error::InvalidConfig(
+                "TX_DL must be 8 for CAN or 8/12/16/20/24/32/48/64 for CAN FD",
+            )
+            .into());
+        }
+        if self.timeout.is_zero() {
+            return Err(Error::InvalidConfig("frame timeout must be greater than zero").into());
+        }
+        if self.rx_ext_address.is_some() && self.ext_address.is_none() {
+            return Err(Error::InvalidConfig(
+                "a receive address byte requires a transmit address byte",
+            )
+            .into());
+        }
+        let stmin = self.receive_separation_time_min;
+        if stmin > Duration::from_millis(127) {
+            return Err(Error::InvalidConfig("receive STmin must not exceed 127 ms").into());
+        }
+        Ok(())
     }
 }
 
@@ -194,6 +221,7 @@ impl IsoTPConfigBuilder {
         self
     }
 
+    /// Set the deadline applied independently to each transport stage.
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.config.timeout = timeout;
         self
@@ -270,29 +298,8 @@ impl IsoTPConfigBuilder {
                 Identifier::standard(raw)?
             }
         };
-        let length = self
-            .config
-            .max_dlen
-            .unwrap_or(if self.config.fd { 64 } else { 8 });
-        if length < 8 || !DLC_TO_LEN.contains(&length) || (!self.config.fd && length != 8) {
-            return Err(Error::InvalidConfig(
-                "TX_DL must be 8 for CAN or 8/12/16/20/24/32/48/64 for CAN FD",
-            )
-            .into());
-        }
-        if self.config.timeout.is_zero() {
-            return Err(Error::InvalidConfig("frame timeout must be greater than zero").into());
-        }
-        if self.config.rx_ext_address.is_some() && self.config.ext_address.is_none() {
-            return Err(Error::InvalidConfig(
-                "a receive address byte requires a transmit address byte",
-            )
-            .into());
-        }
+        self.config.validate()?;
         let stmin = self.config.receive_separation_time_min;
-        if stmin > Duration::from_millis(127) {
-            return Err(Error::InvalidConfig("receive STmin must not exceed 127 ms").into());
-        }
         let byte = duration_to_stmin_byte(stmin);
         self.config.receive_separation_time_min = if byte >= 0xf1 {
             Duration::from_micros(u64::from(byte - 0xf0) * 100)

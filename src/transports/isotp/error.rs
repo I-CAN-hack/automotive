@@ -8,16 +8,18 @@ pub enum Error {
     InvalidConfig(&'static str),
     #[error("Data Too Large")]
     DataTooLarge,
+    #[error("ISO-TP payload must not be empty")]
+    EmptyPayload,
     #[error("Flow Control")]
     FlowControl,
     #[error("Overflow")]
     Overflow,
     #[error("Out Of Order")]
     OutOfOrder,
+    #[error("A new ISO-TP message interrupted the current reception")]
+    UnexpectedPdu,
     #[error("Unknown Frame Type")]
     UnknownFrameType,
     #[error("Malformed Frame")]
     MalformedFrame,
-    #[error("Too many WAIT Flow Control, N_WFTmax exeeded")]
-    TooManyFCWait,
 }
