@@ -94,7 +94,9 @@ pub struct IsoTPConfig {
     pub rx_id: Identifier,
     /// Padding byte. `None` disables optional padding; FD still pads to a valid DLC.
     pub padding: Option<u8>,
-    /// Maximum time to wait for an individual received frame.
+    /// Deadline for each CAN transmit confirmation (N_As/N_Ar), required
+    /// flow-control frame (N_Bs), or consecutive frame (N_Cr), and idle reception.
+    /// Defaults to one second; ignored traffic does not extend a deadline.
     pub timeout: Duration,
     /// Override the peer's STmin for transmitted consecutive frames.
     /// `None` follows the peer's flow-control settings.
@@ -119,7 +121,7 @@ pub struct IsoTPConfig {
 
 impl IsoTPConfig {
     /// Start a configuration with bus zero, Classical CAN, padding enabled,
-    /// a 100 ms frame timeout, and unlimited receive blocks with zero STmin.
+    /// a one-second transport timeout, and unlimited receive blocks with zero STmin.
     ///
     /// Unless overridden, the receive ID is derived by adding eight to a
     /// standard ID or swapping the low two bytes of an extended ID. These are
@@ -219,6 +221,7 @@ impl IsoTPConfigBuilder {
         self
     }
 
+    /// Set the deadline applied independently to each transport stage.
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.config.timeout = timeout;
         self

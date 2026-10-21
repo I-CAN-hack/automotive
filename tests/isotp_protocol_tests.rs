@@ -395,3 +395,109 @@ async fn reserved_stmin_uses_127ms_for_the_rest_of_the_transfer() {
     })
     .await;
 }
+
+#[tokio::test]
+async fn missing_data_frame_confirmation_times_out() {
+    let (adapter, mut peer) = channel();
+    let mut config = config();
+    config.timeout = Duration::from_millis(50);
+    let isotp = IsoTPAdapter::new(&adapter, config);
+    let exchange = async {
+        // Observe the outgoing SF without confirming its CAN transmission.
+        let sent = peer.outgoing.recv().await.unwrap();
+        assert_eq!(sent.frame.data(), [1, 0xaa]);
+    };
+    let (result, ()) = within(async { tokio::join!(isotp.send(&[0xaa]), exchange) }).await;
+    assert!(matches!(result, Err(automotive::Error::Timeout)));
+}
+
+#[tokio::test]
+async fn missing_flow_control_confirmation_times_out() {
+    let (adapter, mut peer) = channel();
+    let mut config = config();
+    config.timeout = Duration::from_millis(50);
+    let isotp = IsoTPAdapter::new(&adapter, config);
+    let mut stream = isotp.recv();
+    let exchange = async {
+        peer.inject(received(&config, &[0x10, 20, 1, 2, 3, 4, 5, 6]));
+        // N_Ar bounds the FC transmission, before N_Cr can begin.
+        let sent = peer.outgoing.recv().await.unwrap();
+        assert_eq!(sent.frame.data(), [0x30, 0, 0]);
+    };
+    let (result, ()) = within(async { tokio::join!(stream.next(), exchange) }).await;
+    assert!(matches!(result, Some(Err(automotive::Error::Timeout))));
+}
+
+#[tokio::test]
+async fn flow_control_deadline_begins_after_transmit_confirmation() {
+    let (adapter, mut peer) = channel();
+    let mut config = config();
+    config.timeout = Duration::from_millis(100);
+    let isotp = IsoTPAdapter::new(&adapter, config);
+    let exchange = async {
+        let sent = peer.outgoing.recv().await.unwrap();
+        assert_eq!(sent.frame.data()[0], 0x10);
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        peer.acknowledge(&sent.frame);
+        // Together these waits exceed the timeout, but each stage is within it.
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        peer.inject(received(&config, &[0x30, 0, 0]));
+        assert_eq!(peer.next().await.frame.data(), [0x21, 0xaa, 0xaa]);
+    };
+    within(async {
+        let (result, ()) = tokio::join!(isotp.send(&[0xaa; 8]), exchange);
+        result.unwrap();
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn consecutive_frame_deadline_begins_after_flow_control_confirmation() {
+    let (adapter, mut peer) = channel();
+    let mut config = config();
+    config.timeout = Duration::from_millis(100);
+    let isotp = IsoTPAdapter::new(&adapter, config);
+    let mut stream = isotp.recv();
+    let exchange = async {
+        peer.inject(received(&config, &[0x10, 13, 1, 2, 3, 4, 5, 6]));
+        let sent = peer.outgoing.recv().await.unwrap();
+        assert_eq!(sent.frame.data(), [0x30, 0, 0]);
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        peer.acknowledge(&sent.frame);
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        peer.inject(received(&config, &[0x21, 7, 8, 9, 10, 11, 12, 13]));
+    };
+    let (result, ()) = within(async { tokio::join!(stream.next(), exchange) }).await;
+    assert_eq!(result.unwrap().unwrap(), (1..=13).collect::<Vec<u8>>());
+}
+
+#[tokio::test]
+async fn ignored_pdus_do_not_extend_consecutive_frame_deadline() {
+    let (adapter, mut peer) = channel();
+    let mut config = config();
+    config.timeout = Duration::from_millis(40);
+    let isotp = IsoTPAdapter::new(&adapter, config);
+    let mut stream = isotp.recv();
+    let recovery = peer.incoming.clone();
+    let exchange = async {
+        peer.inject(received(&config, &[0x10, 20, 1, 2, 3, 4, 5, 6]));
+        peer.next().await;
+        // None of these PDUs advances the active segmented reception.
+        for _ in 0..30 {
+            for data in [&[0x30, 0, 0][..], &[0xf0], &[0x21, 0xaa], &[0x10], &[0]] {
+                peer.inject(received(&config, data));
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    };
+    let receive = async {
+        let result = tokio::time::timeout(Duration::from_millis(100), stream.next())
+            .await
+            .expect("ignored PDUs extended N_Cr");
+        assert!(matches!(result, Some(Err(automotive::Error::Timeout))));
+        recovery.send(received(&config, &[1, 0xab])).unwrap();
+        // Timeout aborts the old message, so the next SF is accepted directly.
+        assert_eq!(stream.next().await.unwrap().unwrap(), [0xab]);
+    };
+    within(async { tokio::join!(receive, exchange) }).await;
+}

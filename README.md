@@ -214,10 +214,16 @@ assert_eq!(config.rx_id, Identifier::standard(0x7a9)?);
 Empty ISO-TP payloads are rejected. Transport operations also validate public
 config fields before framing, including configs modified after `build()`.
 
-Defaults are bus zero, Classical CAN, padding enabled, a 100 ms per-frame receive
+Defaults are bus zero, Classical CAN, padding enabled, a one-second transport
 timeout, unlimited receive blocks, and zero receive STmin.
 Transmitted consecutive frames follow the peer's block size and
 STmin; `.separation_time_min(...)` overrides transmit STmin.
+
+`.timeout(...)` applies independently to CAN transmit confirmation (N_As/N_Ar),
+required flow control (N_Bs), consecutive frames (N_Cr), and idle reception.
+The one-second default follows ISO 15765-2:2016 Table 21. N_Bs starts after the
+preceding data frame is confirmed; N_Cr starts after flow control is confirmed
+and restarts on each valid consecutive frame. Ignored PDUs do not restart timers.
 
 Receive IDs are derived by adding eight to a standard ID or swapping the low two
 bytes of an extended ID (for example, `0x18DA10F1` becomes `0x18DAF110`). These

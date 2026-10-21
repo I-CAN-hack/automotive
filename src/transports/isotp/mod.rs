@@ -35,7 +35,7 @@ use tracing::debug;
 
 use self::types::FlowControlConfig;
 
-const DEFAULT_TIMEOUT_MS: u64 = 100;
+const DEFAULT_TIMEOUT_MS: u64 = 1000;
 
 impl TransportLayer for IsoTPAdapter<'_> {
     fn send<'a>(
@@ -207,6 +207,27 @@ impl<'a> IsoTPAdapter<'a> {
             .build()
     }
 
+    fn accepts(&self, frame: &Frame) -> bool {
+        frame.is_data()
+            && !frame.loopback
+            && frame.bus == self.config.bus
+            && frame.id() == Some(self.config.rx_id)
+            && frame.is_fd() == self.config.fd
+            && self
+                .config
+                .rx_ext_address
+                .or(self.config.ext_address)
+                .is_none_or(|address| frame.data().first() == Some(&address))
+    }
+
+    async fn transmit_frame(&self, frame: &Frame) -> Result<()> {
+        // N_As for data frames and N_Ar for flow control bound the wait for
+        // CAN transmit confirmation, independently of subsequent reception.
+        tokio::time::timeout(self.config.timeout, self.adapter.send(frame))
+            .await
+            .map_err(|_| crate::Error::Timeout)?
+    }
+
     pub async fn send_single_frame(&self, data: &[u8]) -> Result<()> {
         self.config.validate()?;
         if data.is_empty() {
@@ -232,7 +253,7 @@ impl<'a> IsoTPAdapter<'a> {
         debug!("TX SF, length: {} data {}", data.len(), hex::encode(&buf));
 
         let frame = self.frame(&mut buf)?;
-        self.adapter.send(&frame).await?;
+        self.transmit_frame(&frame).await?;
         Ok(())
     }
 
@@ -262,7 +283,7 @@ impl<'a> IsoTPAdapter<'a> {
         debug!("TX FF, length: {} data {}", data.len(), hex::encode(&buf));
 
         let frame = self.frame(&mut buf)?;
-        self.adapter.send(&frame).await?;
+        self.transmit_frame(&frame).await?;
         Ok(offset)
     }
 
@@ -286,7 +307,7 @@ impl<'a> IsoTPAdapter<'a> {
 
         let frame = self.frame(&mut buf)?;
 
-        self.adapter.send(&frame).await?;
+        self.transmit_frame(&frame).await?;
 
         Ok(())
     }
@@ -328,21 +349,7 @@ impl<'a> IsoTPAdapter<'a> {
 
     async fn send_multiple(&self, data: &[u8]) -> Result<()> {
         // Stream for receiving flow control
-        let stream = self.adapter.recv_filter(|frame| {
-            if !frame.is_data()
-                || frame.bus != self.config.bus
-                || frame.id() != Some(self.config.rx_id)
-                || frame.loopback
-            {
-                return false;
-            }
-
-            if let Some(address) = self.config.rx_ext_address.or(self.config.ext_address) {
-                return frame.data().first() == Some(&address);
-            }
-
-            true
-        });
+        let stream = self.adapter.recv_filter(|frame| self.accepts(frame));
         tokio::pin!(stream);
 
         let offset = self.send_first_frame(data).await?;
@@ -380,7 +387,9 @@ impl<'a> IsoTPAdapter<'a> {
         Ok(())
     }
 
-    /// Asynchronously send an ISO-TP frame of up to 4095 bytes. Returns Timeout if the ECU is not responding in time with flow control messages.
+    /// Send a non-empty ISO-TP message, segmented according to TX_DL.
+    /// Returns Timeout if a CAN transmit confirmation or required flow-control
+    /// frame does not arrive within the configured timeout.
     pub async fn send(&self, data: &[u8]) -> Result<()> {
         debug!("TX {}", hex::encode(data));
 
@@ -472,7 +481,7 @@ impl<'a> IsoTPAdapter<'a> {
         self.pad(&mut flow_control)?;
         debug!("TX FC, data {}", hex::encode(&flow_control));
         let frame = self.frame(&mut flow_control)?;
-        self.adapter.send(&frame).await
+        self.transmit_frame(&frame).await
     }
 
     fn recv_consecutive_frame(&self, frame: &Frame, reception: &mut Reception) -> Result<bool> {
@@ -506,26 +515,13 @@ impl<'a> IsoTPAdapter<'a> {
         Ok(true)
     }
 
-    /// Stream of ISO-TP packets. Can be used if multiple responses are expected from a single request. Returns Timeout if the timeout is exceeded between individual ISO-TP frames. Note the total time to receive a packet may be longer than the timeout.
+    /// Stream of ISO-TP messages, including multiple responses to one request.
+    /// The timeout applies while idle, while confirming outgoing flow control,
+    /// and while awaiting the next valid consecutive frame. Ignored traffic does
+    /// not restart a deadline. A replacement SF/FF yields UnexpectedPdu before
+    /// processing the replacement message.
     pub fn recv(&self) -> impl Stream<Item = Result<Vec<u8>>> + '_ {
-        let stream = self
-            .adapter
-            .recv_filter(|frame| {
-                if !frame.is_data()
-                    || frame.bus != self.config.bus
-                    || frame.id() != Some(self.config.rx_id)
-                    || frame.loopback
-                {
-                    return false;
-                }
-
-                if let Some(address) = self.config.rx_ext_address.or(self.config.ext_address) {
-                    return frame.data().first() == Some(&address);
-                }
-
-                true
-            })
-            .timeout(self.config.timeout);
+        let stream = self.adapter.recv_filter(|frame| self.accepts(frame));
 
         Box::pin(stream! {
             if let Err(error) = self.config.validate() {
@@ -534,24 +530,25 @@ impl<'a> IsoTPAdapter<'a> {
             }
             tokio::pin!(stream);
             let mut reception: Option<Reception> = None;
-            while let Some(frame) = stream.next().await {
-                let frame = match frame {
-                    Ok(frame) => frame,
-                    Err(error) => {
+            let mut deadline = tokio::time::Instant::now() + self.config.timeout;
+            loop {
+                let frame = match tokio::time::timeout_at(deadline, stream.next()).await {
+                    Ok(Some(frame)) => frame,
+                    Ok(None) => break,
+                    Err(_) => {
                         reception = None;
-                        yield Err(error.into());
+                        deadline = tokio::time::Instant::now() + self.config.timeout;
+                        yield Err(crate::Error::Timeout);
                         continue;
                     }
                 };
-                if frame.is_fd() != self.config.fd {
-                    continue;
-                }
                 let Some(data) = frame.data().get(self.offset()..).filter(|data| !data.is_empty()) else {
                     continue;
                 };
                 match FrameType::from_repr(data[0] & FRAME_TYPE_MASK) {
                     Some(FrameType::Single) => {
                         if let Some(message) = self.recv_single_frame(&frame) {
+                            deadline = tokio::time::Instant::now() + self.config.timeout;
                             if reception.take().is_some() {
                                 yield Err(Error::UnexpectedPdu.into());
                             }
@@ -562,6 +559,8 @@ impl<'a> IsoTPAdapter<'a> {
                         if let Some(next) = self.recv_first_frame(&frame) {
                             let interrupted = reception.replace(next).is_some();
                             let result = self.send_flow_control().await;
+                            // Start N_Cr after the FC transmit confirmation.
+                            deadline = tokio::time::Instant::now() + self.config.timeout;
                             if interrupted {
                                 yield Err(Error::UnexpectedPdu.into());
                             }
@@ -576,17 +575,21 @@ impl<'a> IsoTPAdapter<'a> {
                         match self.recv_consecutive_frame(&frame, current) {
                             Err(error) => {
                                 reception = None;
+                                deadline = tokio::time::Instant::now() + self.config.timeout;
                                 yield Err(error);
                             }
                             Ok(false) => {}
                             Ok(true) => {
+                                deadline = tokio::time::Instant::now() + self.config.timeout;
                                 if current.data.len() == current.length {
                                     yield Ok(reception.take().unwrap().data);
                                 } else {
                                     current.block_frames = current.block_frames.saturating_add(1);
                                     if self.config.block_size != 0 && current.block_frames == self.config.block_size {
                                         current.block_frames = 0;
-                                        if let Err(error) = self.send_flow_control().await {
+                                        let result = self.send_flow_control().await;
+                                        deadline = tokio::time::Instant::now() + self.config.timeout;
+                                        if let Err(error) = result {
                                             reception = None;
                                             yield Err(error);
                                         }
