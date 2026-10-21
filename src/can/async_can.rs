@@ -82,12 +82,11 @@ fn process<T: CanAdapter>(
                     // again. Never consume a callback or credit for an
                     // unmatched echo.
                     let key = (frame.bus, frame.id());
+                    // Adapters may lose or change frame flags in TX echoes.
+                    // Bus and identifier select the FIFO; match payload only.
                     if let Some(txs) = pending.get_mut(&key).filter(|txs| {
-                        txs.front().is_some_and(|tx| {
-                            let mut expected = tx.frame.clone();
-                            expected.loopback = true;
-                            expected == frame
-                        })
+                        txs.front()
+                            .is_some_and(|tx| tx.frame.data() == frame.data())
                     }) {
                         // A matching echo confirms TX even if recv() crossed
                         // its deadline. Check timeouts only after processing
@@ -246,7 +245,9 @@ impl AsyncCanAdapter {
     /// Send a frame and await the adapter's transmit confirmation.
     ///
     /// Confirmation strength depends on the backend: some adapters emulate it
-    /// when accepting the frame. The adapter config's optional TX timeout covers
+    /// when accepting the frame. Echoes match the oldest pending send for their
+    /// bus and identifier by payload, ignoring frame type and flags.
+    /// The adapter config's optional TX timeout covers
     /// queue admission and confirmation. A timeout triggers cancellation of all
     /// pending TX; other affected sends return [`Error::Cancelled`]. Vector
     /// defers its hardware clear until the next real frame, using HIGHPRIO.
