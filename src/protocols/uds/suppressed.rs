@@ -46,8 +46,14 @@ impl<T: TransportLayer> SuppressedUDSClient<'_, '_, T> {
     }
 
     /// Security Access with positive-response suppression.
-    /// Silence returns an empty vector; use the original client to obtain a seed.
-    pub async fn security_access(&self, access_type: u8, data: Option<&[u8]>) -> Result<Vec<u8>> {
+    /// Silence returns `None`; a received seed or empty SendKey acknowledgement
+    /// returns `Some(data)`. Use the original client to obtain a seed without
+    /// suppressing its response.
+    pub async fn security_access(
+        &self,
+        access_type: u8,
+        data: Option<&[u8]>,
+    ) -> Result<Option<Vec<u8>>> {
         self.client.security_access(access_type | 0x80, data).await
     }
 

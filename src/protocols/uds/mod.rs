@@ -414,8 +414,13 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     }
 
     /// 0x27 - Security Access. Odd `access_type` values are used to request a seed, even values to send a key. The `data` parameter is optional when requesting a seed. You can use the [`constants::SecurityAccessType`] enum for the default security level.
-    /// Suppressed silence returns an empty vector.
-    pub async fn security_access(&self, access_type: u8, data: Option<&[u8]>) -> Result<Vec<u8>> {
+    /// Returns `Some(seed)` for a received seed and `Some(vec![])` for a positive
+    /// SendKey acknowledgement. Suppressed silence returns `None`.
+    pub async fn security_access(
+        &self,
+        access_type: u8,
+        data: Option<&[u8]>,
+    ) -> Result<Option<Vec<u8>>> {
         let send_key = access_type % 2 == 0;
         if send_key && data.is_none() {
             panic!("Missing data parameter when sending key");
@@ -429,7 +434,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
             )
             .await?
         else {
-            return Ok(Vec::new());
+            return Ok(None);
         };
 
         // §9.4.3, Table 44: a seed is mandatory for requestSeed and absent for sendKey.
@@ -438,7 +443,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         } else {
             self.validate_response_length(response, 3, None)?
         };
-        Ok(response.data().to_vec())
+        Ok(Some(response.data().to_vec()))
     }
 
     /// 0x3E - Tester Present

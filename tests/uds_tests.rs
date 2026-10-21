@@ -112,7 +112,10 @@ async fn uds_test_sids() {
     assert_eq!(uds.ecu_reset(1).await.unwrap(), None);
     assert_eq!(uds.ecu_reset(4).await.unwrap(), Some(2));
 
-    assert_eq!(uds.security_access(1, None).await.unwrap(), b"seed");
+    assert_eq!(
+        uds.security_access(1, None).await.unwrap(),
+        Some(b"seed".to_vec())
+    );
     let wrong_key = uds.security_access(2, Some(b"bad!")).await;
     assert!(matches!(
         wrong_key,
@@ -120,11 +123,10 @@ async fn uds_test_sids() {
             NegativeResponseCode::InvalidKey
         )))
     ));
-    assert!(uds
-        .security_access(2, Some(b"key!"))
-        .await
-        .unwrap()
-        .is_empty());
+    assert_eq!(
+        uds.security_access(2, Some(b"key!")).await.unwrap(),
+        Some(vec![])
+    );
 
     assert_eq!(
         uds.read_data_by_identifier(0x1234).await.unwrap(),
@@ -232,16 +234,11 @@ async fn uds_suppressed_services_accept_silence_in_both_modes() {
             RequestOutcome::Suppressed
         );
         assert_eq!(suppressed.ecu_reset(4).await.unwrap(), None);
-        assert!(suppressed
-            .security_access(1, None)
-            .await
-            .unwrap()
-            .is_empty());
-        assert!(suppressed
-            .security_access(2, Some(b"key!"))
-            .await
-            .unwrap()
-            .is_empty());
+        assert_eq!(suppressed.security_access(1, None).await.unwrap(), None);
+        assert_eq!(
+            suppressed.security_access(2, Some(b"key!")).await.unwrap(),
+            None
+        );
         assert_eq!(
             suppressed
                 .routine_control(RoutineControlType::Stop, 0x1234, None)
@@ -308,6 +305,19 @@ async fn uds_suppressed_pending_replies_require_a_final_response() {
             }
             if case == "repeated-pending" {
                 assert!(start.elapsed() > Duration::from_millis(200));
+            }
+            if case == "pending-positive" {
+                assert_eq!(
+                    uds.security_access(0x81, None).await.unwrap(),
+                    Some(b"seed".to_vec())
+                );
+                assert_eq!(
+                    uds.suppress_positive_responses()
+                        .security_access(2, Some(b"key!"))
+                        .await
+                        .unwrap(),
+                    Some(vec![])
+                );
             }
         }
     }
