@@ -63,13 +63,16 @@ const ISO_TP_FD_MAX_DLEN: usize = u32::MAX as usize;
 /// Values that do not land exactly on a representable STmin step round up to
 /// the next valid encoding so the requested delay is never undershot.
 ///
-/// Encoding (ISO 15765-2 §9.6.5.4 / Table 5):
+/// Encoding (ISO 15765-2 §9.6.5.4 / Table 20):
 /// - 0 µs -> `0x00` (no delay)
 /// - 1-900 µs -> `0xF1`-`0xF9` (100 µs steps, rounded up)
 /// - 901-127_000 µs -> `0x01`-`0x7F` (1 ms steps, rounded up)
 /// - Values above 127 ms clamp to `0x7F`
 pub fn duration_to_stmin_byte(duration: std::time::Duration) -> u8 {
-    let us = duration.as_micros().min(u128::from(u32::MAX)) as u32;
+    let us = duration
+        .as_nanos()
+        .div_ceil(1_000)
+        .min(u128::from(u32::MAX)) as u32;
     if us == 0 {
         0x00
     } else if us < 1_000 {
@@ -106,6 +109,12 @@ pub struct IsoTPConfig {
     pub ext_address: Option<u8>,
     /// Max data length. Will use default of 8 (CAN) or 64 (CAN-FD) if not set
     pub max_dlen: Option<usize>,
+    /// Consecutive frames allowed per receive block; zero is unlimited.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub block_size: u8,
+    /// STmin advertised to the peer in outgoing flow-control frames.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub receive_separation_time_min: std::time::Duration,
 }
 
 impl IsoTPConfig {
@@ -160,6 +169,8 @@ impl IsoTPConfig {
             fd: false,
             ext_address: None,
             max_dlen: None,
+            block_size: 0,
+            receive_separation_time_min: std::time::Duration::ZERO,
         }
     }
 }
@@ -389,29 +400,27 @@ impl<'a> IsoTPAdapter<'a> {
         let offset = self.send_first_frame(data).await?;
         let mut fc_config = self.receive_flow_control(&mut stream).await?;
 
-        // Check for separation time override
-        let st_min = match self.config.separation_time_min {
-            Some(st_min) => st_min,
-            None => fc_config.separation_time_min,
-        };
-
         let tx_dl = self.max_can_data_length();
         let chunks = data[tx_dl - offset..].chunks(tx_dl - 1);
         let mut it = chunks.enumerate().peekable();
+        let mut block_frames = 0u8;
         while let Some((idx, chunk)) = it.next() {
             self.send_consecutive_frame(chunk, idx).await?;
 
-            // Wait for flow control every `block_size` frames, except for the first frame
-            if fc_config.block_size != 0 && idx > 0 && idx % fc_config.block_size as usize == 0 {
-                // Wait for next flow control
-                fc_config = self.receive_flow_control(&mut stream).await?;
-            } else {
-                // Sleep for separation time between frames
-                let last = it.peek().is_none();
-                if !last {
-                    tokio::time::sleep(st_min).await;
-                }
+            if it.peek().is_none() {
+                break;
             }
+            // Each flow-control frame can specify a new block size and STmin.
+            block_frames = block_frames.saturating_add(1);
+            if fc_config.block_size != 0 && block_frames == fc_config.block_size {
+                fc_config = self.receive_flow_control(&mut stream).await?;
+                block_frames = 0;
+            }
+            let st_min = self
+                .config
+                .separation_time_min
+                .unwrap_or(fc_config.separation_time_min);
+            tokio::time::sleep(st_min).await;
         }
 
         Ok(())
@@ -476,17 +485,22 @@ impl<'a> IsoTPAdapter<'a> {
 
         buf.extend(&data[offset..]);
 
-        // Send Flow Control
-        let mut flow_control = ArrayVec::new();
-        flow_control.extend([0x30, 0x00, 0x00]);
-        self.pad(&mut flow_control)?;
-
-        debug!("TX FC, data {}", hex::encode(&flow_control));
-
-        let frame = self.frame(&mut flow_control)?;
-        self.adapter.send(&frame).await?;
+        self.send_flow_control().await?;
 
         Ok(len)
+    }
+
+    async fn send_flow_control(&self) -> Result<()> {
+        let mut flow_control = ArrayVec::new();
+        flow_control.extend([
+            0x30,
+            self.config.block_size,
+            duration_to_stmin_byte(self.config.receive_separation_time_min),
+        ]);
+        self.pad(&mut flow_control)?;
+        debug!("TX FC, data {}", hex::encode(&flow_control));
+        let frame = self.frame(&mut flow_control)?;
+        self.adapter.send(&frame).await
     }
 
     async fn recv_consecutive_frame(
@@ -539,6 +553,7 @@ impl<'a> IsoTPAdapter<'a> {
         let mut buf = Vec::new();
         let mut len: Option<usize> = None;
         let mut idx: u8 = 1;
+        let mut block_frames = 0u8;
 
         while let Some(frame) = stream.next().await {
             // Remove extended address from frame
@@ -567,6 +582,11 @@ impl<'a> IsoTPAdapter<'a> {
                             .await?;
                         if buf.len() >= len {
                             return Ok(buf);
+                        }
+                        block_frames = block_frames.saturating_add(1);
+                        if self.config.block_size != 0 && block_frames == self.config.block_size {
+                            self.send_flow_control().await?;
+                            block_frames = 0;
                         }
                     } else {
                         return Err(Error::OutOfOrder.into());
