@@ -4,6 +4,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq, Clone)]
 pub enum Error {
+    #[error("Invalid ISO-TP configuration: {0}")]
+    InvalidConfig(&'static str),
     #[error("Data Too Large")]
     DataTooLarge,
     #[error("Flow Control")]

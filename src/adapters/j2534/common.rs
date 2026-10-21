@@ -155,6 +155,7 @@ impl J2534Channel {
         tx_id: Identifier,
         rx_id: Identifier,
         ext_address: Option<u8>,
+        rx_ext_address: Option<u8>,
         tx_flags: u32,
     ) -> Status {
         let proto: u32 = Protocol::Iso15765.into();
@@ -164,7 +165,7 @@ impl J2534Channel {
             mask_msg.data_size = 5;
             mask_msg.extra_data_index = 5;
         }
-        let mut pattern_msg = PassThruMsg::new_with_ext_address(proto, rx_id, ext_address, &[]);
+        let mut pattern_msg = PassThruMsg::new_with_ext_address(proto, rx_id, rx_ext_address, &[]);
         let mut fc_msg = PassThruMsg::new_with_ext_address(proto, tx_id, ext_address, &[]);
         mask_msg.tx_flags = tx_flags;
         pattern_msg.tx_flags = tx_flags;

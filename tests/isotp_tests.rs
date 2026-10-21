@@ -79,13 +79,21 @@ async fn isotp_test_echo(msg_len: usize, config: VECUConfig) {
             .unwrap();
     let _vecu = vecu_spawn(&adapter, config).await;
 
-    let mut isotp_config = IsoTPConfig::new(0, Identifier::standard(0x7a1).unwrap());
-    isotp_config.padding = config.padding;
-    isotp_config.fd = config.fd;
-    isotp_config.ext_address = config.ext_address;
-    isotp_config.timeout = std::time::Duration::from_millis(1000);
-    isotp_config.max_dlen = config.max_dlen;
-    isotp_config.block_size = config.receive_bs;
+    let mut builder = IsoTPConfig::builder(Identifier::standard(0x7a1).unwrap())
+        .without_padding()
+        .fd(config.fd)
+        .block_size(config.receive_bs)
+        .timeout(std::time::Duration::from_millis(1000));
+    if let Some(byte) = config.padding {
+        builder = builder.padding(byte);
+    }
+    if let Some(address) = config.ext_address {
+        builder = builder.ext_address(address);
+    }
+    if let Some(length) = config.max_dlen {
+        builder = builder.max_dlen(length);
+    }
+    let isotp_config = builder.build().unwrap();
 
     let isotp = IsoTPAdapter::new(&adapter, isotp_config);
 
