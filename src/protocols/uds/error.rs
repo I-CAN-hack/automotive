@@ -67,6 +67,10 @@ impl From<u8> for NegativeResponseCode {
 pub enum ProtocolDeviation {
     #[error("Expected response service ID {expected:#04x}, received {actual:#04x}")]
     InvalidServiceId { expected: u8, actual: u8 },
+    #[error("Expected echoed request service ID {expected:#04x}, received {actual:#04x}")]
+    InvalidRequestServiceId { expected: u8, actual: u8 },
+    #[error("Negative response code {0:#04x} is reserved or prohibited")]
+    InvalidNegativeResponseCode(u8),
     #[error("Expected sub-function {expected:#04x}, received {actual:#04x}")]
     InvalidSubFunction { expected: u8, actual: u8 },
     #[error("Expected data identifier {expected:#06x}, received {actual:#06x}")]
@@ -80,8 +84,22 @@ pub enum ProtocolDeviation {
         minimum: usize,
         maximum: Option<usize>,
     },
-    #[error("Expected 1 to 8 block-length bytes, received a length format declaring {0}")]
+    #[error("Expected 1 to 15 block-length bytes, received a length format declaring {0}")]
     InvalidLengthFormat(usize),
+    #[error("Length format identifier {0:#04x} must have a zero low nibble")]
+    InvalidLengthFormatIdentifier(u8),
+    #[error("Maximum block length must be at least 3 bytes, received {0}")]
+    InvalidMaxNumberOfBlockLength(u128),
+    #[error("Expected address and length format {expected:#04x}, received {actual:#04x}")]
+    InvalidAddressAndLengthFormatIdentifier { expected: u8, actual: u8 },
+    #[error("Expected memory address {expected:02x?}, received {actual:02x?}")]
+    InvalidMemoryAddress { expected: Vec<u8>, actual: Vec<u8> },
+    #[error("Expected memory size {expected:02x?}, received {actual:02x?}")]
+    InvalidMemorySize { expected: Vec<u8>, actual: Vec<u8> },
+    #[error("Expected {expected} memory-record bytes, received {actual}")]
+    InvalidMemoryRecordLength { expected: u128, actual: usize },
+    #[error("DTC format identifier {0:#04x} is reserved")]
+    InvalidDTCFormatIdentifier(u8),
 }
 
 #[derive(Error, Debug, PartialEq, Clone)]
@@ -105,6 +123,10 @@ pub enum Error {
     InvalidBlockSequenceCounter(u8),
     #[error("Invalid Response Length")]
     InvalidResponseLength,
+    #[error("Unsupported DTC format identifier: {0:#04x}")]
+    InvalidDTCFormatIdentifier(u8),
+    #[error("Block length {value} cannot be represented as usize; response: {response:02x?}")]
+    BlockLengthOverflow { value: u128, response: Vec<u8> },
     #[error("Negative Response: {0:?}")]
     NegativeResponse(NegativeResponseCode),
 }

@@ -5,6 +5,11 @@
 //! with [`UDSConfig::builder`] and [`UDSClient::with_config`].
 //! Strict validation failures include the complete response in
 //! [`Error::ProtocolDeviation`]. Minimum safe parsing lengths always apply.
+//! Strict response validation follows ISO 14229-1:2013: negative-response
+//! structure and request SID (§7.4), sub-function echoes (§8.3.2), service-specific
+//! records (§9–§14), and NRC/DTC format values (Annex A.1 and Annex D.4).
+//! Memory reads return the requested byte count (§10.3), and memory-write
+//! responses echo the ALFID, address, and size (§10.8.3).
 //!
 //! ## Example
 //! ```rust
@@ -82,8 +87,9 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     }
 
     /// Make a custom UDS request, handle negative responses, and return response
-    /// data. Strict mode verifies the echoed service and sub-function; deviations
-    /// include the full received PDU in [`Error::ProtocolDeviation`].
+    /// data. Strict mode verifies response headers and negative-response PDUs.
+    /// Service methods also validate service-specific records. Deviations include
+    /// the full received PDU in [`Error::ProtocolDeviation`].
     pub async fn request(
         &self,
         sid: u8,
@@ -148,10 +154,35 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
             // Check for errors
             let response_sid = response[0];
             if response_sid == NEGATIVE_RESPONSE {
-                // Negative response consists of [0x7F, SID, Error]
-                // According to ISO 14229-1, there can be no extra data after the response code but we will accept this
-                if response.len() <= 2 {
-                    return Err(self.invalid_response_length(response, 3, None));
+                // ISO 14229-1:2013, §7.4: [0x7F, request SID, NRC].
+                if response.len() < 3 || (self.config.strict && response.len() != 3) {
+                    return Err(self.invalid_response_length(response, 3, Some(3)));
+                }
+                if self.config.strict && response[1] != sid {
+                    let actual = response[1];
+                    return Err(Response {
+                        payload: response,
+                        data_start: 0,
+                    }
+                    .deviation(ProtocolDeviation::InvalidRequestServiceId {
+                        expected: sid,
+                        actual,
+                    }));
+                }
+                // Annex A.1 reserves 0x38–0x4F for extended data-link security
+                // and 0xF0–0xFE for vehicle-manufacturer conditions.
+                if self.config.strict
+                    && !matches!(response[2],
+                    0x10..=0x14 | 0x21..=0x22 | 0x24..=0x26 | 0x31 | 0x33 |
+                    0x35..=0x4f | 0x70..=0x73 | 0x78 | 0x7e..=0x7f |
+                    0x81..=0x8d | 0x8f..=0x93 | 0xf0..=0xfe)
+                {
+                    let code = response[2];
+                    return Err(Response {
+                        payload: response,
+                        data_start: 0,
+                    }
+                    .deviation(ProtocolDeviation::InvalidNegativeResponseCode(code)));
                 }
 
                 let code: NegativeResponseCode = response[2].into();
@@ -183,16 +214,15 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
                     return Err(self.invalid_response_length(response, 2, None));
                 }
 
-                if self.config.strict && response[1] != sub_function {
+                // The suppression bit is not echoed (§8.3.2, Table 17).
+                let expected = sub_function & 0x7f;
+                if self.config.strict && response[1] != expected {
                     let actual = response[1];
                     return Err(Response {
                         payload: response,
                         data_start: 0,
                     }
-                    .deviation(ProtocolDeviation::InvalidSubFunction {
-                        expected: sub_function,
-                        actual,
-                    }));
+                    .deviation(ProtocolDeviation::InvalidSubFunction { expected, actual }));
                 }
             }
 
@@ -221,20 +251,37 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         }
     }
 
-    /// 0x10 - Diagnostic Session Control. ECU may optionally return four bytes
-    /// of session timing information. These timings apply to subsequent requests
-    /// unless [`UDSConfig::use_server_timing`] is disabled.
+    fn validate_response_length(
+        &self,
+        response: Response,
+        minimum: usize,
+        maximum: Option<usize>,
+    ) -> Result<Response> {
+        let length = response.payload.len();
+        if self.config.strict
+            && (length < minimum || maximum.is_some_and(|maximum| length > maximum))
+        {
+            return Err(self.invalid_response_length(response.payload, minimum, maximum));
+        }
+        Ok(response)
+    }
+
+    /// 0x10 - Diagnostic Session Control. Strict mode requires four bytes of
+    /// session timing information (ISO 14229-1:2013, §9.2.3). These timings apply
+    /// to subsequent requests unless [`UDSConfig::use_server_timing`] is disabled.
     pub async fn diagnostic_session_control(
         &self,
         session_type: u8,
     ) -> Result<Option<types::SessionParameterRecord>> {
-        let result = self
-            .request(
+        let response = self
+            .request_response(
                 ServiceIdentifier::DiagnosticSessionControl as u8,
                 Some(session_type),
                 None,
             )
             .await?;
+        let response = self.validate_response_length(response, 6, Some(6))?;
+        let result = response.data();
 
         let result = if result.len() == 4 {
             let p2_server_max = u16::from_be_bytes([result[0], result[1]]);
@@ -262,9 +309,17 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
 
     /// 0x11 - ECU Reset. The `reset_type` parameter can be used to specify the type of reset to perform. Use the [`constants::ResetType`] enum for  the reset types defined in the standard. This function returns the power down time when the reset type is [`constants::ResetType::EnableRapidPowerShutDown`].
     pub async fn ecu_reset(&self, reset_type: u8) -> Result<Option<u8>> {
-        let result = self
-            .request(ServiceIdentifier::EcuReset as u8, Some(reset_type), None)
+        let response = self
+            .request_response(ServiceIdentifier::EcuReset as u8, Some(reset_type), None)
             .await?;
+        // §9.3.3, Table 35: powerDownTime is present only for reset type 0x04.
+        let expected = if reset_type & 0x7f == ResetType::EnableRapidPowerShutDown as u8 {
+            3
+        } else {
+            2
+        };
+        let response = self.validate_response_length(response, expected, Some(expected))?;
+        let result = response.data();
 
         let result = if result.len() == 1 {
             Some(result[0])
@@ -282,21 +337,28 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
             panic!("Missing data parameter when sending key");
         }
 
-        let resp = self
-            .request(
+        let response = self
+            .request_response(
                 ServiceIdentifier::SecurityAccess as u8,
                 Some(access_type),
                 data,
             )
             .await?;
-
-        Ok(resp)
+        // §9.4.3, Table 44: a seed is mandatory for requestSeed and absent for sendKey.
+        let response = if send_key {
+            self.validate_response_length(response, 2, Some(2))?
+        } else {
+            self.validate_response_length(response, 3, None)?
+        };
+        Ok(response.data().to_vec())
     }
 
     /// 0x3E - Tester Present
     pub async fn tester_present(&self) -> Result<()> {
-        self.request(ServiceIdentifier::TesterPresent as u8, Some(0), None)
+        let response = self
+            .request_response(ServiceIdentifier::TesterPresent as u8, Some(0), None)
             .await?;
+        self.validate_response_length(response, 2, Some(2))?;
         Ok(())
     }
 
@@ -324,7 +386,63 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
             buf.extend(data);
         }
 
-        self.request(sid as u8, None, Some(&buf)).await
+        let response = self.request_response(sid as u8, None, Some(&buf)).await?;
+        if self.config.strict {
+            let resp = response.data();
+            if sid == ServiceIdentifier::ReadMemoryByAddress {
+                // §10.3.2–§10.3.3: memorySize is a big-endian byte count, up to 15 bytes.
+                let expected = memory_size
+                    .iter()
+                    .fold(0u128, |size, &byte| (size << 8) | u128::from(byte));
+                if expected != resp.len() as u128 {
+                    let actual = resp.len();
+                    return Err(
+                        response.deviation(ProtocolDeviation::InvalidMemoryRecordLength {
+                            expected,
+                            actual,
+                        }),
+                    );
+                }
+                if resp.is_empty() {
+                    return Err(self.invalid_response_length(response.payload, 2, None));
+                }
+            } else {
+                // §10.8.3, Tables 240–241: ALFID, address, and size are echoed exactly.
+                let expected_length = 2 + memory_address.len() + memory_size.len();
+                let response = self.validate_response_length(
+                    response,
+                    expected_length,
+                    Some(expected_length),
+                )?;
+                let resp = response.data();
+                if resp[0] != address_and_length_format {
+                    let actual = resp[0];
+                    return Err(response.deviation(
+                        ProtocolDeviation::InvalidAddressAndLengthFormatIdentifier {
+                            expected: address_and_length_format,
+                            actual,
+                        },
+                    ));
+                }
+                let size_start = 1 + memory_address.len();
+                if &resp[1..size_start] != memory_address {
+                    let actual = resp[1..size_start].to_vec();
+                    return Err(response.deviation(ProtocolDeviation::InvalidMemoryAddress {
+                        expected: memory_address.to_vec(),
+                        actual,
+                    }));
+                }
+                if &resp[size_start..] != memory_size {
+                    let actual = resp[size_start..].to_vec();
+                    return Err(response.deviation(ProtocolDeviation::InvalidMemorySize {
+                        expected: memory_size.to_vec(),
+                        actual,
+                    }));
+                }
+                return Ok(resp.to_vec());
+            }
+        }
+        Ok(response.data().to_vec())
     }
 
     /// 0x22 - Read Data By Identifier. Specify a 16 bit data identifier, or use a constant from [`constants::DataIdentifier`] for standardized identifiers. Reading multiple identifiers simultaneously is possible on some ECUs, but not supported by this function.
@@ -337,6 +455,8 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
                 Some(&did),
             )
             .await?;
+        // §10.2.3, Table 144: at least one data-record byte is mandatory.
+        let response = self.validate_response_length(response, 4, None)?;
         let resp = response.data();
 
         if resp.len() < 2 {
@@ -387,6 +507,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
                 Some(&data),
             )
             .await?;
+        let response = self.validate_response_length(response, 3, Some(3))?;
         let resp = response.data();
 
         if resp.len() < 2 {
@@ -441,8 +562,14 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         }
 
         let mask = resp[0];
-        let format =
-            DTCFormatIdentifier::from_repr(resp[1]).expect("Unknown DTC Format Identifier");
+        let Some(format) = DTCFormatIdentifier::from_repr(resp[1]) else {
+            let format = resp[1];
+            return Err(if self.config.strict {
+                response.deviation(ProtocolDeviation::InvalidDTCFormatIdentifier(format))
+            } else {
+                Error::InvalidDTCFormatIdentifier(format).into()
+            });
+        };
         let count = u16::from_be_bytes([resp[2], resp[3]]);
 
         Ok(DTCReportNumberByStatusMask {
@@ -528,14 +655,17 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         }
 
         let num_length_bytes = (resp[0] >> 4) as usize;
-        if self.config.strict && (num_length_bytes == 0 || num_length_bytes > 8) {
+        // §14.2.3 and §14.3.3: the low nibble is reserved and must be zero.
+        if self.config.strict && resp[0] & 0x0f != 0 {
+            let format = resp[0];
+            return Err(
+                response.deviation(ProtocolDeviation::InvalidLengthFormatIdentifier(format))
+            );
+        }
+        if self.config.strict && num_length_bytes == 0 {
             return Err(
                 response.deviation(ProtocolDeviation::InvalidLengthFormat(num_length_bytes))
             );
-        }
-        // The block-length parser supports at most eight bytes.
-        if num_length_bytes > 8 {
-            return Err(Error::InvalidResponseLength.into());
         }
         if resp.len() < num_length_bytes + 1
             || (self.config.strict && resp.len() != num_length_bytes + 1)
@@ -544,15 +674,30 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
             return Err(self.invalid_response_length(response.payload, expected, Some(expected)));
         }
 
-        // Convert the length bytes to a usize
+        // The four-bit length field permits up to 15 big-endian bytes.
         let length = resp[1..num_length_bytes + 1]
             .iter()
-            .fold(0, |acc, &x| (acc << 8) | x as usize);
+            .fold(0u128, |acc, &byte| (acc << 8) | u128::from(byte));
 
-        Ok(length)
+        // A complete TransferData message includes SID, counter, and data.
+        if self.config.strict && length < 3 {
+            return Err(
+                response.deviation(ProtocolDeviation::InvalidMaxNumberOfBlockLength(length))
+            );
+        }
+
+        usize::try_from(length).map_err(|_| {
+            Error::BlockLengthOverflow {
+                value: length,
+                response: response.payload,
+            }
+            .into()
+        })
     }
 
-    /// 0x34 - Request Download. Used to initiate a transfer from the client to the ECU. Returns the maximum number of bytes to include in each TransferData request.
+    /// 0x34 - Request Download. Initiates a transfer from the client to the ECU.
+    /// Returns the maximum complete TransferData request length, including SID
+    /// and block counter. Values above `usize::MAX` return [`Error::BlockLengthOverflow`].
     pub async fn request_download(
         &self,
         compression_method: u8,
@@ -570,7 +715,9 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         .await
     }
 
-    /// 0x35 - Request Upload. Used to initiate a transfer from the client to the ECU. Returns the maximum number of bytes to include in each TransferData request.
+    /// 0x35 - Request Upload. Initiates a transfer from the ECU to the client.
+    /// Returns the maximum complete TransferData response length, including SID
+    /// and block counter. Values above `usize::MAX` return [`Error::BlockLengthOverflow`].
     pub async fn request_upload(
         &self,
         compression_method: u8,
@@ -602,6 +749,9 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         let response = self
             .request_response(ServiceIdentifier::TransferData as u8, None, Some(&buf))
             .await?;
+        // §14.4.3, Table 405: upload responses contain at least one data byte.
+        let minimum = if data.is_none() { 3 } else { 2 };
+        let response = self.validate_response_length(response, minimum, None)?;
         let resp = response.data();
 
         // Ensure the response contains at least the block sequence counter

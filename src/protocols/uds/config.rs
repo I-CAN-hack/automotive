@@ -22,11 +22,12 @@ pub struct UDSConfig {
     /// `None` (the default) permits any number of pending responses.
     pub request_timeout: Option<Duration>,
     /// Adopt P2/P2* reported by DiagnosticSessionControl. Defaults to `true`.
-    /// A response without a timing record leaves the current timings unchanged.
+    /// In non-strict mode, a response without a timing record leaves the current
+    /// timings unchanged.
     pub use_server_timing: bool,
-    /// Whether response echoes and formats are validated. Defaults to `true`.
+    /// Whether responses are validated against ISO 14229-1:2013. Defaults to `true`.
     /// Failures include the full response in [`super::Error::ProtocolDeviation`].
-    /// Minimum lengths needed for safe parsing apply in both modes.
+    /// Minimum parsing lengths and representable DTC formats apply in both modes.
     pub strict: bool,
 }
 
@@ -88,7 +89,7 @@ impl UDSConfigBuilder {
         self
     }
 
-    /// Controls response echo and format validation. Safe parsing lengths always apply.
+    /// Controls ISO 14229-1:2013 response validation. Safe parsing requirements always apply.
     pub fn strict(mut self, enabled: bool) -> Self {
         self.config.strict = enabled;
         self
