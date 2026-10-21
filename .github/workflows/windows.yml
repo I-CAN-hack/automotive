@@ -1,4 +1,4 @@
-name: Windows
+name: Rust (Windows)
 
 on: [push]
 
@@ -11,9 +11,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      - name: Build
+      - name: Build Rust library
         run: cargo build --verbose --features=all
-      - name: Build Examples
+      - name: Build Rust examples
         run: cargo build --verbose --features=all --examples
-      - name: Run tests
+      - name: Run Rust tests
         run: cargo test --features=all --verbose

@@ -63,6 +63,6 @@ jobs:
         run: cargo fmt --all --check
       - name: Verify imports and installed documentation
         run: uv run --locked python -c "import automotive.adapters.j2534, automotive.protocols.uds, pydoc; print(pydoc.render_doc(automotive.protocols.uds.UDSClient))"
-      - name: Scapy ECU regression tests
+      - name: Python Scapy ECU regression tests
         if: runner.os == 'Linux'
         run: uv run --locked pytest --run-vcan -q
