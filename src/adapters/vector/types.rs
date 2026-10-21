@@ -1,10 +1,10 @@
 use strum_macros::FromRepr;
 
-use crate::can::bitrate::BitrateConfig;
-use crate::vector::bindings as xl;
-pub use crate::vector::bindings::{
+use crate::adapters::vector::bindings as xl;
+pub use crate::adapters::vector::bindings::{
     XLaccess, XLcanFdConf, XLcanRxEvent, XLcanTxEvent, XLportHandle,
 };
+use crate::can::bitrate::BitrateConfig;
 
 use crate::can::{FrameContent, DLC_TO_LEN};
 

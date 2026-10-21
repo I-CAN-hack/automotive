@@ -26,17 +26,17 @@ pub enum Error {
     IoError(std::sync::Arc<std::io::Error>),
 
     #[error(transparent)]
-    IsoTPError(#[from] crate::isotp::Error),
+    IsoTPError(#[from] crate::transports::isotp::Error),
 
     #[cfg(any(feature = "panda", feature = "peak"))]
     #[error(transparent)]
     LibUsbError(#[from] rusb::Error),
     #[error(transparent)]
-    UDSError(#[from] crate::uds::Error),
+    UDSError(#[from] crate::protocols::uds::Error),
 
     #[cfg(all(target_os = "windows", feature = "vector-xl"))]
     #[error(transparent)]
-    VectorError(#[from] crate::vector::Error),
+    VectorError(#[from] crate::adapters::vector::Error),
 
     #[cfg(all(target_os = "windows", feature = "vector-xl"))]
     #[error("Error loading DLL: {0}")]
@@ -44,15 +44,15 @@ pub enum Error {
 
     #[cfg(all(target_os = "windows", feature = "j2534"))]
     #[error(transparent)]
-    J2534Error(#[from] crate::j2534::Error),
+    J2534Error(#[from] crate::adapters::j2534::Error),
 
     #[cfg(feature = "panda")]
     #[error(transparent)]
-    PandaError(#[from] crate::panda::Error),
+    PandaError(#[from] crate::adapters::panda::Error),
 
     #[cfg(feature = "peak")]
     #[error(transparent)]
-    PeakError(#[from] crate::peak::Error),
+    PeakError(#[from] crate::adapters::peak::Error),
 }
 
 impl From<crate::can::bitrate::BitrateError> for Error {

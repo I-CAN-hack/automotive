@@ -3,11 +3,11 @@
 //! ```rust
 //! async fn uds_example() {
 //!     let adapter = automotive::can::get_adapter().unwrap();
-//!     let isotp = automotive::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
-//!     let uds = automotive::uds::UDSClient::new(&isotp);
+//!     let isotp = automotive::transports::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
+//!     let uds = automotive::protocols::uds::UDSClient::new(&isotp);
 //!
 //!     uds.tester_present().await.unwrap();
-//!     let response = uds.read_data_by_identifier(automotive::uds::DataIdentifier::ApplicationSoftwareIdentification as u16).await.unwrap();
+//!     let response = uds.read_data_by_identifier(automotive::protocols::uds::DataIdentifier::ApplicationSoftwareIdentification as u16).await.unwrap();
 //!
 //!     println!("Application Software Identification: {}", hex::encode(response));
 //! }
@@ -16,7 +16,7 @@ mod constants;
 mod error;
 mod types;
 
-use crate::isotp::TransportLayer;
+use crate::transports::TransportLayer;
 use crate::Result;
 use crate::StreamExt;
 pub use constants::*;
@@ -26,7 +26,7 @@ pub use types::*;
 use tracing::info;
 
 /// UDS Client. Generic over any [`TransportLayer`] implementation so that it
-/// works equally with software ISO-TP ([`crate::isotp::IsoTPAdapter`]) and
+/// works equally with software ISO-TP ([`crate::transports::isotp::IsoTPAdapter`]) and
 /// hardware ISO 15765 (e.g. `J2534NativeIsoTpTransport`).
 pub struct UDSClient<'a, T: TransportLayer> {
     adapter: &'a T,

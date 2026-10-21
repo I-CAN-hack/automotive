@@ -1,11 +1,11 @@
 use std::time::Duration;
 
 use automotive::can::AsyncCanAdapter;
-use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
+use automotive::transports::isotp::{IsoTPAdapter, IsoTPConfig};
 use automotive::Result;
 
-use automotive::uds::DataIdentifier;
-use automotive::uds::UDSClient;
+use automotive::protocols::uds::DataIdentifier;
+use automotive::protocols::uds::UDSClient;
 
 use bstr::ByteSlice;
 use strum::IntoEnumIterator;

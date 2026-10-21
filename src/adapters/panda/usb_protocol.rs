@@ -103,7 +103,7 @@ pub fn unpack_can_buffer(dat: &mut Vec<u8>) -> Result<Vec<Frame>, Error> {
 
         if calculate_checksum(&dat[0..(CANPACKET_HEAD_SIZE + data_len)]) != 0 {
             return Err(Error::PandaError(
-                crate::panda::error::Error::InvalidChecksum,
+                crate::adapters::panda::error::Error::InvalidChecksum,
             ));
         }
 

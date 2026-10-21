@@ -4,6 +4,14 @@
 
 Welcome to the `automotive` crate documentation. The purpose of this crate is to help you with all things automotive related. Most importantly, it provides a fully async CAN interface supporting multiple adapters.
 
+## Modules
+
+- `automotive::adapters` contains the feature-gated hardware adapters: `j2534`,
+  `panda`, `peak`, `socketcan`, and `vector`.
+- `automotive::transports` contains `isotp` and the shared `TransportLayer` trait.
+- `automotive::protocols` contains `uds`, which uses a `TransportLayer`.
+- `automotive::can` provides shared CAN types, traits, and adapter discovery.
+
 ## Development with Nix
 
 Enter the development environment and run the tests:
@@ -114,8 +122,8 @@ data, with an 80% sample point for both phases:
 ```rust,no_run
 # #[cfg(feature = "peak")]
 # fn example() -> automotive::Result<()> {
-let config = automotive::peak::PeakConfig::builder().build()?;
-let adapter = automotive::peak::Peak::new_async(config)?;
+let config = automotive::adapters::peak::PeakConfig::builder().build()?;
+let adapter = automotive::adapters::peak::Peak::new_async(config)?;
 # Ok(())
 # }
 ```
@@ -131,7 +139,7 @@ type for the bitrate builder:
 ```rust,no_run
 # #[cfg(all(target_os = "windows", feature = "vector-xl"))]
 # fn example() -> automotive::Result<()> {
-use automotive::vector::{VectorCan, VectorConfig};
+use automotive::adapters::vector::{VectorCan, VectorConfig};
 
 let config = VectorConfig::builder(0)
     .bitrate(|bitrate| {
@@ -192,11 +200,11 @@ The automotive crate also supplies interfaces for various diagnostic protocols s
 ```rust
  async fn uds_example() -> automotive::Result<()> {
     let adapter = automotive::can::get_adapter()?;
-    let isotp = automotive::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
-    let uds = automotive::uds::UDSClient::new(&isotp);
+    let isotp = automotive::transports::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
+    let uds = automotive::protocols::uds::UDSClient::new(&isotp);
 
     uds.tester_present().await.unwrap();
-    let response = uds.read_data_by_identifier(automotive::uds::DataIdentifier::ApplicationSoftwareIdentification as u16).await?;
+    let response = uds.read_data_by_identifier(automotive::protocols::uds::DataIdentifier::ApplicationSoftwareIdentification as u16).await?;
 
     println!("Application Software Identification: {}", hex::encode(response));
     Ok(())

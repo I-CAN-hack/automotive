@@ -1,8 +1,8 @@
 #![allow(dead_code, unused_imports)]
+#[cfg(all(target_os = "linux", feature = "socketcan"))]
+use automotive::adapters::socketcan::SocketCanConfig;
 use automotive::can::AsyncCanAdapter;
 use automotive::can::{CanAdapter, Frame, Identifier};
-#[cfg(all(target_os = "linux", feature = "socketcan"))]
-use automotive::socketcan::SocketCanConfig;
 use std::collections::VecDeque;
 use std::time::Duration;
 
@@ -15,23 +15,23 @@ static BULK_ASYNC_TIMEOUT_MS: u64 = 5000;
 
 #[cfg(feature = "test-j2534")]
 fn j2534_bitrate_config() -> automotive::can::bitrate::BitrateConfig {
-    automotive::can::bitrate::BitrateBuilder::new::<automotive::j2534::J2534CanAdapter>()
+    automotive::can::bitrate::BitrateBuilder::new::<automotive::adapters::j2534::J2534CanAdapter>()
         .bitrate(500_000)
         .build()
         .unwrap()
 }
 
 #[cfg(feature = "test-panda")]
-fn panda_config() -> automotive::panda::PandaConfig {
-    automotive::panda::PandaConfig::builder()
+fn panda_config() -> automotive::adapters::panda::PandaConfig {
+    automotive::adapters::panda::PandaConfig::builder()
         .bitrate(|bitrate| bitrate.bitrate(500_000).sample_point(0.8))
         .build()
         .unwrap()
 }
 
 #[cfg(feature = "test-peak")]
-fn peak_config() -> automotive::peak::PeakConfig {
-    automotive::peak::PeakConfig::builder()
+fn peak_config() -> automotive::adapters::peak::PeakConfig {
+    automotive::adapters::peak::PeakConfig::builder()
         .bitrate(|bitrate| bitrate.bitrate(500_000).sample_point(0.8))
         .tx_timeout(Duration::from_millis(BULK_ASYNC_TIMEOUT_MS))
         .build()
@@ -39,8 +39,8 @@ fn peak_config() -> automotive::peak::PeakConfig {
 }
 
 #[cfg(feature = "test-vector")]
-fn vector_config() -> automotive::vector::VectorConfig {
-    automotive::vector::VectorConfig::builder(0)
+fn vector_config() -> automotive::adapters::vector::VectorConfig {
+    automotive::adapters::vector::VectorConfig::builder(0)
         .bitrate(|bitrate| {
             bitrate
                 .bitrate(500_000)
@@ -147,7 +147,8 @@ async fn bulk_send(adapter: &AsyncCanAdapter) {
 #[tokio::test]
 #[serial_test::serial]
 async fn j2534_bulk_send() {
-    let mut j2534 = automotive::j2534::J2534CanAdapter::new(None, j2534_bitrate_config()).unwrap();
+    let mut j2534 =
+        automotive::adapters::j2534::J2534CanAdapter::new(None, j2534_bitrate_config()).unwrap();
     bulk_send_sync(&mut j2534);
 }
 
@@ -156,7 +157,8 @@ async fn j2534_bulk_send() {
 #[serial_test::serial]
 async fn j2534_bulk_send_async() {
     let j2534 =
-        automotive::j2534::J2534CanAdapter::new_async(None, j2534_bitrate_config()).unwrap();
+        automotive::adapters::j2534::J2534CanAdapter::new_async(None, j2534_bitrate_config())
+            .unwrap();
     bulk_send(&j2534).await;
 }
 
@@ -164,7 +166,7 @@ async fn j2534_bulk_send_async() {
 #[test]
 #[serial_test::serial]
 fn panda_bulk_send_sync() {
-    let mut panda = automotive::panda::Panda::new(panda_config()).unwrap();
+    let mut panda = automotive::adapters::panda::Panda::new(panda_config()).unwrap();
     bulk_send_sync(&mut panda);
 }
 
@@ -172,7 +174,7 @@ fn panda_bulk_send_sync() {
 #[tokio::test]
 #[serial_test::serial]
 async fn panda_bulk_send_async() {
-    let panda = automotive::panda::Panda::new_async(panda_config()).unwrap();
+    let panda = automotive::adapters::panda::Panda::new_async(panda_config()).unwrap();
     bulk_send(&panda).await;
 }
 
@@ -180,7 +182,7 @@ async fn panda_bulk_send_async() {
 #[test]
 #[serial_test::serial]
 fn vector_bulk_send_sync() {
-    let mut vector = automotive::vector::VectorCan::new(vector_config()).unwrap();
+    let mut vector = automotive::adapters::vector::VectorCan::new(vector_config()).unwrap();
     bulk_send_sync(&mut vector);
 }
 
@@ -188,7 +190,7 @@ fn vector_bulk_send_sync() {
 #[tokio::test]
 #[serial_test::serial]
 async fn vector_bulk_send_async() {
-    let vector = automotive::vector::VectorCan::new_async(vector_config()).unwrap();
+    let vector = automotive::adapters::vector::VectorCan::new_async(vector_config()).unwrap();
     bulk_send(&vector).await;
 }
 
@@ -196,7 +198,7 @@ async fn vector_bulk_send_async() {
 #[test]
 #[serial_test::serial]
 fn peak_bulk_send_sync() {
-    let mut peak = automotive::peak::Peak::new(peak_config()).unwrap();
+    let mut peak = automotive::adapters::peak::Peak::new(peak_config()).unwrap();
     bulk_send_sync(&mut peak);
 }
 
@@ -204,7 +206,7 @@ fn peak_bulk_send_sync() {
 #[tokio::test]
 #[serial_test::serial]
 async fn peak_bulk_send_async() {
-    let peak = automotive::peak::Peak::new_async(peak_config()).unwrap();
+    let peak = automotive::adapters::peak::Peak::new_async(peak_config()).unwrap();
     bulk_send(&peak).await;
 }
 
@@ -212,7 +214,8 @@ async fn peak_bulk_send_async() {
 #[test]
 #[serial_test::serial]
 fn socketcan_bulk_send_sync() {
-    let mut adapter = automotive::socketcan::SocketCan::new(SocketCanConfig::new("can0")).unwrap();
+    let mut adapter =
+        automotive::adapters::socketcan::SocketCan::new(SocketCanConfig::new("can0")).unwrap();
     bulk_send_sync(&mut adapter);
 }
 
@@ -221,7 +224,8 @@ fn socketcan_bulk_send_sync() {
 #[serial_test::serial]
 async fn socketcan_bulk_send_async() {
     let adapter =
-        automotive::socketcan::SocketCan::new_async(SocketCanConfig::new("can0")).unwrap();
+        automotive::adapters::socketcan::SocketCan::new_async(SocketCanConfig::new("can0"))
+            .unwrap();
     bulk_send(&adapter).await;
 }
 
@@ -229,7 +233,8 @@ async fn socketcan_bulk_send_async() {
 #[test]
 #[serial_test::serial]
 fn vcan_bulk_send_sync() {
-    let mut adapter = automotive::socketcan::SocketCan::new(SocketCanConfig::new("vcan0")).unwrap();
+    let mut adapter =
+        automotive::adapters::socketcan::SocketCan::new(SocketCanConfig::new("vcan0")).unwrap();
     bulk_send_sync(&mut adapter);
 }
 
@@ -238,7 +243,8 @@ fn vcan_bulk_send_sync() {
 #[serial_test::serial]
 async fn vcan_bulk_send_async() {
     let adapter =
-        automotive::socketcan::SocketCan::new_async(SocketCanConfig::new("vcan0")).unwrap();
+        automotive::adapters::socketcan::SocketCan::new_async(SocketCanConfig::new("vcan0"))
+            .unwrap();
     bulk_send(&adapter).await;
 }
 
@@ -247,7 +253,8 @@ async fn vcan_bulk_send_async() {
 #[serial_test::serial]
 async fn vcan_send_fd() {
     let adapter =
-        automotive::socketcan::SocketCan::new_async(SocketCanConfig::new("vcan0")).unwrap();
+        automotive::adapters::socketcan::SocketCan::new_async(SocketCanConfig::new("vcan0"))
+            .unwrap();
     adapter
         .send(&Frame::new(0, 0x123.try_into().unwrap(), &[0u8; 64]).unwrap())
         .await
@@ -258,7 +265,7 @@ async fn vcan_send_fd() {
 #[tokio::test]
 #[serial_test::serial]
 async fn socketcan_open_nonexistent() {
-    let e = automotive::socketcan::SocketCan::new(SocketCanConfig::new("doestnotexist"));
+    let e = automotive::adapters::socketcan::SocketCan::new(SocketCanConfig::new("doestnotexist"));
 
     match e {
         Err(automotive::Error::NotFound) => {}

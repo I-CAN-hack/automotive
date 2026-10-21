@@ -34,8 +34,9 @@ use tokio::sync::{broadcast, oneshot};
 
 use crate::can::bitrate::BitrateConfig;
 use crate::can::Identifier;
-use crate::isotp::{duration_to_stmin_byte, IsoTPConfig};
-use crate::{Result, TransportLayer};
+use crate::transports::isotp::{duration_to_stmin_byte, IsoTPConfig};
+use crate::transports::TransportLayer;
+use crate::Result;
 
 use super::common::{
     self, nominal_bitrate_from_config, parse_can_id, J2534Channel, J2534Device, PassThruMsg,

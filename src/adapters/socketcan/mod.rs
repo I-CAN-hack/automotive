@@ -1,6 +1,6 @@
 //! This module provides a [`CanAdapter`] implementation for SocketCAN interfaces
+use crate::adapters::socketcan::socket::CanFdSocket;
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
-use crate::socketcan::socket::CanFdSocket;
 use crate::Result;
 
 use std::collections::VecDeque;

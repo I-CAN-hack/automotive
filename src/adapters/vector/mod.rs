@@ -10,12 +10,12 @@ pub use error::Error;
 
 use std::collections::VecDeque;
 
+use crate::adapters::vector::bindings::XLcanFdConf;
+use crate::adapters::vector::types::{PortHandle, XLaccess, XLcanTxEvent};
+use crate::adapters::vector::vxlapi::*;
 use crate::can::adapter::validate_tx_timeout;
 use crate::can::bitrate::{AdapterTimingConst, BitTimingConst};
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
-use crate::vector::bindings::XLcanFdConf;
-use crate::vector::types::{PortHandle, XLaccess, XLcanTxEvent};
-use crate::vector::vxlapi::*;
 use crate::Result;
 use tracing::info;
 

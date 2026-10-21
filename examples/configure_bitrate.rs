@@ -1,6 +1,6 @@
 #[cfg(all(target_os = "windows", feature = "vector-xl"))]
 pub async fn run() -> automotive::Result<()> {
-    use automotive::vector::{VectorCan, VectorConfig};
+    use automotive::adapters::vector::{VectorCan, VectorConfig};
     use automotive::StreamExt;
 
     tracing_subscriber::fmt::init();

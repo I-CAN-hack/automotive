@@ -7,8 +7,8 @@ use libc::{
 use std::io::Write;
 use std::os::fd::AsRawFd;
 
+use crate::adapters::socketcan::frame::{can_frame_default, canfd_frame_default};
 use crate::can::Frame;
-use crate::socketcan::frame::{can_frame_default, canfd_frame_default};
 
 pub struct CanFdSocket(socket2::Socket);
 

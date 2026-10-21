@@ -1,5 +1,5 @@
 use automotive::can::Identifier;
-use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
+use automotive::transports::isotp::{IsoTPAdapter, IsoTPConfig};
 use automotive::StreamExt;
 use tracing_subscriber;
 

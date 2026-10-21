@@ -1,12 +1,12 @@
 #![allow(dead_code, unused_imports)]
+#[cfg(all(target_os = "linux", feature = "socketcan"))]
+use automotive::adapters::socketcan::SocketCanConfig;
 use automotive::can::AsyncCanAdapter;
 use automotive::can::Identifier;
-use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
-#[cfg(all(target_os = "linux", feature = "socketcan"))]
-use automotive::socketcan::SocketCanConfig;
-use automotive::uds::Error as UDSError;
-use automotive::uds::NegativeResponseCode;
-use automotive::uds::UDSClient;
+use automotive::protocols::uds::Error as UDSError;
+use automotive::protocols::uds::NegativeResponseCode;
+use automotive::protocols::uds::UDSClient;
+use automotive::transports::isotp::{IsoTPAdapter, IsoTPConfig};
 use automotive::Error;
 use automotive::StreamExt;
 use std::process::{Child, Command};
@@ -37,7 +37,8 @@ async fn vecu_spawn(adapter: &AsyncCanAdapter) -> ChildGuard {
 #[serial_test::serial]
 async fn uds_test_sids() {
     let adapter =
-        automotive::socketcan::SocketCan::new_async(SocketCanConfig::new("vcan0")).unwrap();
+        automotive::adapters::socketcan::SocketCan::new_async(SocketCanConfig::new("vcan0"))
+            .unwrap();
     let _vecu = vecu_spawn(&adapter).await;
 
     let mut isotp_config = IsoTPConfig::new(0, Identifier::standard(0x7a1).unwrap());

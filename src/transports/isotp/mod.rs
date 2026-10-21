@@ -4,8 +4,8 @@
 //! use automotive::StreamExt;
 //! async fn isotp_example() {
 //!    let adapter = automotive::can::get_adapter().unwrap();
-//!    let config = automotive::isotp::IsoTPConfig::new(0, automotive::can::Identifier::standard(0x7a1).unwrap());
-//!    let isotp = automotive::isotp::IsoTPAdapter::new(&adapter, config);
+//!    let config = automotive::transports::isotp::IsoTPConfig::new(0, automotive::can::Identifier::standard(0x7a1).unwrap());
+//!    let isotp = automotive::transports::isotp::IsoTPAdapter::new(&adapter, config);
 //!
 //!    let mut stream = isotp.recv(); // Create receiver before sending request
 //!    isotp.send(&[0x3e, 0x00]).await.unwrap();
@@ -22,6 +22,7 @@ pub use error::Error;
 
 use crate::can::AsyncCanAdapter;
 use crate::can::{Frame, Identifier, DLC_TO_LEN};
+use crate::transports::TransportLayer;
 use crate::Result;
 use crate::{Stream, StreamExt, Timeout};
 use arrayvec::ArrayVec;
@@ -31,24 +32,6 @@ use tracing::debug;
 use self::types::FlowControlConfig;
 
 const DEFAULT_TIMEOUT_MS: u64 = 100;
-
-/// Abstraction over anything that can exchange diagnostic PDUs over a transport layer.
-///
-/// Two implementations ship with this workspace:
-/// * [`IsoTPAdapter`] — software ISO-TP framing on top of any [`crate::can::CanAdapter`].
-/// * `J2534NativeIsoTpTransport` — hardware ISO 15765 via a J2534 PassThru device; the
-///   adapter firmware handles all framing, flow-control, and STmin timing.
-pub trait TransportLayer {
-    /// Transmit a single UDS PDU. Resolves once the transport has accepted the
-    /// payload for transmission (not necessarily once it has been ACKed on the bus).
-    fn send<'a>(
-        &'a self,
-        data: &'a [u8],
-    ) -> impl std::future::Future<Output = crate::Result<()>> + 'a;
-
-    /// Infinite stream of received UDS PDUs. Each item is one complete PDU.
-    fn recv(&self) -> impl crate::Stream<Item = crate::Result<Vec<u8>>> + Unpin + '_;
-}
 
 impl TransportLayer for IsoTPAdapter<'_> {
     fn send<'a>(
@@ -355,13 +338,13 @@ impl<'a> IsoTPAdapter<'a> {
                 .data()
                 .get(self.offset()..)
                 .filter(|data| data.len() >= 3)
-                .ok_or(crate::isotp::error::Error::MalformedFrame)?;
+                .ok_or(crate::transports::isotp::error::Error::MalformedFrame)?;
 
             debug!("RX FC, data {}", hex::encode(data));
 
             // Check if Flow Control
             if FrameType::from_repr(data[0] & FRAME_TYPE_MASK) != Some(FrameType::FlowControl) {
-                return Err(crate::isotp::error::Error::FlowControl.into());
+                return Err(crate::transports::isotp::error::Error::FlowControl.into());
             };
 
             // Check Flow Status
@@ -369,9 +352,9 @@ impl<'a> IsoTPAdapter<'a> {
                 Some(FlowStatus::ContinueToSend) => {} // Ok
                 Some(FlowStatus::Wait) => continue,    // Wait for next flow control
                 Some(FlowStatus::Overflow) => {
-                    return Err(crate::isotp::error::Error::Overflow.into())
+                    return Err(crate::transports::isotp::error::Error::Overflow.into())
                 }
-                None => return Err(crate::isotp::error::Error::MalformedFrame.into()),
+                None => return Err(crate::transports::isotp::error::Error::MalformedFrame.into()),
             };
 
             // Parse block size and separation time
@@ -381,7 +364,7 @@ impl<'a> IsoTPAdapter<'a> {
             return Ok(config);
         }
 
-        Err(crate::isotp::error::Error::TooManyFCWait.into())
+        Err(crate::transports::isotp::error::Error::TooManyFCWait.into())
     }
 
     async fn send_multiple(&self, data: &[u8]) -> Result<()> {
@@ -446,7 +429,7 @@ impl<'a> IsoTPAdapter<'a> {
         } else if data.len() <= self.max_isotp_data_length() {
             self.send_multiple(data).await?;
         } else {
-            return Err(crate::isotp::error::Error::DataTooLarge.into());
+            return Err(crate::transports::isotp::error::Error::DataTooLarge.into());
         }
 
         Ok(())
@@ -464,7 +447,7 @@ impl<'a> IsoTPAdapter<'a> {
 
         // Check if the frame contains enough data
         if len + offset > data.len() {
-            return Err(crate::isotp::error::Error::MalformedFrame.into());
+            return Err(crate::transports::isotp::error::Error::MalformedFrame.into());
         }
 
         debug!("RX SF, length: {} data {}", len, hex::encode(data));
@@ -487,7 +470,7 @@ impl<'a> IsoTPAdapter<'a> {
 
         // A FF cannot use CAN frame data optmization, and always needs to be full length.
         if data.len() < self.max_can_data_length() {
-            return Err(crate::isotp::error::Error::MalformedFrame.into());
+            return Err(crate::transports::isotp::error::Error::MalformedFrame.into());
         }
 
         buf.extend(&data[offset..]);
@@ -520,12 +503,12 @@ impl<'a> IsoTPAdapter<'a> {
         if remaining_len >= tx_dl - 1 {
             // Ensure frame is full length
             if data.len() < tx_dl {
-                return Err(crate::isotp::error::Error::MalformedFrame.into());
+                return Err(crate::transports::isotp::error::Error::MalformedFrame.into());
             }
         } else {
             // Ensure frame is long enough to contain the remaining data
             if data.len() - 1 < remaining_len {
-                return Err(crate::isotp::error::Error::MalformedFrame.into());
+                return Err(crate::transports::isotp::error::Error::MalformedFrame.into());
             }
         }
 
@@ -540,7 +523,7 @@ impl<'a> IsoTPAdapter<'a> {
         );
 
         if msg_idx != idx {
-            return Err(crate::isotp::error::Error::OutOfOrder.into());
+            return Err(crate::transports::isotp::error::Error::OutOfOrder.into());
         }
 
         let new_idx = if idx == 0xF { 0 } else { idx + 1 };
@@ -563,7 +546,7 @@ impl<'a> IsoTPAdapter<'a> {
                 .data()
                 .get(self.offset()..)
                 .filter(|data| !data.is_empty())
-                .ok_or(crate::isotp::error::Error::MalformedFrame)?;
+                .ok_or(crate::transports::isotp::error::Error::MalformedFrame)?;
 
             match FrameType::from_repr(data[0] & FRAME_TYPE_MASK) {
                 Some(FrameType::Single) => {
