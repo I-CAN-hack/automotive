@@ -12,6 +12,14 @@ Discover an adapter and print received CAN frames.
 :language: python
 ```
 
+## Send a CAN frame
+
+Discover an adapter, send one Classic CAN frame, and close the adapter.
+
+```{literalinclude} ../examples/can_sender.py
+:language: python
+```
+
 ## Send ISO-TP messages
 
 Exchange complete messages through a software ISO-TP transport.
@@ -33,14 +41,6 @@ Read diagnostic data through a persistent UDS client.
 Reuse adapter configuration with explicit nominal and data-phase timing.
 
 ```{literalinclude} ../examples/configure_bitrate.py
-:language: python
-```
-
-## Recover from a transmit timeout
-
-Handle a transmit timeout and continue using the adapter.
-
-```{literalinclude} ../examples/tx_timeout.py
 :language: python
 ```
 

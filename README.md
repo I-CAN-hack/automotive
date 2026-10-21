@@ -18,6 +18,8 @@ Welcome to the `automotive` crate documentation. The purpose of this crate is to
 An asyncio Python package is available in `python/`, with the import name
 `automotive`. See the [Python README](python/README.md) for installation,
 configuration, examples, API documentation, and Scapy ECU regression tests.
+The [Python documentation](https://i-can-hack.github.io/automotive/) includes its
+user guide, examples, and API reference.
 
 ## Development with Nix
 
@@ -32,11 +34,6 @@ The shell includes Rust, Cargo, rustfmt, Clippy, rust-analyzer, libusb,
 libclang for bindgen, maturin, uv, and Python with Scapy. On Linux it also
 includes the CAN and network tools used by the virtual ECU tests. The flake lock
 and release checksums pin the packages.
-
-The shell also supplies the cross-compilation toolchains for Python wheels.
-Run `python/build.sh`; see the [Python release instructions](python/README.md#publishing-to-pypi).
-The [Python documentation](https://i-can-hack.github.io/automotive/) includes its
-user guide, examples, and API reference.
 
 To run the virtual CAN tests on Linux, first load the host's CAN/ISO-TP kernel
 modules and create `vcan0` using the existing setup scripts:
@@ -55,27 +52,15 @@ The setup scripts require `sudo`; entering the shell does not change the host's
 network interfaces or load kernel modules. Windows-only adapters still require
 their Windows SDKs and drivers.
 
-## Publishing the Rust crate
+## Async CAN Example
 
-Keep the Rust versions in `Cargo.toml` and `python/Cargo.toml` aligned when
-preparing releases. The Python package version is set in `python/pyproject.toml`.
-
-After the Rust tests pass, verify the package and publish it locally:
+The [CAN sender example](examples/can_sender.rs) sends one Classic CAN frame
+through the first available adapter:
 
 ```sh
-scripts/deploy_crates.sh --dry-run
-cargo login
-scripts/deploy_crates.sh
+cargo run --example can_sender --features default-adapters
 ```
 
-The script publishes only the `automotive` Rust crate to crates.io, using the
-lockfile and verifying a build with all adapters enabled. Cargo requires a clean
-working tree; use `--dry-run --allow-dirty` to inspect an uncommitted release.
-`CARGO_REGISTRY_TOKEN` can be used instead of `cargo login`. See the
-[Cargo publishing documentation](https://doc.rust-lang.org/cargo/commands/cargo-publish.html).
-Python builds and PyPI publishing are documented in the [Python README](python/README.md#publishing-to-pypi).
-
-## Async CAN Example
 The following adapter opens the first available adapter on the system, and then receives all frames. Note how the sent frame is awaited, which waits until the message is ACKed on the CAN bus.
 
 ```rust
@@ -224,12 +209,6 @@ be pending in hardware.
 Unmatched echoes are warned about and ignored until the first current TX
 confirmation. After that, an unmatched echo is an adapter invariant violation and
 panics the worker. Every queue clear resets this startup/recovery grace period.
-
-Run the `tx_timeout` example with the desired adapter feature (for example,
-`cargo run --example tx_timeout --features peak`) to queue two frames and print
-each result. The second frame is queued 250 ms later so the first can time out
-and cancel it before its own deadline. After timeout/cancellation, the example
-waits one second and retries both frames with the same adapter open.
 
 ## ISO-TP configuration
 

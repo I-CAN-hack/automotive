@@ -1,4 +1,4 @@
-# Development and releases
+# Development
 
 Clone the [repository](https://github.com/I-CAN-hack/automotive) before following
 the development commands below.
