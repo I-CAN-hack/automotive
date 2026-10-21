@@ -1,5 +1,8 @@
 # Automotive for Python
 
+[![PyPI](https://img.shields.io/pypi/v/automotive.svg)](https://pypi.org/project/automotive/)
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://i-can-hack.github.io/automotive/)
+
 An asyncio library for CAN, ISO-TP, and UDS, powered by the `automotive` Rust
 crate. The distribution and import name are both `automotive`. Rust handles
 adapter I/O, protocol framing, validation, and timing; Python provides reusable
