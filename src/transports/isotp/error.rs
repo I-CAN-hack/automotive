@@ -14,6 +14,8 @@ pub enum Error {
     Overflow,
     #[error("Out Of Order")]
     OutOfOrder,
+    #[error("A new ISO-TP message interrupted the current reception")]
+    UnexpectedPdu,
     #[error("Unknown Frame Type")]
     UnknownFrameType,
     #[error("Malformed Frame")]

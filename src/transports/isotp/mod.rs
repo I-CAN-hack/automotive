@@ -482,65 +482,6 @@ impl<'a> IsoTPAdapter<'a> {
         Ok(true)
     }
 
-    /// Receive one message, discarding invalid length encodings and CAN DLCs.
-    async fn recv_from_stream(
-        &self,
-        stream: &mut std::pin::Pin<&mut Timeout<impl Stream<Item = Frame>>>,
-    ) -> Result<Vec<u8>> {
-        let mut reception: Option<Reception> = None;
-        while let Some(frame) = stream.next().await {
-            let frame = frame?;
-            if frame.is_fd() != self.config.fd {
-                continue;
-            }
-            let Some(data) = frame
-                .data()
-                .get(self.offset()..)
-                .filter(|data| !data.is_empty())
-            else {
-                continue;
-            };
-            match FrameType::from_repr(data[0] & FRAME_TYPE_MASK) {
-                Some(FrameType::Single) => {
-                    if let Some(message) = self.recv_single_frame(&frame) {
-                        return Ok(message);
-                    }
-                }
-                Some(FrameType::First) => {
-                    if let Some(next) = self.recv_first_frame(&frame) {
-                        if reception.is_some() {
-                            return Err(Error::OutOfOrder.into());
-                        }
-                        self.send_flow_control().await?;
-                        reception = Some(next);
-                    }
-                }
-                Some(FrameType::Consecutive) => {
-                    if let Some(current) = &mut reception {
-                        if !self.recv_consecutive_frame(&frame, current)? {
-                            continue;
-                        }
-                        if current.data.len() == current.length {
-                            return Ok(reception.take().unwrap().data);
-                        }
-                        current.block_frames = current.block_frames.saturating_add(1);
-                        if self.config.block_size != 0
-                            && current.block_frames == self.config.block_size
-                        {
-                            self.send_flow_control().await?;
-                            current.block_frames = 0;
-                        }
-                    } else {
-                        return Err(Error::OutOfOrder.into());
-                    }
-                }
-                Some(FrameType::FlowControl) => {}
-                _ => return Err(Error::UnknownFrameType.into()),
-            }
-        }
-        Err(crate::Error::Disconnected)
-    }
-
     /// Stream of ISO-TP packets. Can be used if multiple responses are expected from a single request. Returns Timeout if the timeout is exceeded between individual ISO-TP frames. Note the total time to receive a packet may be longer than the timeout.
     pub fn recv(&self) -> impl Stream<Item = Result<Vec<u8>>> + '_ {
         let stream = self
@@ -564,10 +505,73 @@ impl<'a> IsoTPAdapter<'a> {
 
         Box::pin(stream! {
             tokio::pin!(stream);
-
-            loop {
-                yield self.recv_from_stream(&mut stream).await;
+            let mut reception: Option<Reception> = None;
+            while let Some(frame) = stream.next().await {
+                let frame = match frame {
+                    Ok(frame) => frame,
+                    Err(error) => {
+                        reception = None;
+                        yield Err(error.into());
+                        continue;
+                    }
+                };
+                if frame.is_fd() != self.config.fd {
+                    continue;
+                }
+                let Some(data) = frame.data().get(self.offset()..).filter(|data| !data.is_empty()) else {
+                    continue;
+                };
+                match FrameType::from_repr(data[0] & FRAME_TYPE_MASK) {
+                    Some(FrameType::Single) => {
+                        if let Some(message) = self.recv_single_frame(&frame) {
+                            if reception.take().is_some() {
+                                yield Err(Error::UnexpectedPdu.into());
+                            }
+                            yield Ok(message);
+                        }
+                    }
+                    Some(FrameType::First) => {
+                        if let Some(next) = self.recv_first_frame(&frame) {
+                            let interrupted = reception.replace(next).is_some();
+                            let result = self.send_flow_control().await;
+                            if interrupted {
+                                yield Err(Error::UnexpectedPdu.into());
+                            }
+                            if let Err(error) = result {
+                                reception = None;
+                                yield Err(error);
+                            }
+                        }
+                    }
+                    Some(FrameType::Consecutive) => {
+                        let Some(current) = &mut reception else { continue };
+                        match self.recv_consecutive_frame(&frame, current) {
+                            Err(error) => {
+                                reception = None;
+                                yield Err(error);
+                            }
+                            Ok(false) => {}
+                            Ok(true) => {
+                                if current.data.len() == current.length {
+                                    yield Ok(reception.take().unwrap().data);
+                                } else {
+                                    current.block_frames = current.block_frames.saturating_add(1);
+                                    if self.config.block_size != 0 && current.block_frames == self.config.block_size {
+                                        current.block_frames = 0;
+                                        if let Err(error) = self.send_flow_control().await {
+                                            reception = None;
+                                            yield Err(error);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Table 23: idle CFs, unexpected FCs and unknown PDUs are ignored.
+                    _ => {}
+                }
             }
+            yield Err(crate::Error::Disconnected);
         })
     }
 }

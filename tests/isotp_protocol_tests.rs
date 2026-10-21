@@ -2,7 +2,7 @@
 //! conforming Scapy peer would not normally transmit.
 
 use automotive::can::{AsyncCanAdapter, CanAdapter, Frame, Identifier};
-use automotive::transports::isotp::{IsoTPAdapter, IsoTPConfig};
+use automotive::transports::isotp::{Error as IsoTPError, IsoTPAdapter, IsoTPConfig};
 use automotive::StreamExt;
 use std::collections::VecDeque;
 use std::future::Future;
@@ -286,4 +286,67 @@ async fn reassembly_learns_peer_rx_dl_and_ignores_wrong_cf_lengths() {
         .await;
         assert_eq!(response, message);
     }
+}
+
+#[tokio::test]
+async fn idle_consecutive_and_unknown_frames_do_not_interrupt_the_next_message() {
+    let (adapter, mut peer) = channel();
+    let config = config();
+    let isotp = IsoTPAdapter::new(&adapter, config);
+    let mut stream = isotp.recv();
+    for data in [&[0x21, 0xee][..], &[0xf0], &[0x30, 0, 0], &[1, 0xab]] {
+        peer.inject(received(&config, data));
+    }
+    assert_eq!(within(stream.next()).await.unwrap().unwrap(), [0xab]);
+    peer.assert_no_transmission().await;
+}
+
+#[tokio::test]
+async fn replacement_first_frame_reports_interruption_and_restarts_reassembly() {
+    let (adapter, mut peer) = channel();
+    let config = config();
+    let isotp = IsoTPAdapter::new(&adapter, config);
+    let mut stream = isotp.recv();
+    let exchange = async {
+        peer.inject(received(&config, &[0x10, 27, 1, 2, 3, 4, 5, 6]));
+        peer.next().await;
+        peer.inject(received(&config, &[0x21, 7, 8, 9, 10, 11, 12, 13]));
+        peer.inject(received(&config, &[0x10, 13, 40, 41, 42, 43, 44, 45]));
+        assert_eq!(peer.next().await.frame.data(), [0x30, 0, 0]);
+        peer.inject(received(&config, &[0x21, 46, 47, 48, 49, 50, 51, 52]));
+    };
+    let receive = async {
+        assert!(matches!(
+            stream.next().await.unwrap(),
+            Err(automotive::Error::IsoTPError(IsoTPError::UnexpectedPdu))
+        ));
+        assert_eq!(
+            stream.next().await.unwrap().unwrap(),
+            (40..=52).collect::<Vec<u8>>()
+        );
+    };
+    within(async { tokio::join!(receive, exchange) }).await;
+}
+
+#[tokio::test]
+async fn replacement_single_frame_preserves_the_interruption_indication_and_message() {
+    let (adapter, mut peer) = channel();
+    let config = config();
+    let isotp = IsoTPAdapter::new(&adapter, config);
+    let mut stream = isotp.recv();
+    let exchange = async {
+        peer.inject(received(&config, &[0x10, 20, 1, 2, 3, 4, 5, 6]));
+        peer.next().await;
+        peer.inject(received(&config, &[0x10, 1, 0, 0, 0, 0, 0, 0])); // Invalid FF: ignore.
+        peer.inject(received(&config, &[0])); // Invalid SF: ignore.
+        peer.inject(received(&config, &[1, 0xab]));
+    };
+    let receive = async {
+        assert!(matches!(
+            stream.next().await.unwrap(),
+            Err(automotive::Error::IsoTPError(IsoTPError::UnexpectedPdu))
+        ));
+        assert_eq!(stream.next().await.unwrap().unwrap(), [0xab]);
+    };
+    within(async { tokio::join!(receive, exchange) }).await;
 }

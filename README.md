@@ -258,6 +258,10 @@ the local transmit length. Invalid SF/FF length encodings and CAN data lengths
 are discarded; non-final consecutive frames must match the peer's FirstFrame
 length. This follows ISO 15765-2:2016 §9.5.3–§9.6.4.
 
+If a valid SF or FF interrupts a segmented reception, `recv()` yields
+`isotp::Error::UnexpectedPdu` and then processes the replacement message.
+Idle consecutive frames and unknown PDUs are ignored (§9.8.3, Table 23).
+
 `.ext_address(byte)` inserts and expects an address byte for extended or mixed
 addressing (§10.3.4–§10.3.5). `.rx_ext_address(byte)` overrides the receive byte
 when the two directions use different addresses. Receive block size and STmin
