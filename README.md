@@ -360,6 +360,10 @@ client's behavior:
 use automotive::protocols::uds::{RequestOutcome, UDSClient};
 
 let uds = UDSClient::new(transport);
+let report = uds
+    .read_dtc_information_number_of_dtc_by_status_mask(0xff)
+    .await?;
+println!("DTC count: {}", report.dtc_count);
 {
     let suppressed = uds.suppress_positive_responses();
     suppressed.tester_present().await?; // Sends [0x3e, 0x80].
@@ -384,11 +388,11 @@ uds.tester_present().await?; // Sends [0x3e, 0x00] and requires a response.
 # }
 ```
 
-The view is another `UDSClient` with suppression enabled, so it exposes every
-service helper and custom requests. Suppression sets bit 7 of the sub-function
-byte. Services without a sub-function still require a response; their data bytes
-are unchanged. Both views share session timings. Keep one request outstanding
-per ECU.
+`SuppressedUDSClient` borrows the original client and sets bit 7 of the
+sub-function byte. It provides suppression-aware helpers for every implemented
+service with a sub-function. Services without a sub-function are available
+through the wrapper and still require a response. Both views share session
+timings. Keep one request outstanding per ECU.
 
 Suppression still waits through the initial response window to catch negative
 responses and space sequential requests (ISO 14229-2:2013, §8.3). Initial silence
@@ -396,7 +400,8 @@ returns `RequestOutcome::Suppressed` from `request()`; a received positive
 response returns `RequestOutcome::PositiveResponse(data)`. Typed helpers
 represent silence as `None`, or `()` for TesterPresent. `security_access()`
 returns `Some(seed)` for a received seed and `None` for SendKey or suppressed
-silence. `read_dtc_information_number_of_dtc_by_status_mask()` returns `None`
+silence. Normal `read_dtc_information_number_of_dtc_by_status_mask()` calls
+return a report directly. On the suppressed view, this helper returns `None`
 for silence and `Some(report)` for a received report. Silence does not confirm
 that the ECU executed the request.
 Strict mode rejects a positive reply to a suppressed request unless NRC 0x78

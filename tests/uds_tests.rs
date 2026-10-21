@@ -140,7 +140,6 @@ async fn uds_test_sids() {
     let dtcs = uds
         .read_dtc_information_number_of_dtc_by_status_mask(0xff)
         .await
-        .unwrap()
         .unwrap();
     assert_eq!(dtcs.dtc_status_availability_mask, 0xff);
     assert_eq!(
@@ -512,6 +511,18 @@ async fn uds_suppression_preserves_required_and_overall_timeouts() {
                 .await
                 .unwrap();
             assert!(matches!(uds.tester_present().await, Err(Error::Timeout)));
+            assert_eq!(
+                uds.suppress_positive_responses()
+                    .read_dtc_information_number_of_dtc_by_status_mask(0xff)
+                    .await
+                    .unwrap(),
+                None
+            );
+            assert!(matches!(
+                uds.read_dtc_information_number_of_dtc_by_status_mask(0xff)
+                    .await,
+                Err(Error::Timeout)
+            ));
             assert!(matches!(
                 uds.suppress_positive_responses()
                     .request(0x22, None, Some(&[0x12, 0x34]))
