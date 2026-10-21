@@ -35,8 +35,7 @@ mod app {
         let dll_path = None;
         let bitrate_cfg = BitrateBuilder::new::<J2534CanAdapter>()
             .bitrate(500_000)
-            .build()
-            .unwrap();
+            .build()?;
 
         let standard_ids = 0x700..=0x7f7;
         let extended_ids = (0x00..=0xff).map(|i| 0x18da0000 + (i << 8) + 0xf1);
@@ -74,6 +73,7 @@ async fn main() -> automotive::Result<()> {
 }
 
 #[cfg(not(all(target_os = "windows", feature = "j2534")))]
-fn main() {
+fn main() -> automotive::Result<()> {
     eprintln!("This example requires Windows and the `j2534` feature.");
+    Ok(())
 }

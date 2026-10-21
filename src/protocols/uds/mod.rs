@@ -1,15 +1,16 @@
 //! Unified Diagnostic Services (UDS) Client, implements ISO 14229
 //! ## Example
 //! ```rust
-//! async fn uds_example() {
-//!     let adapter = automotive::adapters::get_adapter().unwrap();
+//! async fn uds_example() -> automotive::Result<()> {
+//!     let adapter = automotive::adapters::get_adapter()?;
 //!     let isotp = automotive::transports::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
 //!     let uds = automotive::protocols::uds::UDSClient::new(&isotp);
 //!
-//!     uds.tester_present().await.unwrap();
-//!     let response = uds.read_data_by_identifier(automotive::protocols::uds::DataIdentifier::ApplicationSoftwareIdentification as u16).await.unwrap();
+//!     uds.tester_present().await?;
+//!     let response = uds.read_data_by_identifier(automotive::protocols::uds::DataIdentifier::ApplicationSoftwareIdentification as u16).await?;
 //!
 //!     println!("Application Software Identification: {}", hex::encode(response));
+//!     Ok(())
 //! }
 
 mod constants;

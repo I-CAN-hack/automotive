@@ -2,7 +2,7 @@ use automotive::protocols::uds::{DataIdentifier, SessionType};
 use bstr::ByteSlice;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> automotive::Result<()> {
     tracing_subscriber::fmt::init();
 
     let adapter = automotive::adapters::get_adapter()?;

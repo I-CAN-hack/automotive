@@ -204,7 +204,7 @@ The automotive crate also supplies interfaces for various diagnostic protocols s
     let isotp = automotive::transports::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
     let uds = automotive::protocols::uds::UDSClient::new(&isotp);
 
-    uds.tester_present().await.unwrap();
+    uds.tester_present().await?;
     let response = uds.read_data_by_identifier(automotive::protocols::uds::DataIdentifier::ApplicationSoftwareIdentification as u16).await?;
 
     println!("Application Software Identification: {}", hex::encode(response));

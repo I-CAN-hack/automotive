@@ -31,6 +31,7 @@ async fn main() -> automotive::Result<()> {
 }
 
 #[cfg(not(all(target_os = "windows", feature = "vector-xl")))]
-fn main() {
+fn main() -> automotive::Result<()> {
     eprintln!("This example requires Windows and the `vector-xl` feature.");
+    Ok(())
 }

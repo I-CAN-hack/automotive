@@ -2,14 +2,15 @@
 //! ## Example:
 //! ```rust
 //! use automotive::StreamExt;
-//! async fn isotp_example() {
-//!    let adapter = automotive::adapters::get_adapter().unwrap();
-//!    let config = automotive::transports::isotp::IsoTPConfig::new(0, automotive::can::Identifier::standard(0x7a1).unwrap());
+//! async fn isotp_example() -> automotive::Result<()> {
+//!    let adapter = automotive::adapters::get_adapter()?;
+//!    let config = automotive::transports::isotp::IsoTPConfig::new(0, automotive::can::Identifier::standard(0x7a1)?);
 //!    let isotp = automotive::transports::isotp::IsoTPAdapter::new(&adapter, config);
 //!
 //!    let mut stream = isotp.recv(); // Create receiver before sending request
-//!    isotp.send(&[0x3e, 0x00]).await.unwrap();
-//!    let response = stream.next().await.unwrap().unwrap();
+//!    isotp.send(&[0x3e, 0x00]).await?;
+//!    let response = stream.next().await.ok_or(automotive::Error::Disconnected)??;
+//!    Ok(())
 //! }
 //! ```
 

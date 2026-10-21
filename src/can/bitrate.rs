@@ -276,14 +276,16 @@ pub enum BitrateError {
 ///     }
 /// }
 ///
+/// # fn main() -> automotive::Result<()> {
 /// let cfg = BitrateBuilder::new::<DummyAdapter>()
 ///     .bitrate(500_000)
 ///     .sample_point(0.8)
-///     .build()
-///     .unwrap();
+///     .build()?;
 ///
 /// assert_eq!(cfg.nominal.bitrate, 500_000);
 /// assert!((cfg.nominal.sample_point - 0.8).abs() < 1e-9);
+/// # Ok(())
+/// # }
 /// ```
 ///
 /// ## Direct timing mode
@@ -326,16 +328,18 @@ pub enum BitrateError {
 ///     }
 /// }
 ///
+/// # fn main() -> automotive::Result<()> {
 /// let cfg = BitrateBuilder::new::<DummyAdapter>()
 ///     .brp(8)
 ///     .tseg1(15)
 ///     .tseg2(4)
 ///     .sjw(1)
-///     .build()
-///     .unwrap();
+///     .build()?;
 ///
 /// assert_eq!(cfg.nominal.bitrate, 500_000);
 /// assert!((cfg.nominal.sample_point - 0.8).abs() < 1e-9);
+/// # Ok(())
+/// # }
 /// ```
 ///
 /// ## CAN-FD data phase
@@ -388,13 +392,15 @@ pub enum BitrateError {
 ///     }
 /// }
 ///
+/// # fn main() -> automotive::Result<()> {
 /// let cfg = BitrateBuilder::new::<DummyAdapter>()
 ///     .bitrate(500_000)
 ///     .data_bitrate(2_000_000)
-///     .build()
-///     .unwrap();
+///     .build()?;
 ///
 /// assert_eq!(cfg.data.map(|data| data.bitrate), Some(2_000_000));
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct BitrateBuilder {
