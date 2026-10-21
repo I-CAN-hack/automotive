@@ -350,3 +350,48 @@ async fn replacement_single_frame_preserves_the_interruption_indication_and_mess
     };
     within(async { tokio::join!(receive, exchange) }).await;
 }
+
+#[tokio::test]
+async fn waits_restart_flow_control_deadline_without_a_sender_side_limit() {
+    let (adapter, mut peer) = channel();
+    let mut config = config();
+    config.timeout = Duration::from_millis(100);
+    let isotp = IsoTPAdapter::new(&adapter, config);
+    let exchange = async {
+        peer.next().await;
+        // Total WAIT time exceeds N_Bs, and more than ten WAITs are valid.
+        for _ in 0..11 {
+            tokio::time::sleep(Duration::from_millis(15)).await;
+            peer.inject(received(&config, &[0x31, 0xff, 0xff]));
+        }
+        peer.inject(received(&config, &[0x30, 0, 0]));
+        assert_eq!(peer.next().await.frame.data()[0], 0x21);
+    };
+    within(async {
+        let (result, ()) = tokio::join!(isotp.send(&[0xaa; 8]), exchange);
+        result.unwrap();
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn reserved_stmin_uses_127ms_for_the_rest_of_the_transfer() {
+    let (adapter, mut peer) = channel();
+    let config = config();
+    let isotp = IsoTPAdapter::new(&adapter, config);
+    let exchange = async {
+        peer.next().await;
+        peer.inject(received(&config, &[0x30, 1, 0x80]));
+        let first = peer.next().await;
+        peer.inject(received(&config, &[0x30, 0, 0]));
+        let second = peer.next().await;
+        let third = peer.next().await;
+        assert!(second.at.duration_since(first.at) >= Duration::from_millis(127));
+        assert!(third.at.duration_since(second.at) >= Duration::from_millis(127));
+    };
+    within(async {
+        let (result, ()) = tokio::join!(isotp.send(&[0xaa; 27]), exchange);
+        result.unwrap();
+    })
+    .await;
+}

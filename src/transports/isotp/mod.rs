@@ -28,7 +28,7 @@ use crate::can::AsyncCanAdapter;
 use crate::can::{Frame, DLC_TO_LEN};
 use crate::transports::TransportLayer;
 use crate::Result;
-use crate::{Stream, StreamExt, Timeout};
+use crate::{Stream, StreamExt};
 use arrayvec::ArrayVec;
 use async_stream::stream;
 use tracing::debug;
@@ -51,9 +51,6 @@ impl TransportLayer for IsoTPAdapter<'_> {
 }
 
 const DEFAULT_PADDING_BYTE: u8 = 0xCC;
-
-/// N_WFTmax in ISO 15765-2
-const MAX_WAIT_FC: usize = 10;
 
 const CAN_MAX_DLEN: usize = 8;
 const CAN_FD_MAX_DLEN: usize = 64;
@@ -266,69 +263,61 @@ impl<'a> IsoTPAdapter<'a> {
 
     async fn receive_flow_control(
         &self,
-        stream: &mut std::pin::Pin<&mut Timeout<impl Stream<Item = Frame>>>,
+        stream: &mut (impl Stream<Item = Frame> + Unpin),
     ) -> Result<FlowControlConfig> {
-        for _ in 0..MAX_WAIT_FC {
-            let frame = stream.next().await.unwrap()?;
-
-            // Remove extended address from frame
-            let data = frame
+        // N_Bs begins after the preceding FF/CF was confirmed. Only WAIT
+        // restarts it; unrelated or truncated PDUs do not extend the deadline.
+        let mut deadline = tokio::time::Instant::now() + self.config.timeout;
+        loop {
+            let frame = tokio::time::timeout_at(deadline, stream.next())
+                .await
+                .map_err(|_| crate::Error::Timeout)?
+                .ok_or(crate::Error::Disconnected)?;
+            let Some(data) = frame
                 .data()
                 .get(self.offset()..)
                 .filter(|data| data.len() >= 3)
-                .ok_or(crate::transports::isotp::error::Error::MalformedFrame)?;
-
-            debug!("RX FC, data {}", hex::encode(data));
-
-            // Check if Flow Control
-            if FrameType::from_repr(data[0] & FRAME_TYPE_MASK) != Some(FrameType::FlowControl) {
-                return Err(crate::transports::isotp::error::Error::FlowControl.into());
+            else {
+                continue;
             };
-
-            // Check Flow Status
+            if data[0] & FRAME_TYPE_MASK != FrameType::FlowControl as u8 {
+                continue;
+            }
             match FlowStatus::from_repr(data[0] & FLOW_SATUS_MASK) {
-                Some(FlowStatus::ContinueToSend) => {} // Ok
-                Some(FlowStatus::Wait) => continue,    // Wait for next flow control
-                Some(FlowStatus::Overflow) => {
-                    return Err(crate::transports::isotp::error::Error::Overflow.into())
+                Some(FlowStatus::ContinueToSend) => return FlowControlConfig::try_from(data),
+                Some(FlowStatus::Wait) => {
+                    // N_WFTmax limits a receiver's WAIT transmissions, not
+                    // how many WAITs a sender may receive.
+                    deadline = tokio::time::Instant::now() + self.config.timeout;
                 }
-                None => return Err(crate::transports::isotp::error::Error::MalformedFrame.into()),
-            };
-
-            // Parse block size and separation time
-            let config = types::FlowControlConfig::try_from(data)?;
-
-            debug!("RX FC, {:?} data {}", config, hex::encode(data));
-            return Ok(config);
+                Some(FlowStatus::Overflow) => return Err(Error::Overflow.into()),
+                None => return Err(Error::MalformedFrame.into()),
+            }
         }
-
-        Err(crate::transports::isotp::error::Error::TooManyFCWait.into())
     }
 
     async fn send_multiple(&self, data: &[u8]) -> Result<()> {
         // Stream for receiving flow control
-        let stream = self
-            .adapter
-            .recv_filter(|frame| {
-                if !frame.is_data()
-                    || frame.bus != self.config.bus
-                    || frame.id() != Some(self.config.rx_id)
-                    || frame.loopback
-                {
-                    return false;
-                }
+        let stream = self.adapter.recv_filter(|frame| {
+            if !frame.is_data()
+                || frame.bus != self.config.bus
+                || frame.id() != Some(self.config.rx_id)
+                || frame.loopback
+            {
+                return false;
+            }
 
-                if let Some(address) = self.config.rx_ext_address.or(self.config.ext_address) {
-                    return frame.data().first() == Some(&address);
-                }
+            if let Some(address) = self.config.rx_ext_address.or(self.config.ext_address) {
+                return frame.data().first() == Some(&address);
+            }
 
-                true
-            })
-            .timeout(self.config.timeout);
+            true
+        });
         tokio::pin!(stream);
 
         let offset = self.send_first_frame(data).await?;
         let mut fc_config = self.receive_flow_control(&mut stream).await?;
+        let mut fallback_stmin = fc_config.reserved_stmin;
 
         let tx_dl = self.max_can_data_length();
         let chunks = data[tx_dl - offset..].chunks(tx_dl - 1);
@@ -344,12 +333,17 @@ impl<'a> IsoTPAdapter<'a> {
             block_frames = block_frames.saturating_add(1);
             if fc_config.block_size != 0 && block_frames == fc_config.block_size {
                 fc_config = self.receive_flow_control(&mut stream).await?;
+                fallback_stmin |= fc_config.reserved_stmin;
                 block_frames = 0;
             }
             let st_min = self
                 .config
                 .separation_time_min
-                .unwrap_or(fc_config.separation_time_min);
+                .unwrap_or(if fallback_stmin {
+                    std::time::Duration::from_millis(127)
+                } else {
+                    fc_config.separation_time_min
+                });
             tokio::time::sleep(st_min).await;
         }
 

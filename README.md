@@ -262,6 +262,11 @@ If a valid SF or FF interrupts a segmented reception, `recv()` yields
 `isotp::Error::UnexpectedPdu` and then processes the replacement message.
 Idle consecutive frames and unknown PDUs are ignored (§9.8.3, Table 23).
 
+Received FC.WAIT frames restart the sender's flow-control deadline. There is no
+fixed sender-side WAIT count; N_WFTmax applies to a receiver sending WAITs.
+A reserved STmin encoding selects the required 127 ms fallback for the remainder
+of that transfer (§9.6.5.5, §9.7).
+
 `.ext_address(byte)` inserts and expects an address byte for extended or mixed
 addressing (§10.3.4–§10.3.5). `.rx_ext_address(byte)` overrides the receive byte
 when the two directions use different addresses. Receive block size and STmin

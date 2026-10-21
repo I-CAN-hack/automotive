@@ -20,6 +20,4 @@ pub enum Error {
     UnknownFrameType,
     #[error("Malformed Frame")]
     MalformedFrame,
-    #[error("Too many WAIT Flow Control, N_WFTmax exeeded")]
-    TooManyFCWait,
 }
