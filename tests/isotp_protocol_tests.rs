@@ -184,3 +184,106 @@ async fn flow_control_on_another_bus_cannot_authorize_transmission() {
     })
     .await;
 }
+
+#[tokio::test]
+async fn invalid_start_frames_are_ignored_without_flow_control() {
+    for (fd, address) in [
+        (false, None),
+        (false, Some(0x55)),
+        (true, None),
+        (true, Some(0x55)),
+    ] {
+        let (adapter, mut peer) = channel();
+        let mut config = config();
+        config.fd = fd;
+        config.ext_address = address;
+        let isotp = IsoTPAdapter::new(&adapter, config);
+        let mut stream = isotp.recv();
+        for invalid in [
+            vec![],
+            vec![0],
+            vec![0x10],
+            vec![0x10, 0],
+            vec![0, 1, 0xaa],
+            vec![0x10, 1, 0, 0, 0, 0, 0, 0],
+            vec![0x10, 0, 0, 0, 0x0f, 0xff, 0xaa, 0xbb],
+        ] {
+            let mut data: Vec<_> = address.into_iter().chain(invalid).collect();
+            data.truncate(8);
+            peer.inject(received(&config, &data));
+        }
+        let valid: Vec<_> = address.into_iter().chain([1, 0xab]).collect();
+        peer.inject(received(&config, &valid));
+        assert_eq!(within(stream.next()).await.unwrap().unwrap(), [0xab]);
+        peer.assert_no_transmission().await;
+    }
+}
+
+#[tokio::test]
+async fn fd_single_frames_enforce_escape_encoding_and_dlc_length_ranges() {
+    // ISO 15765-2:2016, Table 13: smallest SF_DL for each selected CAN_DL.
+    for (can_dl, minimum) in [(12, 8), (16, 11), (64, 47)] {
+        let (adapter, peer) = channel();
+        let mut config = config();
+        config.fd = true;
+        let isotp = IsoTPAdapter::new(&adapter, config);
+        let mut stream = isotp.recv();
+        let mut invalid = vec![0xaa; can_dl];
+        invalid[0] = 1; // Non-escape encoding in a frame larger than eight bytes.
+        peer.inject(received(&config, &invalid));
+        invalid[0] = 0;
+        invalid[1] = minimum - 1;
+        peer.inject(received(&config, &invalid));
+        invalid[1] = (can_dl - 1) as u8; // SF_DL exceeds the available payload.
+        peer.inject(received(&config, &invalid));
+        invalid[0] = 0x10;
+        invalid[1] = (can_dl - 2) as u8; // A FirstFrame for a message fitting an SF.
+        peer.inject(received(&config, &invalid));
+        let mut valid = vec![0xab; can_dl];
+        valid[0] = 0;
+        valid[1] = minimum;
+        peer.inject(received(&config, &valid));
+        assert_eq!(
+            within(stream.next()).await.unwrap().unwrap(),
+            vec![0xab; usize::from(minimum)]
+        );
+    }
+}
+
+#[tokio::test]
+async fn reassembly_learns_peer_rx_dl_and_ignores_wrong_cf_lengths() {
+    for (tx_dl, rx_dl, length) in [(64, 8, 20), (8, 16, 34)] {
+        let (adapter, mut peer) = channel();
+        let mut config = config();
+        config.fd = true;
+        config.max_dlen = Some(tx_dl);
+        let isotp = IsoTPAdapter::new(&adapter, config);
+        let mut stream = isotp.recv();
+        let message: Vec<u8> = (1..=length).collect();
+        let exchange = async {
+            let mut first = vec![0x10, length];
+            first.extend_from_slice(&message[..rx_dl - 2]);
+            peer.inject(received(&config, &first));
+            assert_eq!(peer.next().await.frame.data(), [0x30, 0, 0]);
+            let mut invalid = vec![0xee; if rx_dl == 8 { 12 } else { 8 }];
+            invalid[0] = 0x21;
+            peer.inject(received(&config, &invalid));
+            for (index, chunk) in message[rx_dl - 2..].chunks(rx_dl - 1).enumerate() {
+                let sn = 0x21 + index as u8;
+                if rx_dl == 16 && index == 1 {
+                    let mut excessive_padding = vec![0xee; 12];
+                    excessive_padding[0] = sn;
+                    peer.inject(received(&config, &excessive_padding));
+                }
+                let mut cf = vec![sn];
+                cf.extend_from_slice(chunk);
+                peer.inject(received(&config, &cf));
+            }
+        };
+        let (response, ()) = within(async {
+            tokio::join!(async { stream.next().await.unwrap().unwrap() }, exchange)
+        })
+        .await;
+        assert_eq!(response, message);
+    }
+}

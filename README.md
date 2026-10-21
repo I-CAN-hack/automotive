@@ -253,6 +253,11 @@ address byte. The builder checks §9.5.1 values: 8 for Classical CAN, or 8, 12,
 16, 20, 24, 32, 48, and 64 for FD. `.padding(byte)` changes optional padding;
 `.without_padding()` disables it, while FD still pads frames to a valid DLC.
 
+Receive data length is learned from each incoming FirstFrame, independently of
+the local transmit length. Invalid SF/FF length encodings and CAN data lengths
+are discarded; non-final consecutive frames must match the peer's FirstFrame
+length. This follows ISO 15765-2:2016 §9.5.3–§9.6.4.
+
 `.ext_address(byte)` inserts and expects an address byte for extended or mixed
 addressing (§10.3.4–§10.3.5). `.rx_ext_address(byte)` overrides the receive byte
 when the two directions use different addresses. Receive block size and STmin
