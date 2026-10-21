@@ -29,8 +29,12 @@ cargo test --features all
 ```
 
 The shell includes Rust, Cargo, rustfmt, Clippy, rust-analyzer, libusb,
-libclang for bindgen, and Python with Scapy. On Linux it also includes the CAN
-and network tools used by the virtual ECU tests. The flake lock pins the packages.
+libclang for bindgen, maturin, uv 0.13.4, and Python with Scapy. On Linux it also
+includes the CAN and network tools used by the virtual ECU tests. The flake lock
+and release checksums pin the packages.
+
+The shell also supplies the cross-compilation toolchains for Python wheels.
+Run `python/build.sh`; see the [Python release instructions](python/README.md#publishing-to-pypi).
 
 To run the virtual CAN tests on Linux, first load the host's CAN/ISO-TP kernel
 modules and create `vcan0` using the existing setup scripts:

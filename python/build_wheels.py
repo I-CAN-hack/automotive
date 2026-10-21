@@ -1,6 +1,6 @@
 """Build the release wheel matrix locally without uploading anything.
 
-Run ``uv run --group release python build_wheels.py --help`` from this directory.
+Run ``./build.sh --help`` inside nix develop. All release targets build by default.
 Upload the resulting artifacts with uv publish; --dry-run previews build commands.
 Cross builds require Rust target standard libraries, LLVM, and, for macOS, SDKROOT.
 """
@@ -89,7 +89,7 @@ def build(targets: list[str], output: Path, *, dry_run: bool) -> None:
 def main() -> None:
     """Parse the local build command and report actionable failures."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", nargs="+", choices=[*TARGETS, "all"], required=True)
+    parser.add_argument("--target", nargs="+", choices=[*TARGETS, "all"], default=["all"])
     parser.add_argument("--dry-run", action="store_true", help="Print build commands without executing")
     parser.add_argument("--dist-dir", type=Path, help="Artifact directory (default: python/dist/VERSION)")
     args = parser.parse_args()

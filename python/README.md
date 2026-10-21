@@ -21,6 +21,10 @@ From the repository root, with Rust and the adapter build dependencies available
 use the latest
 [uv](https://docs.astral.sh/uv/getting-started/installation/) (at least 0.13.4):
 
+With Nix, first run `nix develop` from the repository root. The flake provides
+uv 0.13.4 and the native build dependencies, taking precedence over an older uv
+on your normal PATH.
+
 ```sh
 cd python
 uv sync
@@ -35,10 +39,8 @@ the lockfile records their versions. Use `uv run maturin develop` after changing
 Rust code when working directly in the installed development environment.
 For Rust formatting, run `cargo fmt --all`.
 
-The Nix development shell provides the native build dependencies. Enter it with
-`nix develop` before the commands above. The Python extension always includes
-every adapter supported on its platform: SocketCAN on Linux, panda and PEAK USB
-adapters, and Vector and J2534 on Windows. Vendor drivers/DLLs and USB permissions
+The Python extension always includes every adapter supported on its platform:
+SocketCAN on Linux, panda and PEAK USB adapters, and Vector and J2534 on Windows. Vendor drivers/DLLs and USB permissions
 remain necessary. The Rust crate retains feature flags for Rust applications.
 
 ## Basic usage
@@ -176,7 +178,7 @@ explicit runs fail if prerequisites are unavailable.
 ## Publishing to PyPI
 
 The Python package follows the Rust release version, currently `0.5.0`.
-`build_wheels.py` handles local artifact builds; `uv publish` handles uploads. No CI publishing is
+`build.sh` handles local artifact builds; `uv publish` handles uploads. No CI publishing is
 configured. Release wheels use CPython's stable ABI starting at 3.11, so each
 platform needs one wheel for regular CPython 3.11 and newer. Free-threaded Python
 builds need separate wheels and are not included here.
@@ -191,36 +193,46 @@ The supported release targets are:
 | `macos-arm64` | `aarch64-apple-darwin` | Apple Silicon, macOS 11+ |
 | `windows-x64` | `x86_64-pc-windows-msvc` | 64-bit Windows x86 |
 
-Use Rust with the target standard libraries installed, LLVM/Clang (including
-libclang and llvm-dlltool), and the latest uv. For a rustup toolchain:
+On Nix, run the following from the repository root to build all five targets:
+
+```sh
+nix develop
+cd python
+./build.sh
+```
+
+The development shell supplies a pinned Rust toolchain with all five target standard
+libraries, LLVM/Clang and its cross-linkers, uv, and an Apple SDK fetched using
+nixpkgs' pinned Apple URLs and checksum. It sets `SDKROOT` automatically, so no
+rustup installation or manual SDK extraction is needed. The lockfile's release dependency
+group supplies Maturin, Zig, and Linux wheel repair tooling.
+
+Select individual targets with `--target linux-aarch64`, or several with
+`--target linux-x86_64 linux-armv7 windows-x64`. Add `--dry-run` to preview commands.
+
+Outside Nix, install Rust with the target standard libraries, LLVM/Clang
+(including libclang and llvm-dlltool), and uv. For a rustup toolchain:
 
 ```sh
 rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu \
     armv7-unknown-linux-gnueabihf aarch64-apple-darwin x86_64-pc-windows-msvc
-cd python
-uv sync --locked --group release
-uv run --group release python build_wheels.py --target linux-x86_64 linux-aarch64 linux-armv7 windows-x64
 ```
 
-The Nix development shell supplies native build dependencies; its compiler needs
-the cross-target standard libraries as well, or use a rustup toolchain for release
-builds. Maturin uses Zig for Linux cross builds and xwin for Windows MSVC builds.
+Maturin uses Zig for Linux cross builds and xwin for Windows MSVC builds.
 xwin downloads the Windows SDK/CRT and is subject to the
 [Microsoft license described in its documentation](https://github.com/rust-cross/cargo-xwin).
 Linux wheels enforce `manylinux_2_17` (glibc 2.17+). The build uses bundled libusb
 and avoids host pkg-config libraries, retaining all platform-supported adapters.
 Driver/DLL and USB permission requirements still apply at runtime.
 
-macOS ARM64 can be built on an Apple Silicon Mac or cross-compiled from Linux
-with an extracted Apple SDK. For the latter, set `SDKROOT`:
+Outside the Nix shell, macOS ARM64 can be built on an Apple Silicon Mac or
+cross-compiled from Linux with an extracted Apple SDK. For the latter, set `SDKROOT`:
 
 ```sh
-SDKROOT=/path/to/MacOSX.sdk uv run --group release python build_wheels.py --target macos-arm64
+SDKROOT=/path/to/MacOSX.sdk ./build.sh --target macos-arm64
 ```
 
-With the SDK and all cross toolchains available, `--target all` builds all
-five platforms. Add `--dry-run` to preview build commands. Cross-compiling
-produces artifacts; test imports and hardware behavior on the target platforms
+Cross-compiling produces artifacts; test imports and hardware behavior on the target platforms
 before publishing. See [Maturin's cross-compilation guide](https://www.maturin.rs/distribution.html#cross-compiling)
 and [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild).
 
@@ -242,9 +254,7 @@ manager, and run:
 uv publish 'dist/0.5.0/*'
 ```
 
-`./deploy.sh 'dist/0.5.0/*'` is a thin local wrapper for the same uv command;
-it accepts all `uv publish` flags. To rehearse against TestPyPI, use its separate
-account/token and upload endpoint:
+To rehearse against TestPyPI, use its separate account/token and upload endpoint:
 
 ```sh
 uv publish --publish-url https://test.pypi.org/legacy/ \
