@@ -143,6 +143,7 @@ async fn uds_test_sids() {
     let dtcs = uds
         .read_dtc_information_number_of_dtc_by_status_mask(0xff)
         .await
+        .unwrap()
         .unwrap();
     assert_eq!(dtcs.dtc_status_availability_mask, 0xff);
     assert_eq!(
@@ -241,6 +242,13 @@ async fn uds_suppressed_services_accept_silence_in_both_modes() {
         );
         assert_eq!(
             suppressed
+                .read_dtc_information_number_of_dtc_by_status_mask(0xff)
+                .await
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            suppressed
                 .routine_control(RoutineControlType::Stop, 0x1234, None)
                 .await
                 .unwrap(),
@@ -262,6 +270,10 @@ async fn uds_suppressed_services_accept_silence_in_both_modes() {
         ));
         // The original client and requests without a sub-function still receive replies.
         uds.tester_present().await.unwrap();
+        assert_eq!(
+            suppressed.read_data_by_identifier(0x1234).await.unwrap(),
+            b"deadbeef"
+        );
         assert_eq!(
             suppressed
                 .request(0x22, None, Some(&[0x12, 0x34]))
@@ -318,6 +330,18 @@ async fn uds_suppressed_pending_replies_require_a_final_response() {
                         .unwrap(),
                     Some(vec![])
                 );
+                let report = uds
+                    .suppress_positive_responses()
+                    .read_dtc_information_number_of_dtc_by_status_mask(0xff)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(report.dtc_status_availability_mask, 0xff);
+                assert_eq!(
+                    report.dtc_format_identifier,
+                    DTCFormatIdentifier::ISO_14229_1_DTCFormat
+                );
+                assert_eq!(report.dtc_count, 2);
             }
         }
     }
@@ -396,25 +420,34 @@ async fn uds_suppressed_final_responses_still_validate_service_records() {
                 result.unwrap();
             }
         }
-        // The identifier is necessary for safe parsing even in permissive mode.
-        let error = suppressed
-            .routine_control(RoutineControlType::Start, 0x1234, None)
-            .await
-            .unwrap_err();
-        if strict {
-            assert_deviation(
-                error,
-                ProtocolDeviation::InvalidResponseLength {
-                    minimum: 4,
-                    maximum: None,
-                },
-                &[0x71, 1],
-            );
-        } else {
-            assert!(matches!(
-                error,
-                Error::UDSError(UDSError::InvalidResponseLength)
-            ));
+        // These records are necessary for safe parsing even in permissive mode.
+        let errors = [
+            suppressed
+                .routine_control(RoutineControlType::Start, 0x1234, None)
+                .await
+                .unwrap_err(),
+            suppressed
+                .read_dtc_information_number_of_dtc_by_status_mask(0xff)
+                .await
+                .unwrap_err(),
+        ];
+        for ((payload, minimum, maximum), error) in
+            [(vec![0x71, 1], 4, None), (vec![0x59, 1], 6, Some(6))]
+                .into_iter()
+                .zip(errors)
+        {
+            if strict {
+                assert_deviation(
+                    error,
+                    ProtocolDeviation::InvalidResponseLength { minimum, maximum },
+                    &payload,
+                );
+            } else {
+                assert!(matches!(
+                    error,
+                    Error::UDSError(UDSError::InvalidResponseLength)
+                ));
+            }
         }
     }
 }

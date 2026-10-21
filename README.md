@@ -364,6 +364,13 @@ let uds = UDSClient::new(transport);
     let suppressed = uds.suppress_positive_responses();
     suppressed.tester_present().await?; // Sends [0x3e, 0x80].
 
+    // All typed helpers are available on the view.
+    let report = suppressed
+        .read_dtc_information_number_of_dtc_by_status_mask(0xff)
+        .await?; // Sends [0x19, 0x81, 0xff]; silence returns None.
+    let data = suppressed.read_data_by_identifier(0xf181).await?;
+    // ReadDataByIdentifier has no sub-function and still requires a response.
+
     // Custom requests distinguish silence from an empty positive response.
     match suppressed.request(0x3e, Some(0), None).await? {
         RequestOutcome::Suppressed => println!("No response received"),
@@ -377,10 +384,11 @@ uds.tester_present().await?; // Sends [0x3e, 0x00] and requires a response.
 # }
 ```
 
-The view supports session control, ECU reset, security access, TesterPresent,
-routine control, and custom requests. It sets bit 7 of the sub-function byte;
-custom requests without a sub-function still require a response. Both views
-share session timings. Keep one request outstanding per ECU.
+The view is another `UDSClient` with suppression enabled, so it exposes every
+service helper and custom requests. Suppression sets bit 7 of the sub-function
+byte. Services without a sub-function still require a response; their data bytes
+are unchanged. Both views share session timings. Keep one request outstanding
+per ECU.
 
 Suppression still waits through the initial response window to catch negative
 responses and space sequential requests (ISO 14229-2:2013, §8.3). Initial silence
@@ -389,7 +397,9 @@ response returns `RequestOutcome::PositiveResponse(data)`. Typed helpers
 represent silence as `None`, or `()` for TesterPresent. `security_access()`
 returns `Option<Vec<u8>>`: `None` means suppression, `Some(seed)` contains a
 received seed, and `Some(vec![])` is a positive SendKey acknowledgement. Silence
-does not confirm that the ECU executed the request.
+from `read_dtc_information_number_of_dtc_by_status_mask()` returns `None`; a
+received report returns `Some(report)`. Silence does not confirm that the ECU
+executed the request.
 Strict mode rejects a positive reply to a suppressed request unless NRC 0x78
 preceded it (`ProtocolDeviation::UnexpectedPositiveResponse`, ISO 14229-1:2013,
 §8.2.2). `.strict(false)` accepts such replies. Expected silence is valid in

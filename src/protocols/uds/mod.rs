@@ -32,7 +32,6 @@
 mod config;
 mod constants;
 mod error;
-mod suppressed;
 mod types;
 
 use crate::transports::TransportLayer;
@@ -41,10 +40,9 @@ use crate::StreamExt;
 pub use config::{UDSConfig, UDSConfigBuilder};
 pub use constants::*;
 pub use error::{Error, NegativeResponseCode, ProtocolDeviation};
-pub use suppressed::SuppressedUDSClient;
 pub use types::*;
 
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use tracing::info;
 
 struct Response {
@@ -72,7 +70,8 @@ impl Response {
 pub struct UDSClient<'a, T: TransportLayer> {
     adapter: &'a T,
     config: UDSConfig,
-    session_timing: RwLock<SessionParameterRecord>,
+    session_timing: Arc<RwLock<SessionParameterRecord>>,
+    suppress_positive_responses: bool,
 }
 
 impl<'a, T: TransportLayer> UDSClient<'a, T> {
@@ -85,14 +84,16 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         Self {
             adapter,
             config,
-            session_timing: RwLock::new(SessionParameterRecord {
+            session_timing: Arc::new(RwLock::new(SessionParameterRecord {
                 p2_server_max: config.p2_timeout,
                 p2_star_server_max: config.p2_star_timeout,
-            }),
+            })),
+            suppress_positive_responses: false,
         }
     }
 
-    /// Borrow a view that suppresses positive responses for supported requests.
+    /// Create a view that suppresses positive responses for requests with a
+    /// sub-function. All service helpers remain available on the view.
     ///
     /// The original client keeps its response behavior. Both views share session
     /// timings. The view still waits for negative responses and, after NRC 0x78,
@@ -109,8 +110,13 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn suppress_positive_responses(&self) -> SuppressedUDSClient<'_, 'a, T> {
-        SuppressedUDSClient { client: self }
+    pub fn suppress_positive_responses(&self) -> Self {
+        Self {
+            adapter: self.adapter,
+            config: self.config,
+            session_timing: Arc::clone(&self.session_timing),
+            suppress_positive_responses: true,
+        }
     }
 
     /// Make a custom UDS request, handle negative responses, and return response
@@ -123,6 +129,8 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     /// response is required and silence returns [`crate::Error::Timeout`].
     /// Strict mode rejects a positive response to a suppressed request unless
     /// NRC 0x78 preceded it ([`ProtocolDeviation::UnexpectedPositiveResponse`]).
+    /// A view created with [`Self::suppress_positive_responses`] sets bit 7
+    /// automatically. Requests without a sub-function still require a response.
     pub async fn request(
         &self,
         sid: u8,
@@ -139,15 +147,9 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         )
     }
 
-    // For service helpers that always require a response. Suppression-capable
-    // helpers use request_exchange and handle the absent response explicitly.
-    async fn request_response(
-        &self,
-        sid: u8,
-        sub_function: Option<u8>,
-        data: Option<&[u8]>,
-    ) -> Result<Response> {
-        match self.request_exchange(sid, sub_function, data).await? {
+    // Services without a sub-function cannot suppress their positive response.
+    async fn request_response(&self, sid: u8, data: Option<&[u8]>) -> Result<Response> {
+        match self.request_exchange(sid, None, data).await? {
             RequestOutcome::PositiveResponse(response) => Ok(response),
             RequestOutcome::Suppressed => Err(Error::InvalidResponseLength.into()),
         }
@@ -159,6 +161,13 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         sub_function: Option<u8>,
         data: Option<&[u8]>,
     ) -> Result<RequestOutcome<Response>> {
+        let sub_function = sub_function.map(|value| {
+            if self.suppress_positive_responses {
+                value | 0x80
+            } else {
+                value
+            }
+        });
         let exchange = self.request_inner(sid, sub_function, data);
         match self.config.request_timeout {
             Some(timeout) => tokio::time::timeout(timeout, exchange)
@@ -446,12 +455,15 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         Ok(Some(response.data().to_vec()))
     }
 
-    /// 0x3E - Tester Present
+    /// 0x3E - Tester Present. On a suppressed view, sends `[0x3e, 0x80]` and
+    /// accepts initial silence. NRC 0x78 still requires a final response.
     pub async fn tester_present(&self) -> Result<()> {
-        let response = self
-            .request_response(ServiceIdentifier::TesterPresent as u8, Some(0), None)
-            .await?;
-        self.validate_response_length(response, 2, Some(2))?;
+        if let RequestOutcome::PositiveResponse(response) = self
+            .request_exchange(ServiceIdentifier::TesterPresent as u8, Some(0), None)
+            .await?
+        {
+            self.validate_response_length(response, 2, Some(2))?;
+        }
         Ok(())
     }
 
@@ -479,7 +491,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
             buf.extend(data);
         }
 
-        let response = self.request_response(sid as u8, None, Some(&buf)).await?;
+        let response = self.request_response(sid as u8, Some(&buf)).await?;
         if self.config.strict {
             let resp = response.data();
             if sid == ServiceIdentifier::ReadMemoryByAddress {
@@ -542,11 +554,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     pub async fn read_data_by_identifier(&self, data_identifier: u16) -> Result<Vec<u8>> {
         let did = data_identifier.to_be_bytes();
         let response = self
-            .request_response(
-                ServiceIdentifier::ReadDataByIdentifier as u8,
-                None,
-                Some(&did),
-            )
+            .request_response(ServiceIdentifier::ReadDataByIdentifier as u8, Some(&did))
             .await?;
         // §10.2.3, Table 144: at least one data-record byte is mandatory.
         let response = self.validate_response_length(response, 4, None)?;
@@ -594,11 +602,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         data.extend(data_record);
 
         let response = self
-            .request_response(
-                ServiceIdentifier::WriteDataByIdentifier as u8,
-                None,
-                Some(&data),
-            )
+            .request_response(ServiceIdentifier::WriteDataByIdentifier as u8, Some(&data))
             .await?;
         let response = self.validate_response_length(response, 3, Some(3))?;
         let resp = response.data();
@@ -637,17 +641,22 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         Ok(())
     }
 
+    /// 0x19, sub-function 0x01 - Report the number of DTCs matching `mask`.
+    /// Suppressed silence returns `None`; a received report returns `Some(report)`.
     pub async fn read_dtc_information_number_of_dtc_by_status_mask(
         &self,
         mask: u8,
-    ) -> Result<DTCReportNumberByStatusMask> {
-        let response = self
-            .request_response(
+    ) -> Result<Option<DTCReportNumberByStatusMask>> {
+        let RequestOutcome::PositiveResponse(response) = self
+            .request_exchange(
                 ServiceIdentifier::ReadDTCInformation as u8,
                 Some(ReportType::ReportNumberOfDTCByStatusMask as u8),
                 Some(&[mask]),
             )
-            .await?;
+            .await?
+        else {
+            return Ok(None);
+        };
         let resp = response.data();
 
         if resp.len() < 4 || (self.config.strict && resp.len() != 4) {
@@ -665,27 +674,17 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         };
         let count = u16::from_be_bytes([resp[2], resp[3]]);
 
-        Ok(DTCReportNumberByStatusMask {
+        Ok(Some(DTCReportNumberByStatusMask {
             dtc_status_availability_mask: mask,
             dtc_format_identifier: format,
             dtc_count: count,
-        })
+        }))
     }
 
     /// 0x31 - Routine Control. The `routine_control_type` selects the operation such as Start and Stop, see [`constants::RoutineControlType`]. The `routine_identifier` is a 16-bit identifier for the routine. The `data` parameter is optional and can be used when starting or stopping a routine. The ECU can optionally return data for all routine operations.
     pub async fn routine_control(
         &self,
         routine_control_type: constants::RoutineControlType,
-        routine_identifier: u16,
-        data: Option<&[u8]>,
-    ) -> Result<Option<Vec<u8>>> {
-        self.routine_control_inner(routine_control_type as u8, routine_identifier, data)
-            .await
-    }
-
-    async fn routine_control_inner(
-        &self,
-        routine_control_type: u8,
         routine_identifier: u16,
         data: Option<&[u8]>,
     ) -> Result<Option<Vec<u8>>> {
@@ -698,7 +697,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         let RequestOutcome::PositiveResponse(response) = self
             .request_exchange(
                 ServiceIdentifier::RoutineControl as u8,
-                Some(routine_control_type),
+                Some(routine_control_type as u8),
                 Some(&buf),
             )
             .await?
@@ -752,7 +751,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         data.extend(memory_address);
         data.extend(memory_size);
 
-        let response = self.request_response(sid as u8, None, Some(&data)).await?;
+        let response = self.request_response(sid as u8, Some(&data)).await?;
         let resp = response.data();
 
         // Ensure the response contains at least a length format
@@ -853,7 +852,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         }
 
         let response = self
-            .request_response(ServiceIdentifier::TransferData as u8, None, Some(&buf))
+            .request_response(ServiceIdentifier::TransferData as u8, Some(&buf))
             .await?;
         // §14.4.3, Table 405: upload responses contain at least one data byte.
         let minimum = if data.is_none() { 3 } else { 2 };
@@ -886,7 +885,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     /// 0x37 - Request Transfer Exit. Used to terminate an upload or download. Has optional `data` parameter for additional information, and can optionally return additional information from the ECU. For example, this can be used to contain a checksum.
     pub async fn request_transfer_exit(&self, data: Option<&[u8]>) -> Result<Option<Vec<u8>>> {
         let response = self
-            .request_response(ServiceIdentifier::RequestTransferExit as u8, None, data)
+            .request_response(ServiceIdentifier::RequestTransferExit as u8, data)
             .await?;
         let resp = response.data();
 
