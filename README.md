@@ -323,7 +323,7 @@ The automotive crate also supplies interfaces for various diagnostic protocols s
 ```
 
 `UDSClient::new` uses strict response validation and default timing settings.
-Use `UDSConfig::builder()` and `UDSClient::with_config` to customize them:
+Use `UDSConfig::builder()` and `UDSClient::with_config` to customize the settings:
 
 ```rust
 use automotive::protocols::uds::{UDSClient, UDSConfig};
@@ -331,11 +331,7 @@ use std::time::Duration;
 
 # async fn configured_uds_example<T: automotive::TransportLayer>(transport: &T) -> automotive::Result<()> {
 let config = UDSConfig::builder()
-    .p2_timeout(Duration::from_millis(100))
-    .p2_star_timeout(Duration::from_secs(5))
-    .request_timeout(Duration::from_secs(30))
-    .use_server_timing(true)
-    .strict(true)
+    .p2_timeout(Duration::from_millis(100)) // Default: 50 ms.
     .build();
 let uds = UDSClient::with_config(transport, config);
 uds.tester_present().await?;
