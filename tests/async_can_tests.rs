@@ -2,7 +2,9 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 use automotive::can::{AsyncCanAdapter, CanAdapter, Frame, Identifier};
+use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
 use automotive::Result;
+use automotive::StreamExt;
 
 struct EchoAdapter {
     received: Vec<Frame>,
@@ -40,14 +42,14 @@ async fn confirmations_accept_lost_frame_type_and_flags() {
     });
     let id = Identifier::standard(0x123).unwrap();
     let frames = [
-        Frame::builder(id).bus(2).data([1]).build().unwrap(),
+        Frame::builder(id).bus(2).data(&[1]).build().unwrap(),
         Frame::builder(id).bus(2).fd(true).build().unwrap(),
         Frame::builder(id)
             .bus(2)
             .fd(true)
             .brs(true)
             .esi(true)
-            .data([0xaa; 8])
+            .data(&[0xaa; 8])
             .build()
             .unwrap(),
         Frame::builder(id)
@@ -55,7 +57,7 @@ async fn confirmations_accept_lost_frame_type_and_flags() {
             .fd(true)
             .brs(true)
             .esi(true)
-            .data([0xaa; 12])
+            .data(&[0xaa; 12])
             .build()
             .unwrap(),
         Frame::remote(2, id, 15).unwrap(),
@@ -92,7 +94,7 @@ async fn confirmations_accept_controller_supplied_flags() {
     });
     let frame = Frame::builder(Identifier::extended(0x123).unwrap())
         .fd(true)
-        .data([0xaa; 4])
+        .data(&[0xaa; 4])
         .build()
         .unwrap();
     tokio::time::timeout(Duration::from_secs(1), adapter.send(&frame))
@@ -134,4 +136,57 @@ async fn stale_echoes_do_not_consume_confirmations() {
     })
     .await
     .expect("stale echo consumed a pending confirmation");
+}
+
+#[tokio::test]
+async fn isotp_stack_buffers_keep_headers_padding_and_extended_addresses() {
+    let adapter = AsyncCanAdapter::new(EchoAdapter {
+        received: Vec::new(),
+        echo: |frame| {
+            let mut echo = frame.clone();
+            echo.loopback = true;
+            vec![echo]
+        },
+    });
+    let mut received = adapter.recv();
+    let mut config = IsoTPConfig::new(2, Identifier::standard(0x123).unwrap());
+    config.fd = true;
+    config.ext_address = Some(0xf1);
+    config.padding = Some(0xcc);
+    let isotp = IsoTPAdapter::new(&adapter, config);
+
+    tokio::time::timeout(Duration::from_secs(1), async {
+        isotp.send_single_frame(&[0xaa; 50]).await.unwrap();
+        let frame = received.next().await.unwrap();
+        assert!(frame.is_fd());
+        assert_eq!(frame.bus, 2);
+        assert_eq!(frame.id(), Some(config.tx_id));
+        assert_eq!(&frame.data()[..3], &[0xf1, 0x00, 50]);
+        assert_eq!(&frame.data()[3..53], &[0xaa; 50]);
+        assert_eq!(&frame.data()[53..], &[0xcc; 11]);
+
+        isotp.send_consecutive_frame(&[0xaa; 62], 15).await.unwrap();
+        let frame = received.next().await.unwrap();
+        assert_eq!(&frame.data()[..2], &[0xf1, 0x20]);
+        assert_eq!(&frame.data()[2..], &[0xaa; 62]);
+
+        assert_eq!(isotp.send_first_frame(&[0xaa; 5000]).await.unwrap(), 6);
+        let frame = received.next().await.unwrap();
+        assert_eq!(
+            &frame.data()[..7],
+            &[0xf1, 0x10, 0x00, 0x00, 0x00, 0x13, 0x88]
+        );
+        assert_eq!(&frame.data()[7..], &[0xaa; 57]);
+
+        assert!(matches!(
+            isotp.send_single_frame(&[0; 65]).await,
+            Err(automotive::Error::MalformedFrame)
+        ));
+        assert!(matches!(
+            isotp.send_consecutive_frame(&[0; 63], 0).await,
+            Err(automotive::Error::MalformedFrame)
+        ));
+    })
+    .await
+    .expect("ISO-TP frames were not confirmed");
 }

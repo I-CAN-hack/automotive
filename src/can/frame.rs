@@ -1,6 +1,7 @@
 //! Frame rules follow ISO 11898-1:2015, 8.4.2–8.4.3 and 10.4.4.
 
 use super::{Identifier, DLC_TO_LEN};
+use arrayvec::ArrayVec;
 
 /// A wire error flag, rather than an operating-system-specific error report.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -21,12 +22,12 @@ pub enum FrameContent {
             feature = "serde",
             serde(deserialize_with = "deserialize_classic_data")
         )]
-        data: Vec<u8>,
+        data: ArrayVec<u8, 64>,
     },
     Fd {
         id: Identifier,
         #[cfg_attr(feature = "serde", serde(deserialize_with = "deserialize_fd_data"))]
-        data: Vec<u8>,
+        data: ArrayVec<u8, 64>,
         brs: bool,
         /// A recessive ESI bit indicates an error-passive transmitter.
         esi: bool,
@@ -44,15 +45,15 @@ pub enum FrameContent {
 
 /// A validated CAN frame and adapter metadata.
 ///
-/// Payloads are checked on construction and deserialization. Shared slices
-/// prevent resizing a valid frame.
+/// Payloads are stored inline and checked on construction and deserialization.
+/// Shared slices prevent resizing a valid frame.
 ///
 /// ```
 /// use automotive::can::{Frame, Identifier};
 /// # fn example() -> automotive::Result<()> {
 /// let id = Identifier::standard(0x123)?;
-/// let classic = Frame::builder(id).bus(1).data([1, 2]).build()?;
-/// let fd = Frame::builder(id).fd(true).brs(true).data([0; 12]).build()?;
+/// let classic = Frame::builder(id).bus(1).data(&[1, 2]).build()?;
+/// let fd = Frame::builder(id).fd(true).brs(true).data(&[0; 12]).build()?;
 /// let remote = Frame::remote(0, id, 8)?;
 /// # Ok(())
 /// # }
@@ -80,12 +81,12 @@ impl Frame {
     }
 
     /// Start a data frame. Bus defaults to zero and payload to empty.
-    pub fn builder(id: Identifier) -> FrameBuilder {
+    pub fn builder<'a>(id: Identifier) -> FrameBuilder<'a> {
         FrameBuilder {
             bus: 0,
             loopback: false,
             id,
-            data: Vec::new(),
+            data: &[],
             fd: false,
             brs: false,
             esi: false,
@@ -175,20 +176,21 @@ impl std::fmt::Display for Frame {
 ///
 /// `build()` rejects invalid lengths and BRS/ESI on Classical frames with
 /// [`crate::Error::MalformedFrame`]. Identifiers are checked when constructed.
-/// Data is never padded or truncated.
+/// Payload data is borrowed until `build()` copies it into the frame's inline
+/// storage. Data is never padded or truncated.
 #[derive(Debug, Clone)]
 #[must_use]
-pub struct FrameBuilder {
+pub struct FrameBuilder<'a> {
     bus: u8,
     loopback: bool,
     id: Identifier,
-    data: Vec<u8>,
+    data: &'a [u8],
     fd: bool,
     brs: bool,
     esi: bool,
 }
 
-impl FrameBuilder {
+impl<'a> FrameBuilder<'a> {
     pub fn bus(mut self, bus: u8) -> Self {
         self.bus = bus;
         self
@@ -199,8 +201,9 @@ impl FrameBuilder {
         self
     }
 
-    pub fn data(mut self, data: impl Into<Vec<u8>>) -> Self {
-        self.data = data.into();
+    /// Borrow a payload until `build()`, which checks its length before copying.
+    pub fn data(mut self, data: &'a [u8]) -> Self {
+        self.data = data;
         self
     }
 
@@ -220,23 +223,26 @@ impl FrameBuilder {
     }
 
     pub fn build(self) -> crate::Result<Frame> {
+        if self.fd {
+            validate_fd_data(self.data)?;
+        } else {
+            validate_classic_data(self.data)?;
+            if self.brs || self.esi {
+                return Err(crate::Error::MalformedFrame);
+            }
+        }
+        let mut data = ArrayVec::new();
+        data.try_extend_from_slice(self.data)
+            .map_err(|_| crate::Error::MalformedFrame)?;
         let content = if self.fd {
-            validate_fd_data(&self.data)?;
             FrameContent::Fd {
                 id: self.id,
-                data: self.data,
+                data,
                 brs: self.brs,
                 esi: self.esi,
             }
         } else {
-            validate_classic_data(&self.data)?;
-            if self.brs || self.esi {
-                return Err(crate::Error::MalformedFrame);
-            }
-            FrameContent::Classic {
-                id: self.id,
-                data: self.data,
-            }
+            FrameContent::Classic { id: self.id, data }
         };
         Ok(Frame {
             bus: self.bus,
@@ -273,9 +279,9 @@ fn validate_dlc(dlc: u8) -> crate::Result<()> {
 #[cfg(feature = "serde")]
 fn deserialize_classic_data<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
-) -> Result<Vec<u8>, D::Error> {
+) -> Result<ArrayVec<u8, 64>, D::Error> {
     use serde::Deserialize;
-    let data = Vec::<u8>::deserialize(deserializer)?;
+    let data = ArrayVec::<u8, 64>::deserialize(deserializer)?;
     validate_classic_data(&data).map_err(serde::de::Error::custom)?;
     Ok(data)
 }
@@ -283,9 +289,9 @@ fn deserialize_classic_data<'de, D: serde::Deserializer<'de>>(
 #[cfg(feature = "serde")]
 fn deserialize_fd_data<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
-) -> Result<Vec<u8>, D::Error> {
+) -> Result<ArrayVec<u8, 64>, D::Error> {
     use serde::Deserialize;
-    let data = Vec::<u8>::deserialize(deserializer)?;
+    let data = ArrayVec::<u8, 64>::deserialize(deserializer)?;
     validate_fd_data(&data).map_err(serde::de::Error::custom)?;
     Ok(data)
 }

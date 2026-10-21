@@ -202,11 +202,11 @@ impl CanAdapter for J2534CanAdapter {
                         );
                     } else {
                         let Ok(id) = parse_can_id(&msg) else { continue };
-                        let data = msg.data[4..len].to_vec();
+                        let data = &msg.data[4..len];
                         let arb_id: u32 = id.into();
                         tracing::debug!(
                             id = format_args!("{arb_id:08X}"),
-                            payload = %hex::encode(&data),
+                            payload = %hex::encode(data),
                             "J2534 RX"
                         );
 

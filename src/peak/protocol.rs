@@ -340,7 +340,7 @@ mod tests {
         let frame = Frame::builder(Identifier::extended(0x1234).unwrap())
             .fd(true)
             .brs(true)
-            .data([0xAA; 16])
+            .data(&[0xAA; 16])
             .build()
             .unwrap();
         assert!(frame.is_fd());
@@ -382,7 +382,7 @@ mod tests {
             .fd(true)
             .brs(true)
             .esi(true)
-            .data([0xaa; 4])
+            .data(&[0xaa; 4])
             .build()
             .unwrap();
         assert!(matches!(

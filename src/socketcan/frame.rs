@@ -135,13 +135,13 @@ mod tests {
                     .fd(true)
                     .brs(true)
                     .esi(true)
-                    .data(data.clone())
+                    .data(&data)
                     .build()
                     .unwrap();
                 let raw = canfd_frame::try_from(&fd).unwrap();
                 assert_eq!(Frame::try_from(raw).unwrap(), fd);
                 if len <= 8 {
-                    let classic = Frame::builder(id).data(data).build().unwrap();
+                    let classic = Frame::builder(id).data(&data).build().unwrap();
                     let raw = can_frame::try_from(&classic).unwrap();
                     assert_eq!(Frame::try_from(raw).unwrap(), classic);
                     assert!(canfd_frame::try_from(&classic).is_err());

@@ -39,7 +39,7 @@ async fn can_example() -> automotive::Result<()> {
     let adapter = automotive::can::get_adapter()?;
     let mut stream = adapter.recv();
 
-    let frame = automotive::can::Frame::builder(0x541.try_into()?).data([0xff; 8]).build()?;
+    let frame = automotive::can::Frame::builder(0x541.try_into()?).data(&[0xff; 8]).build()?;
     adapter.send(&frame).await?;
 
     while let Some(frame) = stream.next().await {
@@ -53,16 +53,17 @@ async fn can_example() -> automotive::Result<()> {
 
 ## Building CAN frames
 
-Use the data-frame builder or the remote/error constructors below. Payloads are ordinary
-`Vec<u8>` values; construction checks the length without padding or truncating.
+Use the data-frame builder or the remote/error constructors below. The builder
+borrows a payload slice until `build()`, then copies it into the frame's inline
+storage. Construction checks the length without padding or truncating.
 
 ```rust
 use automotive::can::{ErrorFlag, Frame, Identifier};
 
 # fn example() -> automotive::Result<()> {
 let id = Identifier::standard(0x123)?;
-let classic = Frame::builder(id).data(vec![1, 2, 3]).build()?;
-let fd = Frame::builder(id).fd(true).brs(true).data(vec![0xaa; 12]).build()?;
+let classic = Frame::builder(id).data(&[1, 2, 3]).build()?;
+let fd = Frame::builder(id).fd(true).brs(true).data(&[0xaa; 12]).build()?;
 let remote = Frame::remote(1, id, 8)?;
 let error = Frame::error(0, ErrorFlag::Active);
 # Ok(())

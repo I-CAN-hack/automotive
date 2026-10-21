@@ -1,4 +1,4 @@
-use crate::can::{Frame, FrameContent, Identifier, DLC_TO_LEN};
+use crate::can::{Frame, Identifier, DLC_TO_LEN};
 use crate::error::Error;
 
 const CANPACKET_HEAD_SIZE: usize = 0x6;
@@ -36,17 +36,11 @@ pub fn pack_can_buffer(frames: &[Frame]) -> Result<Vec<Vec<u8>>, Error> {
         if !frame.is_data() {
             return Err(Error::NotSupported);
         }
-        // The panda wire protocol does not expose per-frame BRS or ESI.
-        if matches!(
-            frame.content(),
-            FrameContent::Fd { brs: true, .. } | FrameContent::Fd { esi: true, .. }
-        ) {
-            return Err(Error::NotSupported);
-        }
         let id = frame.id().ok_or(Error::NotSupported)?;
         let extended = u32::from(id.is_extended());
         let id = id.as_raw();
 
+        // Panda controls BRS/ESI; the USB protocol only carries the FD bit.
         let fd = frame.is_fd() as u8;
 
         let dlc = frame.dlc().ok_or(Error::NotSupported)?;
@@ -173,18 +167,18 @@ mod tests {
         let extended = Identifier::extended(0x123).unwrap();
         let frames = vec![
             Frame::builder(id)
-                .data([1, 2, 3, 4, 5, 6, 7, 8])
+                .data(&[1, 2, 3, 4, 5, 6, 7, 8])
                 .build()
                 .unwrap(),
             Frame::builder(extended)
                 .bus(1)
-                .data([1, 2, 3, 4])
+                .data(&[1, 2, 3, 4])
                 .build()
                 .unwrap(),
             Frame::builder(extended)
                 .bus(1)
                 .fd(true)
-                .data([1, 2, 3, 4])
+                .data(&[1, 2, 3, 4])
                 .build()
                 .unwrap(),
         ];
@@ -208,12 +202,25 @@ mod tests {
     }
 
     #[test]
+    fn fd_flags_do_not_change_usb_encoding() {
+        let id = Identifier::standard(0x123).unwrap();
+        for len in [0, 8, 12, 64] {
+            let data = vec![0xaa; len];
+            let builder = Frame::builder(id).bus(1).fd(true).data(&data);
+            let expected = pack_can_buffer(&[builder.clone().build().unwrap()]).unwrap();
+            for (brs, esi) in [(false, false), (true, false), (false, true), (true, true)] {
+                let frame = builder.clone().brs(brs).esi(esi).build().unwrap();
+                assert_eq!(pack_can_buffer(&[frame]).unwrap(), expected);
+            }
+        }
+    }
+
+    #[test]
     fn rejects_unsupported_frames() {
         let id = Identifier::standard(0x123).unwrap();
         for frame in [
             Frame::remote(0, id, 8).unwrap(),
             Frame::error(0, crate::can::ErrorFlag::Active),
-            Frame::builder(id).fd(true).brs(true).build().unwrap(),
         ] {
             assert!(matches!(
                 pack_can_buffer(&[frame]),

@@ -21,10 +21,10 @@ async fn main() -> automotive::Result<()> {
 
     loop {
         let first = Frame::builder(Identifier::standard(0x123)?)
-            .data(counter.to_le_bytes())
+            .data(&counter.to_le_bytes())
             .build()?;
         let second = Frame::builder(Identifier::standard(0x124)?)
-            .data(counter.to_le_bytes())
+            .data(&counter.to_le_bytes())
             .build()?;
         counter = counter.wrapping_add(1);
 

@@ -41,11 +41,11 @@ fn validates_every_payload_length_without_padding() {
     // ISO 11898-1:2015, Table 5 (independent of the implementation's lookup).
     let fd_lengths = [0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64];
     assert_eq!(DLC_TO_LEN, fd_lengths);
-    for len in 0..=65 {
+    for len in (0..=65).chain([256, 1024]) {
         let data = vec![0xaa; len];
-        let classic = Frame::builder(id()).data(data.clone()).build();
+        let classic = Frame::builder(id()).data(&data).build();
         assert_eq!(classic.is_ok(), len <= 8, "classic length {len}");
-        let fd = Frame::builder(id()).fd(true).data(data.clone()).build();
+        let fd = Frame::builder(id()).fd(true).data(&data).build();
         assert_eq!(fd.is_ok(), fd_lengths.contains(&len), "FD length {len}");
         if let Ok(frame) = fd {
             assert_eq!(frame.data(), data);
@@ -55,12 +55,37 @@ fn validates_every_payload_length_without_padding() {
 }
 
 #[test]
+fn builder_uses_latest_payload() {
+    let builder = Frame::builder(id()).fd(true).data(&[0xaa; 64]);
+    let shorter = builder.clone().data(&[0xbb; 4]).build().unwrap();
+    assert_eq!(shorter.data(), &[0xbb; 4]);
+    assert_eq!(shorter.dlc(), Some(4));
+
+    assert!(matches!(
+        builder.clone().data(&[0; 65]).build(),
+        Err(automotive::Error::MalformedFrame)
+    ));
+
+    let recovered = builder.data(&[0; 65]).data(&[0xcc; 12]).build().unwrap();
+    assert_eq!(recovered.data(), &[0xcc; 12]);
+    assert_eq!(recovered.dlc(), Some(9));
+}
+
+#[test]
+fn built_frame_owns_payload() {
+    let mut data = [0xaa; 12];
+    let frame = Frame::builder(id()).fd(true).data(&data).build().unwrap();
+    data.fill(0xbb);
+    assert_eq!(frame.data(), &[0xaa; 12]);
+}
+
+#[test]
 fn short_fd_frames_remain_fd_and_keep_flags() {
     for len in 0..=8 {
         let frame = Frame::builder(id())
             .bus(2)
             .loopback(true)
-            .data(vec![0x55; len])
+            .data(&vec![0x55; len])
             .fd(true)
             .brs(true)
             .esi(true)
@@ -113,12 +138,12 @@ fn error_frames_have_no_identifier_dlc_or_payload() {
 fn serialization_preserves_shape_and_round_trips_each_frame_variant() {
     use serde_json::json;
     let frames = [
-        Frame::builder(id()).data([0xaa; 8]).build().unwrap(),
+        Frame::builder(id()).data(&[0xaa; 8]).build().unwrap(),
         Frame::builder(Identifier::extended(0x123).unwrap())
             .fd(true)
             .brs(true)
             .esi(true)
-            .data([0x55; 12])
+            .data(&[0x55; 12])
             .build()
             .unwrap(),
         Frame::remote(0, id(), 15).unwrap(),
@@ -154,6 +179,7 @@ fn deserialization_cannot_bypass_frame_invariants() {
         json!({"Classic": {"id": {"Extended": 0x2000_0000}, "data": []}}),
         json!({"Classic": {"id": {"Standard": 1}, "data": vec![0; 9]}}),
         json!({"Fd": {"id": {"Standard": 1}, "data": vec![0; 9], "brs": false, "esi": false}}),
+        json!({"Fd": {"id": {"Standard": 1}, "data": vec![0; 65], "brs": false, "esi": false}}),
         json!({"Remote": {"id": {"Standard": 1}, "dlc": 16}}),
         json!({"Remote": {"id": {"Standard": 1}, "dlc": 8, "data": [1]}}),
         json!({"Classic": {"id": {"Standard": 1}, "data": [], "brs": true}}),

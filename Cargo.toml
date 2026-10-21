@@ -14,7 +14,7 @@ default = []
 all = ["all-adapters", "serde"]
 default-adapters = ["panda", "socketcan"]
 all-adapters = ["default-adapters", "vector-xl", "j2534", "peak"]
-serde = ["dep:serde"]
+serde = ["dep:serde", "arrayvec/serde"]
 
 # adapters
 vector-xl = ["dep:bindgen", "dep:libloading"]
@@ -32,6 +32,7 @@ test-vcan = ["socketcan"]
 test-vector = ["vector-xl"]
 
 [dependencies]
+arrayvec = "0.7"
 async-stream = "0.3.5"
 bstr = "1.9.0"
 hex = "0.4"

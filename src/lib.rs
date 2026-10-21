@@ -13,7 +13,7 @@
 //!     let adapter = automotive::can::get_adapter()?;
 //!     let mut stream = adapter.recv();
 //!
-//!     let frame = automotive::can::Frame::builder(0x541.try_into()?).data([0xff; 8]).build()?;
+//!     let frame = automotive::can::Frame::builder(0x541.try_into()?).data(&[0xff; 8]).build()?;
 //!     adapter.send(&frame).await?;
 //!
 //!     while let Some(frame) = stream.next().await {

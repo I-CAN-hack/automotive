@@ -24,6 +24,7 @@ use crate::can::AsyncCanAdapter;
 use crate::can::{Frame, Identifier, DLC_TO_LEN};
 use crate::Result;
 use crate::{Stream, StreamExt, Timeout};
+use arrayvec::ArrayVec;
 use async_stream::stream;
 use tracing::debug;
 
@@ -201,7 +202,7 @@ impl<'a> IsoTPAdapter<'a> {
         Self { adapter, config }
     }
 
-    fn pad(&self, data: &mut Vec<u8>) {
+    fn pad(&self, data: &mut ArrayVec<u8, CAN_FD_MAX_DLEN>) -> Result<()> {
         // Ensure we leave space for the extended address
         let offset = self.config.ext_address.is_some() as usize;
         let len = data.len() + offset;
@@ -216,11 +217,15 @@ impl<'a> IsoTPAdapter<'a> {
 
         // Pad to next valid DLC for CAN-FD
         if !DLC_TO_LEN.contains(&len) {
-            let idx = DLC_TO_LEN.iter().position(|&x| x > data.len()).unwrap();
+            let idx = DLC_TO_LEN
+                .iter()
+                .position(|&x| x > data.len())
+                .ok_or(crate::Error::MalformedFrame)?;
             let padding = self.config.padding.unwrap_or(DEFAULT_PADDING_BYTE);
             let padding_len = DLC_TO_LEN[idx] - len;
             data.extend(std::iter::repeat(padding).take(padding_len));
         }
+        Ok(())
     }
 
     /// Ofset from the start of the frame. 1 in case of extended address, 0 otherwise.
@@ -261,12 +266,11 @@ impl<'a> IsoTPAdapter<'a> {
         }
     }
 
-    /// Build a CAN frame from the payload. Inserts extended address and padding if needed.
-    fn frame(&self, data: &[u8]) -> Result<Frame> {
-        let mut data = data.to_vec();
-
+    /// Build a CAN frame from the payload, inserting the extended address if needed.
+    fn frame(&self, data: &mut ArrayVec<u8, CAN_FD_MAX_DLEN>) -> Result<Frame> {
         if let Some(ext_address) = self.config.ext_address {
-            data.insert(0, ext_address);
+            data.try_insert(0, ext_address)
+                .map_err(|_| crate::Error::MalformedFrame)?;
         }
 
         Frame::builder(self.config.tx_id)
@@ -277,44 +281,46 @@ impl<'a> IsoTPAdapter<'a> {
     }
 
     pub async fn send_single_frame(&self, data: &[u8]) -> Result<()> {
-        let mut buf;
+        let mut buf = ArrayVec::new();
 
         if data.len() < self.can_max_dlen() {
             // Len fits in classic CAN message
-            buf = vec![FrameType::Single as u8 | data.len() as u8];
+            buf.push(FrameType::Single as u8 | data.len() as u8);
         } else {
             // Use escape sequence for length, length is in the next byte
-            buf = vec![FrameType::Single as u8, data.len() as u8];
+            buf.extend([FrameType::Single as u8, data.len() as u8]);
         }
 
-        buf.extend(data);
-        self.pad(&mut buf);
+        buf.try_extend_from_slice(data)
+            .map_err(|_| crate::Error::MalformedFrame)?;
+        self.pad(&mut buf)?;
 
         debug!("TX SF, length: {} data {}", data.len(), hex::encode(&buf));
 
-        let frame = self.frame(&buf)?;
+        let frame = self.frame(&mut buf)?;
         self.adapter.send(&frame).await?;
         Ok(())
     }
 
     pub async fn send_first_frame(&self, data: &[u8]) -> Result<usize> {
-        let mut buf;
+        let mut buf = ArrayVec::new();
         if data.len() <= ISO_TP_MAX_DLEN {
             let b0: u8 = FrameType::First as u8 | ((data.len() >> 8) & 0xF) as u8;
             let b1: u8 = (data.len() & 0xFF) as u8;
-            buf = vec![b0, b1];
+            buf.extend([b0, b1]);
         } else {
             let b0: u8 = FrameType::First as u8;
             let b1: u8 = 0x00;
-            buf = vec![b0, b1];
+            buf.extend([b0, b1]);
             buf.extend((data.len() as u32).to_be_bytes());
         }
         let offset = buf.len();
-        buf.extend(&data[..self.max_can_data_length() - buf.len()]);
+        buf.try_extend_from_slice(&data[..self.max_can_data_length() - buf.len()])
+            .map_err(|_| crate::Error::MalformedFrame)?;
 
         debug!("TX FF, length: {} data {}", data.len(), hex::encode(&buf));
 
-        let frame = self.frame(&buf)?;
+        let frame = self.frame(&mut buf)?;
         self.adapter.send(&frame).await?;
         Ok(offset)
     }
@@ -322,13 +328,15 @@ impl<'a> IsoTPAdapter<'a> {
     pub async fn send_consecutive_frame(&self, data: &[u8], idx: usize) -> Result<()> {
         let idx = ((idx + 1) & 0xF) as u8;
 
-        let mut buf = vec![FrameType::Consecutive as u8 | idx];
-        buf.extend(data);
-        self.pad(&mut buf);
+        let mut buf = ArrayVec::new();
+        buf.push(FrameType::Consecutive as u8 | idx);
+        buf.try_extend_from_slice(data)
+            .map_err(|_| crate::Error::MalformedFrame)?;
+        self.pad(&mut buf)?;
 
         debug!("TX CF, idx: {} data {}", idx, hex::encode(&buf));
 
-        let frame = self.frame(&buf)?;
+        let frame = self.frame(&mut buf)?;
 
         self.adapter.send(&frame).await?;
 
@@ -485,12 +493,13 @@ impl<'a> IsoTPAdapter<'a> {
         buf.extend(&data[offset..]);
 
         // Send Flow Control
-        let mut flow_control = vec![0x30, 0x00, 0x00];
-        self.pad(&mut flow_control);
+        let mut flow_control = ArrayVec::new();
+        flow_control.extend([0x30, 0x00, 0x00]);
+        self.pad(&mut flow_control)?;
 
         debug!("TX FC, data {}", hex::encode(&flow_control));
 
-        let frame = self.frame(&flow_control)?;
+        let frame = self.frame(&mut flow_control)?;
         self.adapter.send(&frame).await?;
 
         Ok(len)
