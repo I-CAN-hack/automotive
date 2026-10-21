@@ -4,7 +4,8 @@
 //! use automotive::StreamExt;
 //! async fn isotp_example() -> automotive::Result<()> {
 //!    let adapter = automotive::adapters::get_adapter()?;
-//!    let config = automotive::transports::isotp::IsoTPConfig::new(0, automotive::can::Identifier::standard(0x7a1)?);
+//!    let config = automotive::transports::isotp::IsoTPConfig::builder(automotive::can::Identifier::standard(0x7a1)?)
+//!        .build()?;
 //!    let isotp = automotive::transports::isotp::IsoTPAdapter::new(&adapter, config);
 //!
 //!    let mut stream = isotp.recv(); // Create receiver before sending request
@@ -14,15 +15,17 @@
 //! }
 //! ```
 
+mod config;
 mod constants;
 mod error;
 mod types;
 
+pub use config::{IsoTPConfig, IsoTPConfigBuilder};
 pub use constants::{FlowStatus, FrameType, FLOW_SATUS_MASK, FRAME_TYPE_MASK};
 pub use error::Error;
 
 use crate::can::AsyncCanAdapter;
-use crate::can::{Frame, Identifier, DLC_TO_LEN};
+use crate::can::{Frame, DLC_TO_LEN};
 use crate::transports::TransportLayer;
 use crate::Result;
 use crate::{Stream, StreamExt, Timeout};
@@ -47,7 +50,7 @@ impl TransportLayer for IsoTPAdapter<'_> {
     }
 }
 
-const DEFAULT_PADDING_BYTE: u8 = 0xAA;
+const DEFAULT_PADDING_BYTE: u8 = 0xCC;
 
 /// N_WFTmax in ISO 15765-2
 const MAX_WAIT_FC: usize = 10;
@@ -88,94 +91,7 @@ pub fn duration_to_stmin_byte(duration: std::time::Duration) -> u8 {
     }
 }
 
-/// Configuring passed to the IsoTPAdapter.
-#[derive(Debug, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct IsoTPConfig {
-    pub bus: u8,
-    /// Transmit ID
-    pub tx_id: Identifier,
-    /// Receive ID
-    pub rx_id: Identifier,
-    /// Padding byte (0x00, or more efficient 0xAA). Set to None to disable padding.
-    pub padding: Option<u8>,
-    /// Max timeout for receiving a frame
-    pub timeout: std::time::Duration,
-    /// Override for Seperation Time (STmin) for transmitted frames
-    pub separation_time_min: Option<std::time::Duration>,
-    /// Enable CAN-FD Mode
-    pub fd: bool,
-    /// Extended address
-    pub ext_address: Option<u8>,
-    /// Max data length. Will use default of 8 (CAN) or 64 (CAN-FD) if not set
-    pub max_dlen: Option<usize>,
-    /// Consecutive frames allowed per receive block; zero is unlimited.
-    #[cfg_attr(feature = "serde", serde(default))]
-    pub block_size: u8,
-    /// STmin advertised to the peer in outgoing flow-control frames.
-    #[cfg_attr(feature = "serde", serde(default))]
-    pub receive_separation_time_min: std::time::Duration,
-}
-
-impl IsoTPConfig {
-    /// Derive the receive ID by adding eight to a standard ID or swapping
-    /// the address bytes of an extended ID.
-    ///
-    /// # Panics
-    /// Panics if the derived standard receive ID exceeds 11 bits. Use
-    /// [`Self::new_from_tx_rx`] to specify a different receive ID explicitly.
-    pub fn new(bus: u8, id: Identifier) -> Self {
-        let tx_id = id;
-        let rx_id = match id {
-            Identifier::Standard(id) => Identifier::standard(id.as_raw() + 8)
-                .expect("ISO-TP receive identifier exceeds 11 bits"),
-            Identifier::Extended(id) => {
-                let bytes = id.as_raw().to_be_bytes();
-                let id = u32::from_be_bytes([bytes[0], bytes[1], bytes[3], bytes[2]]); // Swap last two bytes
-                Identifier::extended(id).expect("swapping address bytes preserves a 29-bit ID")
-            }
-        };
-
-        Self::new_from_tx_rx(bus, tx_id, rx_id)
-    }
-
-    /// Derive the receive ID by adding `offset` to a standard transmit ID.
-    ///
-    /// # Panics
-    /// Panics for extended IDs or if the receive ID exceeds 11 bits.
-    pub fn new_from_offset(bus: u8, id: Identifier, offset: u32) -> Self {
-        let tx_id = id;
-        let rx_id = match id {
-            Identifier::Standard(id) => Identifier::standard(
-                id.as_raw()
-                    .checked_add(offset)
-                    .expect("ISO-TP ID offset overflow"),
-            )
-            .expect("ISO-TP receive identifier exceeds 11 bits"),
-            Identifier::Extended(_) => panic!("Extended IDs do not support offset"),
-        };
-
-        Self::new_from_tx_rx(bus, tx_id, rx_id)
-    }
-
-    pub fn new_from_tx_rx(bus: u8, tx_id: Identifier, rx_id: Identifier) -> Self {
-        Self {
-            bus,
-            tx_id,
-            rx_id,
-            padding: Some(DEFAULT_PADDING_BYTE),
-            timeout: std::time::Duration::from_millis(DEFAULT_TIMEOUT_MS),
-            separation_time_min: None,
-            fd: false,
-            ext_address: None,
-            max_dlen: None,
-            block_size: 0,
-            receive_separation_time_min: std::time::Duration::ZERO,
-        }
-    }
-}
-
-/// Wraps a CAN adapter to provide a simple interface for sending and receiving ISO-TP frames. CAN-FD ISO-TP is currently not supported.
+/// Wraps a CAN adapter to send and receive ISO-TP messages over Classical CAN or CAN FD.
 pub struct IsoTPAdapter<'a> {
     adapter: &'a AsyncCanAdapter,
     config: IsoTPConfig,
@@ -186,9 +102,11 @@ impl<'a> IsoTPAdapter<'a> {
     ///
     /// # Panics
     /// Panics if the transmit ID exceeds 29 bits or the standard receive ID
-    /// derived by [`IsoTPConfig::new`] exceeds 11 bits.
+    /// derived by [`IsoTPConfig::builder`] exceeds 11 bits.
     pub fn from_id(adapter: &'a AsyncCanAdapter, id: u32) -> Self {
-        let config = IsoTPConfig::new(0, id.try_into().expect("CAN identifier exceeds 29 bits"));
+        let config = IsoTPConfig::builder(id.try_into().expect("CAN identifier exceeds 29 bits"))
+            .build()
+            .expect("ISO-TP receive identifier exceeds 11 bits");
         Self::new(adapter, config)
     }
 
@@ -384,12 +302,16 @@ impl<'a> IsoTPAdapter<'a> {
         let stream = self
             .adapter
             .recv_filter(|frame| {
-                if !frame.is_data() || frame.id() != Some(self.config.rx_id) || frame.loopback {
+                if !frame.is_data()
+                    || frame.bus != self.config.bus
+                    || frame.id() != Some(self.config.rx_id)
+                    || frame.loopback
+                {
                     return false;
                 }
 
-                if self.config.ext_address.is_some() {
-                    return frame.data().first() == self.config.ext_address.as_ref();
+                if let Some(address) = self.config.rx_ext_address.or(self.config.ext_address) {
+                    return frame.data().first() == Some(&address);
                 }
 
                 true
@@ -606,12 +528,16 @@ impl<'a> IsoTPAdapter<'a> {
         let stream = self
             .adapter
             .recv_filter(|frame| {
-                if !frame.is_data() || frame.id() != Some(self.config.rx_id) || frame.loopback {
+                if !frame.is_data()
+                    || frame.bus != self.config.bus
+                    || frame.id() != Some(self.config.rx_id)
+                    || frame.loopback
+                {
                     return false;
                 }
 
-                if self.config.ext_address.is_some() {
-                    return frame.data().first() == self.config.ext_address.as_ref();
+                if let Some(address) = self.config.rx_ext_address.or(self.config.ext_address) {
+                    return frame.data().first() == Some(&address);
                 }
 
                 true

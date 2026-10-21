@@ -41,8 +41,10 @@ async fn uds_test_sids() {
             .unwrap();
     let _vecu = vecu_spawn(&adapter).await;
 
-    let mut isotp_config = IsoTPConfig::new(0, Identifier::standard(0x7a1).unwrap());
-    isotp_config.timeout = std::time::Duration::from_millis(1000);
+    let isotp_config = IsoTPConfig::builder(Identifier::standard(0x7a1).unwrap())
+        .timeout(std::time::Duration::from_millis(1000))
+        .build()
+        .unwrap();
 
     let isotp = IsoTPAdapter::new(&adapter, isotp_config);
     let uds = UDSClient::new(&isotp);

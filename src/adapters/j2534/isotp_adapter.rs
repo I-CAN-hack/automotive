@@ -99,7 +99,8 @@ impl J2534NativeIsoTpTransport {
     /// This avoids closing and reopening the physical device when switching
     /// channels (e.g. from OBD DTC-clear to the main flash channel).
     /// Uses `tx_id`, `rx_id`, `padding`, `timeout`, `separation_time_min`,
-    /// `ext_address`, `block_size`, and `receive_separation_time_min` from `config`.
+    /// `ext_address`, `rx_ext_address`, `block_size`, and
+    /// `receive_separation_time_min` from `config`.
     /// The remaining [`IsoTPConfig`] fields are ignored by the native J2534
     /// transport.
     ///
@@ -120,6 +121,7 @@ impl J2534NativeIsoTpTransport {
         let tx_id = config.tx_id;
         let rx_id = config.rx_id;
         let ext_address = config.ext_address;
+        let rx_ext_address = config.rx_ext_address.or(ext_address);
         let timeout = config.timeout;
         let tx_flags = isotp_tx_flags(config.padding, ext_address, tx_id);
         let connect_flags = isotp_connect_flags(ext_address, tx_id, rx_id);
@@ -132,8 +134,13 @@ impl J2534NativeIsoTpTransport {
             bitrate,
         )?;
 
-        let status =
-            channel.install_iso15765_flow_control_filter(tx_id, rx_id, ext_address, tx_flags);
+        let status = channel.install_iso15765_flow_control_filter(
+            tx_id,
+            rx_id,
+            ext_address,
+            rx_ext_address,
+            tx_flags,
+        );
         if status != Status::NoError {
             let _ = channel.disconnect();
             return Err(
@@ -202,7 +209,7 @@ impl J2534NativeIsoTpTransport {
             let stop = stop_rx.clone();
             thread::Builder::new()
                 .name("j2534-isotp-rx".to_owned())
-                .spawn(move || isotp_rx_thread(channel, ext_address, bcast, stop))
+                .spawn(move || isotp_rx_thread(channel, rx_ext_address, bcast, stop))
                 .map_err(|e| {
                     J2534Error::DllError(format!("Failed to spawn J2534 ISO-TP RX thread: {e}"))
                 })

@@ -45,13 +45,13 @@ mod app {
             return Ok(());
         };
 
-        let config = IsoTPConfig::new(0, first_id.try_into()?);
+        let config = IsoTPConfig::builder(first_id.try_into()?).build()?;
         let isotp = J2534NativeIsoTpTransport::new(dll_path, bitrate_cfg, config)?;
         let _ = get_version(&isotp, first_id).await;
         let mut device = isotp.into_device();
 
         for id in ids {
-            let config = IsoTPConfig::new(0, id.try_into()?);
+            let config = IsoTPConfig::builder(id.try_into()?).build()?;
             let isotp = match J2534NativeIsoTpTransport::new_on_device(device, bitrate_cfg, config)
             {
                 Ok(isotp) => isotp,

@@ -195,12 +195,36 @@ each result. The second frame is queued 250 ms later so the first can time out
 and cancel it before its own deadline. After timeout/cancellation, the example
 waits one second and retries both frames with the same adapter open.
 
-## ISO-TP receive flow control
+## ISO-TP configuration
 
-`IsoTPConfig::block_size` selects how many consecutive frames the peer may send
-before another flow-control frame. Zero allows all remaining frames.
-`receive_separation_time_min` selects the STmin advertised to the peer. Both
-default to zero. Configure them before creating the ISO-TP transport:
+`IsoTPConfig::builder(tx_id)` follows the same consuming-setter pattern as the
+frame and adapter builders. Only the transmit identifier is required:
+
+```rust
+use automotive::can::Identifier;
+use automotive::transports::isotp::IsoTPConfig;
+
+# fn example() -> automotive::Result<()> {
+let config = IsoTPConfig::builder(Identifier::standard(0x7a1)?).build()?;
+assert_eq!(config.rx_id, Identifier::standard(0x7a9)?);
+# Ok(())
+# }
+```
+
+Defaults are bus zero, Classical CAN, padding enabled, a 100 ms per-frame receive
+timeout, unlimited receive blocks, and zero receive STmin.
+Transmitted consecutive frames follow the peer's block size and
+STmin; `.separation_time_min(...)` overrides transmit STmin.
+
+Receive IDs are derived by adding eight to a standard ID or swapping the low two
+bytes of an extended ID (for example, `0x18DA10F1` becomes `0x18DAF110`). These
+are convenience conventions: ISO 15765-2:2016 §10.3.2 leaves normal addressing
+mappings application-specific; §10.3.3 defines the address bytes for normal fixed
+addressing. Use `.rx_id(...)` for arbitrary mappings or `.rx_id_offset(...)` for
+a different standard-ID offset. The last receive ID/offset setter wins, and
+`build()` reports overflowing derived IDs as errors.
+
+For a custom receive ID, bus, and timeout, or a different standard-ID offset:
 
 ```rust
 use automotive::can::Identifier;
@@ -208,18 +232,55 @@ use automotive::transports::isotp::IsoTPConfig;
 use std::time::Duration;
 
 # fn example() -> automotive::Result<()> {
-let mut config = IsoTPConfig::new(0, Identifier::standard(0x7a1)?);
-config.block_size = 8;
-config.receive_separation_time_min = Duration::from_micros(300);
+let explicit = IsoTPConfig::builder(Identifier::standard(0x7ff)?)
+    .rx_id(Identifier::standard(0x650)?)
+    .bus(1)
+    .timeout(Duration::from_secs(1))
+    .without_padding()
+    .build()?;
+
+let offset = IsoTPConfig::builder(Identifier::standard(0x700)?)
+    .rx_id_offset(0x6a)
+    .build()?;
+assert_eq!(offset.rx_id, Identifier::standard(0x76a)?);
 # Ok(())
 # }
 ```
 
-The software transport sends flow control after each complete receive block
-when more data remains. Transmissions follow the block size and STmin from
-each peer flow-control frame; `separation_time_min` can override transmit STmin.
-The native J2534 transport applies receive flow control through its channel
-configuration.
+Use `.fd(true)` for CAN FD. TX_DL defaults to eight bytes for Classical CAN or
+64 for FD; `.max_dlen(...)` selects a different transmit length, including any
+address byte. The builder checks §9.5.1 values: 8 for Classical CAN, or 8, 12,
+16, 20, 24, 32, 48, and 64 for FD. `.padding(byte)` changes optional padding;
+`.without_padding()` disables it, while FD still pads frames to a valid DLC.
+
+`.ext_address(byte)` inserts and expects an address byte for extended or mixed
+addressing (§10.3.4–§10.3.5). `.rx_ext_address(byte)` overrides the receive byte
+when the two directions use different addresses. Receive block size and STmin
+are advertised in flow-control frames (§9.6.5); STmin rounds up to a wire value
+and values above 127 ms are rejected. The frame timeout must be nonzero.
+New config fields have Serde defaults for existing serialized configs.
+
+For CAN FD with a 32-byte transmit length and receive flow control:
+
+```rust
+use automotive::can::Identifier;
+use automotive::transports::isotp::IsoTPConfig;
+use std::time::Duration;
+
+# fn example() -> automotive::Result<()> {
+let config = IsoTPConfig::builder(Identifier::extended(0x18da10f1)?)
+    .fd(true)
+    .max_dlen(32)
+    .block_size(8)
+    .receive_separation_time_min(Duration::from_micros(300))
+    .build()?;
+assert_eq!(config.rx_id, Identifier::extended(0x18daf110)?);
+# Ok(())
+# }
+```
+
+The `IsoTPConfig` API documentation also includes an extended-addressing example
+with different transmit and receive address bytes.
 
 ## UDS Example
 The automotive crate also supplies interfaces for various diagnostic protocols such as UDS. The adapter is first wrapped to support the ISO Transport Layer, then a UDS Client is created. All methods are fully async, making it easy to communicate with multiple ECUs in parallel. See [automotive#21](https://github.com/I-CAN-hack/automotive/issues/21) for progress on the supported SIDs.

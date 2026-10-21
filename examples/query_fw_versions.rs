@@ -11,11 +11,11 @@ use bstr::ByteSlice;
 use strum::IntoEnumIterator;
 
 async fn get_version(adapter: &AsyncCanAdapter, identifier: u32) -> Result<()> {
-    let mut config = IsoTPConfig::new(0, identifier.try_into()?);
-
     // Increased timeout for adapters not supporting real ACKs
     // We send a lot of frames, so the timeout might start counting before the relevant frame is sent
-    config.timeout = Duration::from_secs(1);
+    let config = IsoTPConfig::builder(identifier.try_into()?)
+        .timeout(Duration::from_secs(1))
+        .build()?;
 
     let isotp = IsoTPAdapter::new(adapter, config);
     let uds = UDSClient::new(&isotp);
