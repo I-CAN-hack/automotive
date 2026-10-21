@@ -62,8 +62,37 @@ impl From<u8> for NegativeResponseCode {
     }
 }
 
+/// An existing protocol requirement enforced by strict mode.
+#[derive(Error, Debug, PartialEq, Clone)]
+pub enum ProtocolDeviation {
+    #[error("Expected response service ID {expected:#04x}, received {actual:#04x}")]
+    InvalidServiceId { expected: u8, actual: u8 },
+    #[error("Expected sub-function {expected:#04x}, received {actual:#04x}")]
+    InvalidSubFunction { expected: u8, actual: u8 },
+    #[error("Expected data identifier {expected:#06x}, received {actual:#06x}")]
+    InvalidDataIdentifier { expected: u16, actual: u16 },
+    #[error("Expected routine identifier {expected:#06x}, received {actual:#06x}")]
+    InvalidRoutineIdentifier { expected: u16, actual: u16 },
+    #[error("Expected block sequence counter {expected:#04x}, received {actual:#04x}")]
+    InvalidBlockSequenceCounter { expected: u8, actual: u8 },
+    #[error("Invalid response length (minimum {minimum}, maximum {maximum:?})")]
+    InvalidResponseLength {
+        minimum: usize,
+        maximum: Option<usize>,
+    },
+    #[error("Expected 1 to 8 block-length bytes, received a length format declaring {0}")]
+    InvalidLengthFormat(usize),
+}
+
 #[derive(Error, Debug, PartialEq, Clone)]
 pub enum Error {
+    /// Strict-mode failure with the complete received UDS PDU, including SID
+    /// and any echoed sub-function or identifier bytes.
+    #[error("Protocol deviation: {deviation}; response: {response:02x?}")]
+    ProtocolDeviation {
+        deviation: ProtocolDeviation,
+        response: Vec<u8>,
+    },
     #[error("Invalid Reponse Service ID: {0}")]
     InvalidServiceId(u8),
     #[error("Invalid Response Sub Function ID: {0}")]
