@@ -35,6 +35,10 @@ scripts/set_up_vcan.sh
 cargo test --features test-vcan,serde
 ```
 
+The UDS tests exercise all 14 implemented service IDs against Scapy's
+`EcuAnsweringMachine`, including DID and memory writes followed by reads, and
+download/upload transfers. Scapy decodes requests and constructs responses.
+
 The setup scripts require `sudo`; entering the shell does not change the host's
 network interfaces or load kernel modules. Windows-only adapters still require
 their Windows SDKs and drivers.

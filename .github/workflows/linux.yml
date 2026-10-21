@@ -19,7 +19,7 @@ jobs:
           if apt-cache show "linux-modules-extra-$(uname -r)" >/dev/null 2>&1; then
             sudo apt-get -y install "linux-modules-extra-$(uname -r)"
           fi
-          pip install --user scapy==2.6.1
+          pip install --user scapy==2.8.0
           scripts/build_can_isotp.sh
           scripts/set_up_vcan.sh
       - name: Build
