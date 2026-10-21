@@ -350,7 +350,8 @@ that cap. Expired deadlines return `automotive::Error::Timeout`.
 DiagnosticSessionControl adopts server-reported P2/P2* timings by default;
 `.use_server_timing(false)` keeps the configured values. P2 uses 1 ms units
 and P2* uses 10 ms units (ISO 14229-1:2013, §9.2.3.2, Tables 28–29).
-A response without a timing record leaves the current timings in place.
+In non-strict mode, a response without a timing record leaves the current timings
+in place.
 
 The transport returns complete messages, so the waits include response
 reception (P6/P6* in ISO 14229-2, §7.1–§7.2). Set timeouts to cover network
@@ -359,13 +360,19 @@ example, raise `IsoTPConfig::timeout` above the longest UDS response wait to avo
 receive timeout expiring first. Session keepalive remains caller-managed through
 `tester_present()`.
 
-Strict mode validates service IDs, sub-functions, identifiers, block counters,
-and response formats. Failures return
+Strict mode follows ISO 14229-1:2013. It validates service IDs, sub-function
+echoes, identifiers, block counters, and response formats. Negative responses
+contain exactly three bytes, echo the requested SID, and use a permitted NRC.
+Service methods validate mandatory records, fixed response lengths, memory-read
+byte counts, memory-write echoes, and download/upload length formats.
+
+Validation failures return
 `uds::Error::ProtocolDeviation { deviation, response }` inside
 `automotive::Error::UDSError`. The deviation describes the expectation, and
 `response` contains the complete received UDS payload, including its service
-header. `.strict(false)` disables these checks; minimum lengths needed for safe
-parsing remain enforced.
+header. `.strict(false)` disables these checks. Minimum parsing lengths and
+representable DTC formats are required in both modes. Vehicle-specific record
+contents and lengths are defined by the ECU.
 
 ## CAN Adapters
 The following CAN adapters are supported.
