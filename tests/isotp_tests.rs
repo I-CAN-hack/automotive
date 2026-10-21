@@ -2,7 +2,7 @@
 #[cfg(all(target_os = "linux", feature = "socketcan"))]
 use automotive::adapters::socketcan::SocketCanConfig;
 use automotive::can::AsyncCanAdapter;
-use automotive::can::Identifier;
+use automotive::can::{Frame, Identifier};
 use automotive::transports::isotp::{IsoTPAdapter, IsoTPConfig};
 use automotive::StreamExt;
 use std::process::{Child, Command};
@@ -20,6 +20,7 @@ impl Drop for ChildGuard {
 struct VECUConfig {
     pub stmin: u32,
     pub bs: u32,
+    pub receive_bs: u8,
     pub padding: Option<u8>,
     pub fd: bool,
     pub ext_address: Option<u8>,
@@ -84,16 +85,121 @@ async fn isotp_test_echo(msg_len: usize, config: VECUConfig) {
     isotp_config.ext_address = config.ext_address;
     isotp_config.timeout = std::time::Duration::from_millis(1000);
     isotp_config.max_dlen = config.max_dlen;
+    isotp_config.block_size = config.receive_bs;
 
     let isotp = IsoTPAdapter::new(&adapter, isotp_config);
 
     let mut stream = isotp.recv();
+    // A separate socket observes wire order even when TX ACKs are emulated.
+    let monitor =
+        automotive::adapters::socketcan::SocketCan::new_async(SocketCanConfig::new("vcan0"))
+            .unwrap();
+    let mut can_stream = monitor.recv();
+    let marker = Frame::new(0, Identifier::standard(0x123).unwrap(), &[]).unwrap();
     let request = vec![0xcc; msg_len];
-    isotp.send(&request).await.unwrap();
-    let response = stream.next().await.unwrap().unwrap();
+    let exchange = async {
+        isotp.send(&request).await.unwrap();
+        let response = stream.next().await.unwrap().unwrap();
+        // End the capture after all frames from the exchange, including FCs.
+        adapter.send(&marker).await.unwrap();
+        response
+    };
+    let capture = async {
+        let mut frames = Vec::new();
+        loop {
+            let frame = can_stream.next().await.unwrap();
+            if frame.id() == marker.id() {
+                break frames;
+            }
+            frames.push(frame);
+        }
+    };
+    let (response, frames) = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        tokio::join!(exchange, capture)
+    })
+    .await
+    .unwrap();
 
     assert_eq!(response.len(), request.len());
     assert_eq!(response, request);
+
+    let offset = usize::from(config.ext_address.is_some());
+    assert_block_size(
+        &frames,
+        isotp_config.tx_id,
+        isotp_config.rx_id,
+        config.bs.try_into().unwrap(),
+        offset,
+    );
+    assert_block_size(
+        &frames,
+        isotp_config.rx_id,
+        isotp_config.tx_id,
+        config.receive_bs,
+        offset,
+    );
+}
+
+/// Check the CAN trace for one direction of the Scapy echo exchange.
+fn assert_block_size(
+    frames: &[Frame],
+    sender: Identifier,
+    receiver: Identifier,
+    block_size: u8,
+    offset: usize,
+) {
+    let mut segmented = false;
+    let mut flow_controls = 0;
+    let mut consecutive_frames = 0usize;
+    let mut frames_in_block = 0;
+
+    for frame in frames {
+        let Some(data) = frame.data().get(offset..).filter(|data| !data.is_empty()) else {
+            continue;
+        };
+        match (frame.id(), data[0] & 0xf0) {
+            (Some(id), 0x10) if id == sender => segmented = true,
+            (Some(id), 0x30) if id == receiver && segmented => {
+                assert_eq!(data[0], 0x30, "expected ContinueToSend");
+                assert_eq!(data[1], block_size, "wrong advertised block size");
+                if flow_controls > 0 {
+                    assert_ne!(block_size, 0, "unlimited blocks need only one FC");
+                    assert_eq!(
+                        frames_in_block,
+                        usize::from(block_size),
+                        "FC before block ended"
+                    );
+                }
+                frames_in_block = 0;
+                flow_controls += 1;
+            }
+            (Some(id), 0x20) if id == sender && segmented => {
+                assert!(flow_controls > 0, "CF before initial flow control");
+                if block_size != 0 {
+                    assert!(
+                        frames_in_block < usize::from(block_size),
+                        "CF exceeded block size"
+                    );
+                }
+                frames_in_block += 1;
+                consecutive_frames += 1;
+            }
+            _ => {}
+        }
+    }
+
+    if segmented {
+        assert!(consecutive_frames > 0);
+        let expected = if block_size == 0 {
+            1
+        } else {
+            consecutive_frames.div_ceil(usize::from(block_size))
+        };
+        assert_eq!(
+            flow_controls, expected,
+            "wrong FC count, including at final block boundary"
+        );
+    }
 }
 
 #[cfg(feature = "test-vcan")]
@@ -152,9 +258,23 @@ async fn isotp_test_bs() {
         };
         isotp_test_echo(64, config).await;
 
-        // TODO: can we ensure that we actually wait for the
-        // flow control between blocks?
-        isotp_test_echo(64, config).await;
+        isotp_test_echo(62, config).await;
+    }
+}
+
+#[cfg(feature = "test-vcan")]
+#[tokio::test]
+#[serial_test::serial]
+async fn isotp_test_receive_bs() {
+    for receive_bs in [0, 1, 2, 8, 255] {
+        let config = VECUConfig {
+            receive_bs,
+            ..Default::default()
+        };
+        // Two complete blocks, then a partial final CF requiring another FC.
+        let length = 6 + 2 * usize::from(receive_bs.max(1)) * 7;
+        isotp_test_echo(length, config).await;
+        isotp_test_echo(length + 1, config).await;
     }
 }
 
