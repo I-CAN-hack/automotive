@@ -1,0 +1,64 @@
+name: Python
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  python:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: "3.11"
+          - os: ubuntu-latest
+            python: "3.14"
+          - os: windows-latest
+            python: "3.14"
+          - os: macos-latest
+            python: "3.14"
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: latest
+          python-version: ${{ matrix.python }}
+          working-directory: python
+      - name: Linux build dependencies and virtual CAN
+        if: runner.os == 'Linux'
+        working-directory: .
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install libusb-1.0-0-dev libclang-dev pkg-config can-utils "linux-modules-$(uname -r)"
+          if apt-cache show "linux-modules-extra-$(uname -r)" >/dev/null 2>&1; then
+            sudo apt-get -y install "linux-modules-extra-$(uname -r)"
+          fi
+          scripts/build_can_isotp.sh
+          scripts/set_up_vcan.sh
+      - name: macOS build dependencies
+        if: runner.os == 'macOS'
+        run: brew install libusb
+      - name: Install Python library and development tools
+        run: uv sync --locked
+      - name: Type check with ty
+        run: uv check --locked
+      - name: Check Python formatting
+        run: uv format --check
+      - name: Check Python lint
+        run: uvx ruff check .
+      - name: Check Rust formatting
+        run: cargo fmt --all --check
+      - name: Verify imports and installed documentation
+        run: uv run --locked python -c "import automotive.adapters.j2534, automotive.protocols.uds, pydoc; print(pydoc.render_doc(automotive.protocols.uds.UDSClient))"
+      - name: Scapy ECU regression tests
+        if: runner.os == 'Linux'
+        run: uv run --locked pytest --run-vcan -q

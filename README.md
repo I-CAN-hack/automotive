@@ -13,6 +13,12 @@ Welcome to the `automotive` crate documentation. The purpose of this crate is to
 - `automotive::protocols` contains `uds`, which uses a `TransportLayer`.
 - `automotive::can` provides shared CAN types and traits.
 
+## Python library
+
+An asyncio Python package is available in `python/`, with the import name
+`automotive`. See the [Python README](python/README.md) for installation,
+configuration, examples, API documentation, and Scapy ECU regression tests.
+
 ## Development with Nix
 
 Enter the development environment and run the tests:

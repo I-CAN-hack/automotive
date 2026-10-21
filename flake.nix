@@ -32,7 +32,13 @@
                 clang
                 git
                 gnumake
-                (python3.withPackages (pythonPackages: [ pythonPackages.scapy ]))
+                maturin
+                (python3.withPackages (pythonPackages: [
+                  pythonPackages.scapy
+                  pythonPackages.pytest
+                  pythonPackages.pytest-asyncio
+                  pythonPackages.pip
+                ]))
               ]
               ++ lib.optionals stdenv.hostPlatform.isLinux [
                 can-utils

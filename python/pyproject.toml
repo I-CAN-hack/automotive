@@ -1,0 +1,41 @@
+[build-system]
+requires = ["maturin>=1.8,<2"]
+build-backend = "maturin"
+
+[project]
+name = "automotive"
+dynamic = ["version"]
+description = "Async CAN, ISO-TP, and UDS powered by the automotive Rust crate"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+
+[dependency-groups]
+dev = ["maturin>=1.8,<2", "pytest>=8", "pytest-asyncio>=0.24", "scapy==2.8.0"]
+
+[tool.uv]
+required-version = ">=0.13.4"
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "README.md" },
+    { file = "Cargo.toml" },
+    { file = "src/**/*.rs" },
+    { file = "../Cargo.toml" },
+    { file = "../Cargo.lock" },
+    { file = "../src/**/*.rs" },
+    { file = "../build.rs" },
+    { file = "../third_party/vector/*.h" },
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.maturin]
+module-name = "automotive._native"
+python-source = "."
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = ["vcan: protocol tests requiring Linux vcan0 and Scapy"]

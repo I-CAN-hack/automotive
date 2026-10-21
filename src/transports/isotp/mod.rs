@@ -97,8 +97,9 @@ struct Reception {
 }
 
 /// Wraps a CAN adapter to send and receive ISO-TP messages over Classical CAN or CAN FD.
+#[derive(Clone)]
 pub struct IsoTPAdapter<'a> {
-    adapter: &'a AsyncCanAdapter,
+    adapter: crate::shared::Shared<'a, AsyncCanAdapter>,
     config: IsoTPConfig,
 }
 
@@ -117,7 +118,21 @@ impl<'a> IsoTPAdapter<'a> {
 
     /// Create a new IsoTPAdapter from a CAN adapter and a configuration.
     pub fn new(adapter: &'a AsyncCanAdapter, config: IsoTPConfig) -> Self {
-        Self { adapter, config }
+        Self {
+            adapter: crate::shared::Shared::Borrowed(adapter),
+            config,
+        }
+    }
+
+    /// Create a transport retaining shared ownership of its CAN adapter.
+    pub fn new_owned(
+        adapter: std::sync::Arc<AsyncCanAdapter>,
+        config: IsoTPConfig,
+    ) -> IsoTPAdapter<'static> {
+        IsoTPAdapter {
+            adapter: crate::shared::Shared::Owned(adapter),
+            config,
+        }
     }
 
     fn pad(&self, data: &mut ArrayVec<u8, CAN_FD_MAX_DLEN>) -> Result<()> {
@@ -521,7 +536,15 @@ impl<'a> IsoTPAdapter<'a> {
     /// not restart a deadline. A replacement SF/FF yields UnexpectedPdu before
     /// processing the replacement message.
     pub fn recv(&self) -> impl Stream<Item = Result<Vec<u8>>> + '_ {
-        let stream = self.adapter.recv_filter(|frame| self.accepts(frame));
+        self.clone().into_recv()
+    }
+
+    /// Subscribe immediately and return a stream owning this transport.
+    ///
+    /// A transport constructed with `new_owned` produces a `'static` stream.
+    pub fn into_recv(self) -> impl Stream<Item = Result<Vec<u8>>> + Unpin + 'a {
+        let filter = self.clone();
+        let stream = self.adapter.recv_filter(move |frame| filter.accepts(frame));
 
         Box::pin(stream! {
             if let Err(error) = self.config.validate() {

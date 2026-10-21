@@ -93,7 +93,7 @@ impl Response {
 /// works equally with software ISO-TP ([`crate::transports::isotp::IsoTPAdapter`]) and
 /// hardware ISO 15765 (e.g. `J2534NativeIsoTpTransport`).
 pub struct UDSClient<'a, T: TransportLayer> {
-    adapter: &'a T,
+    adapter: crate::shared::Shared<'a, T>,
     config: UDSConfig,
     session_timing: RwLock<SessionParameterRecord>,
 }
@@ -106,7 +106,25 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     /// Create a client with custom response timing and validation settings.
     pub fn with_config(adapter: &'a T, config: UDSConfig) -> Self {
         Self {
-            adapter,
+            adapter: crate::shared::Shared::Borrowed(adapter),
+            config,
+            session_timing: RwLock::new(SessionParameterRecord {
+                p2_server_max: config.p2_timeout,
+                p2_star_server_max: config.p2_star_timeout,
+            }),
+        }
+    }
+
+    /// Create a client retaining shared ownership of its transport and session state.
+    pub fn with_owned_transport(
+        adapter: std::sync::Arc<T>,
+        config: UDSConfig,
+    ) -> UDSClient<'static, T>
+    where
+        T: 'static,
+    {
+        UDSClient {
+            adapter: crate::shared::Shared::Owned(adapter),
             config,
             session_timing: RwLock::new(SessionParameterRecord {
                 p2_server_max: config.p2_timeout,

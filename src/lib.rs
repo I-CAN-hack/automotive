@@ -5,6 +5,7 @@ pub mod adapters;
 pub mod can;
 mod error;
 pub mod protocols;
+mod shared;
 pub mod transports;
 
 /// Re-export of relevant stream traits from `tokio_stream`.
