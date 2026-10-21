@@ -281,7 +281,7 @@ addressing (§10.3.4–§10.3.5). `.rx_ext_address(byte)` overrides the receive 
 when the two directions use different addresses. Receive block size and STmin
 are advertised in flow-control frames (§9.6.5); STmin rounds up to a wire value
 and values above 127 ms are rejected. The frame timeout must be nonzero.
-New config fields have Serde defaults for existing serialized configs.
+Fields with Serde defaults may be omitted from serialized configs.
 
 For CAN FD with a 32-byte transmit length and receive flow control:
 
@@ -321,6 +321,51 @@ The automotive crate also supplies interfaces for various diagnostic protocols s
     Ok(())
  }
 ```
+
+`UDSClient::new` uses strict response validation and default timing settings.
+Use `UDSConfig::builder()` and `UDSClient::with_config` to customize the settings:
+
+```rust
+use automotive::protocols::uds::{UDSClient, UDSConfig};
+use std::time::Duration;
+
+# async fn configured_uds_example<T: automotive::TransportLayer>(transport: &T) -> automotive::Result<()> {
+let config = UDSConfig::builder()
+    .p2_timeout(Duration::from_millis(100)) // Default: 50 ms.
+    .build();
+let uds = UDSClient::with_config(transport, config);
+uds.tester_present().await?;
+# Ok(())
+# }
+```
+
+The default response waits are P2 = 50 ms and P2* = 5 s, based on the recommended
+server timings in ISO 14229-2:2013, §7.2, Table 4. Configured and server-reported
+timeouts are used directly. P2 starts after sending the request. Each Response
+Pending (NRC 0x78) restarts P2*. By default there is no overall request limit;
+`.request_timeout(...)` caps the entire exchange,
+including sending and pending responses. `.without_request_timeout()` removes
+that cap. Expired deadlines return `automotive::Error::Timeout`.
+
+DiagnosticSessionControl adopts server-reported P2/P2* timings by default;
+`.use_server_timing(false)` keeps the configured values. P2 uses 1 ms units
+and P2* uses 10 ms units (ISO 14229-1:2013, §9.2.3.2, Tables 28–29).
+A response without a timing record leaves the current timings in place.
+
+The transport returns complete messages, so the waits include response
+reception (P6/P6* in ISO 14229-2, §7.1–§7.2). Set timeouts to cover network
+delays and response transmission as needed. Transport timeouts still apply: for
+example, raise `IsoTPConfig::timeout` above the longest UDS response wait to avoid its idle
+receive timeout expiring first. Session keepalive remains caller-managed through
+`tester_present()`.
+
+Strict mode validates service IDs, sub-functions, identifiers, block counters,
+and response formats. Failures return
+`uds::Error::ProtocolDeviation { deviation, response }` inside
+`automotive::Error::UDSError`. The deviation describes the expectation, and
+`response` contains the complete received UDS payload, including its service
+header. `.strict(false)` disables these checks; minimum lengths needed for safe
+parsing remain enforced.
 
 ## CAN Adapters
 The following CAN adapters are supported.

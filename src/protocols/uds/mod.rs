@@ -1,4 +1,11 @@
 //! Unified Diagnostic Services (UDS) Client, implements ISO 14229
+//!
+//! [`UDSClient::new`] uses [`UDSConfig::default`], including strict validation.
+//! Customize P2/P2*, overall request timeout, and adoption of session timings
+//! with [`UDSConfig::builder`] and [`UDSClient::with_config`].
+//! Strict validation failures include the complete response in
+//! [`Error::ProtocolDeviation`]. Minimum safe parsing lengths always apply.
+//!
 //! ## Example
 //! ```rust
 //! async fn uds_example() -> automotive::Result<()> {
@@ -13,6 +20,7 @@
 //!     Ok(())
 //! }
 
+mod config;
 mod constants;
 mod error;
 mod types;
@@ -20,31 +28,96 @@ mod types;
 use crate::transports::TransportLayer;
 use crate::Result;
 use crate::StreamExt;
+pub use config::{UDSConfig, UDSConfigBuilder};
 pub use constants::*;
-pub use error::{Error, NegativeResponseCode};
+pub use error::{Error, NegativeResponseCode, ProtocolDeviation};
 pub use types::*;
 
+use std::sync::RwLock;
 use tracing::info;
+
+struct Response {
+    payload: Vec<u8>,
+    data_start: usize,
+}
+
+impl Response {
+    fn data(&self) -> &[u8] {
+        &self.payload[self.data_start..]
+    }
+
+    fn deviation(self, deviation: ProtocolDeviation) -> crate::Error {
+        Error::ProtocolDeviation {
+            deviation,
+            response: self.payload,
+        }
+        .into()
+    }
+}
 
 /// UDS Client. Generic over any [`TransportLayer`] implementation so that it
 /// works equally with software ISO-TP ([`crate::transports::isotp::IsoTPAdapter`]) and
 /// hardware ISO 15765 (e.g. `J2534NativeIsoTpTransport`).
 pub struct UDSClient<'a, T: TransportLayer> {
     adapter: &'a T,
+    config: UDSConfig,
+    session_timing: RwLock<SessionParameterRecord>,
 }
 
 impl<'a, T: TransportLayer> UDSClient<'a, T> {
     pub fn new(adapter: &'a T) -> Self {
-        Self { adapter }
+        Self::with_config(adapter, UDSConfig::default())
     }
 
-    /// Helper function to make custom UDS requests. This function will verify the ECU responds with the correct service identifier and sub function, handle negative responses, and will return the response data.
+    /// Create a client with custom response timing and validation settings.
+    pub fn with_config(adapter: &'a T, config: UDSConfig) -> Self {
+        Self {
+            adapter,
+            config,
+            session_timing: RwLock::new(SessionParameterRecord {
+                p2_server_max: config.p2_timeout,
+                p2_star_server_max: config.p2_star_timeout,
+            }),
+        }
+    }
+
+    /// Make a custom UDS request, handle negative responses, and return response
+    /// data. Strict mode verifies the echoed service and sub-function; deviations
+    /// include the full received PDU in [`Error::ProtocolDeviation`].
     pub async fn request(
         &self,
         sid: u8,
         sub_function: Option<u8>,
         data: Option<&[u8]>,
     ) -> Result<Vec<u8>> {
+        Ok(self
+            .request_response(sid, sub_function, data)
+            .await?
+            .data()
+            .to_vec())
+    }
+
+    async fn request_response(
+        &self,
+        sid: u8,
+        sub_function: Option<u8>,
+        data: Option<&[u8]>,
+    ) -> Result<Response> {
+        let exchange = self.request_inner(sid, sub_function, data);
+        match self.config.request_timeout {
+            Some(timeout) => tokio::time::timeout(timeout, exchange)
+                .await
+                .map_err(|_| crate::Error::Timeout)?,
+            None => exchange.await,
+        }
+    }
+
+    async fn request_inner(
+        &self,
+        sid: u8,
+        sub_function: Option<u8>,
+        data: Option<&[u8]>,
+    ) -> Result<Response> {
         let mut request: Vec<u8> = vec![sid];
 
         if let Some(sub_function) = sub_function {
@@ -59,12 +132,17 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
 
         self.adapter.send(&request).await?;
 
+        let timing = *self.session_timing.read().unwrap();
+        let mut response_timeout = timing.p2_server_max;
         loop {
-            let response = stream.next().await.unwrap()?;
+            let response = tokio::time::timeout(response_timeout, stream.next())
+                .await
+                .map_err(|_| crate::Error::Timeout)?
+                .ok_or(crate::Error::Disconnected)??;
 
             // Ensure we got a reply at all
             if response.is_empty() {
-                return Err(Error::InvalidResponseLength.into());
+                return Err(self.invalid_response_length(response, 1, None));
             }
 
             // Check for errors
@@ -73,12 +151,13 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
                 // Negative response consists of [0x7F, SID, Error]
                 // According to ISO 14229-1, there can be no extra data after the response code but we will accept this
                 if response.len() <= 2 {
-                    return Err(Error::InvalidResponseLength.into());
+                    return Err(self.invalid_response_length(response, 3, None));
                 }
 
                 let code: NegativeResponseCode = response[2].into();
                 if code == NegativeResponseCode::RequestCorrectlyReceivedResponsePending {
                     info!("Received Response Pending");
+                    response_timeout = timing.p2_star_server_max;
                     continue;
                 }
 
@@ -86,28 +165,65 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
             }
 
             // Check service id
-            if response_sid != sid | POSITIVE_RESPONSE {
-                return Err(Error::InvalidServiceId(response_sid).into());
+            if self.config.strict && response_sid != sid | POSITIVE_RESPONSE {
+                return Err(Response {
+                    payload: response,
+                    data_start: 0,
+                }
+                .deviation(ProtocolDeviation::InvalidServiceId {
+                    expected: sid | POSITIVE_RESPONSE,
+                    actual: response_sid,
+                }));
             }
 
             // Check sub function
             if let Some(sub_function) = sub_function {
                 // Ensure we also have a subfunction in the response
                 if response.len() <= 1 {
-                    return Err(Error::InvalidResponseLength.into());
+                    return Err(self.invalid_response_length(response, 2, None));
                 }
 
-                if response[1] != sub_function {
-                    return Err(Error::InvalidSubFunction(response[1]).into());
+                if self.config.strict && response[1] != sub_function {
+                    let actual = response[1];
+                    return Err(Response {
+                        payload: response,
+                        data_start: 0,
+                    }
+                    .deviation(ProtocolDeviation::InvalidSubFunction {
+                        expected: sub_function,
+                        actual,
+                    }));
                 }
             }
 
             let start: usize = if sub_function.is_some() { 2 } else { 1 };
-            return Ok(response[start..].to_vec());
+            return Ok(Response {
+                payload: response,
+                data_start: start,
+            });
         }
     }
 
-    /// 0x10 - Diagnostic Session Control. ECU may optionally return 4 bytes of sessionParameterRecord with some timing information.
+    fn invalid_response_length(
+        &self,
+        response: Vec<u8>,
+        minimum: usize,
+        maximum: Option<usize>,
+    ) -> crate::Error {
+        if self.config.strict {
+            Error::ProtocolDeviation {
+                deviation: ProtocolDeviation::InvalidResponseLength { minimum, maximum },
+                response,
+            }
+            .into()
+        } else {
+            Error::InvalidResponseLength.into()
+        }
+    }
+
+    /// 0x10 - Diagnostic Session Control. ECU may optionally return four bytes
+    /// of session timing information. These timings apply to subsequent requests
+    /// unless [`UDSConfig::use_server_timing`] is disabled.
     pub async fn diagnostic_session_control(
         &self,
         session_type: u8,
@@ -123,7 +239,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         let result = if result.len() == 4 {
             let p2_server_max = u16::from_be_bytes([result[0], result[1]]);
             let p2_server_max = std::time::Duration::from_millis(p2_server_max as u64);
-            let p2_star_server_max = u16::from_be_bytes([result[0], result[1]]);
+            let p2_star_server_max = u16::from_be_bytes([result[2], result[3]]);
             let p2_star_server_max =
                 std::time::Duration::from_millis(p2_star_server_max as u64 * 10);
 
@@ -134,6 +250,12 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         } else {
             None
         };
+
+        if self.config.use_server_timing {
+            if let Some(timing) = result {
+                *self.session_timing.write().unwrap() = timing;
+            }
+        }
 
         Ok(result)
     }
@@ -208,21 +330,27 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     /// 0x22 - Read Data By Identifier. Specify a 16 bit data identifier, or use a constant from [`constants::DataIdentifier`] for standardized identifiers. Reading multiple identifiers simultaneously is possible on some ECUs, but not supported by this function.
     pub async fn read_data_by_identifier(&self, data_identifier: u16) -> Result<Vec<u8>> {
         let did = data_identifier.to_be_bytes();
-        let resp = self
-            .request(
+        let response = self
+            .request_response(
                 ServiceIdentifier::ReadDataByIdentifier as u8,
                 None,
                 Some(&did),
             )
             .await?;
+        let resp = response.data();
 
         if resp.len() < 2 {
-            return Err(Error::InvalidResponseLength.into());
+            return Err(self.invalid_response_length(response.payload, 3, None));
         }
 
         let did = u16::from_be_bytes([resp[0], resp[1]]);
-        if did != data_identifier {
-            return Err(Error::InvalidDataIdentifier(did).into());
+        if self.config.strict && did != data_identifier {
+            return Err(
+                response.deviation(ProtocolDeviation::InvalidDataIdentifier {
+                    expected: data_identifier,
+                    actual: did,
+                }),
+            );
         }
 
         Ok(resp[2..].to_vec())
@@ -252,21 +380,27 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         let mut data: Vec<u8> = data_identifier.to_be_bytes().to_vec();
         data.extend(data_record);
 
-        let resp = self
-            .request(
+        let response = self
+            .request_response(
                 ServiceIdentifier::WriteDataByIdentifier as u8,
                 None,
                 Some(&data),
             )
             .await?;
+        let resp = response.data();
 
         if resp.len() < 2 {
-            return Err(Error::InvalidResponseLength.into());
+            return Err(self.invalid_response_length(response.payload, 3, None));
         }
 
         let did = u16::from_be_bytes([resp[0], resp[1]]);
-        if did != data_identifier {
-            return Err(Error::InvalidDataIdentifier(did).into());
+        if self.config.strict && did != data_identifier {
+            return Err(
+                response.deviation(ProtocolDeviation::InvalidDataIdentifier {
+                    expected: data_identifier,
+                    actual: did,
+                }),
+            );
         }
 
         Ok(())
@@ -293,16 +427,17 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         &self,
         mask: u8,
     ) -> Result<DTCReportNumberByStatusMask> {
-        let resp = self
-            .request(
+        let response = self
+            .request_response(
                 ServiceIdentifier::ReadDTCInformation as u8,
                 Some(ReportType::ReportNumberOfDTCByStatusMask as u8),
                 Some(&[mask]),
             )
             .await?;
+        let resp = response.data();
 
-        if resp.len() != 4 {
-            return Err(Error::InvalidResponseLength.into());
+        if resp.len() < 4 || (self.config.strict && resp.len() != 4) {
+            return Err(self.invalid_response_length(response.payload, 6, Some(6)));
         }
 
         let mask = resp[0];
@@ -330,21 +465,27 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
             buf.extend(data);
         }
 
-        let resp = self
-            .request(
+        let response = self
+            .request_response(
                 ServiceIdentifier::RoutineControl as u8,
                 Some(routine_control_type as u8),
                 Some(&buf),
             )
             .await?;
+        let resp = response.data();
 
         if resp.len() < 2 {
-            return Err(Error::InvalidResponseLength.into());
+            return Err(self.invalid_response_length(response.payload, 4, None));
         }
 
         let id = u16::from_be_bytes([resp[0], resp[1]]);
-        if id != routine_identifier {
-            return Err(Error::InvalidDataIdentifier(id).into());
+        if self.config.strict && id != routine_identifier {
+            return Err(
+                response.deviation(ProtocolDeviation::InvalidRoutineIdentifier {
+                    expected: routine_identifier,
+                    actual: id,
+                }),
+            );
         }
 
         Ok(if resp.len() > 2 {
@@ -378,16 +519,29 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         data.extend(memory_address);
         data.extend(memory_size);
 
-        let resp = self.request(sid as u8, None, Some(&data)).await?;
+        let response = self.request_response(sid as u8, None, Some(&data)).await?;
+        let resp = response.data();
 
         // Ensure the response contains at least a length format
         if resp.is_empty() {
-            return Err(Error::InvalidResponseLength.into());
+            return Err(self.invalid_response_length(response.payload, 2, None));
         }
 
         let num_length_bytes = (resp[0] >> 4) as usize;
-        if num_length_bytes == 0 || num_length_bytes > 8 || resp.len() != num_length_bytes + 1 {
+        if self.config.strict && (num_length_bytes == 0 || num_length_bytes > 8) {
+            return Err(
+                response.deviation(ProtocolDeviation::InvalidLengthFormat(num_length_bytes))
+            );
+        }
+        // The block-length parser supports at most eight bytes.
+        if num_length_bytes > 8 {
             return Err(Error::InvalidResponseLength.into());
+        }
+        if resp.len() < num_length_bytes + 1
+            || (self.config.strict && resp.len() != num_length_bytes + 1)
+        {
+            let expected = num_length_bytes + 2;
+            return Err(self.invalid_response_length(response.payload, expected, Some(expected)));
         }
 
         // Convert the length bytes to a usize
@@ -445,18 +599,25 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
             buf.extend(data);
         }
 
-        let resp = self
-            .request(ServiceIdentifier::TransferData as u8, None, Some(&buf))
+        let response = self
+            .request_response(ServiceIdentifier::TransferData as u8, None, Some(&buf))
             .await?;
+        let resp = response.data();
 
         // Ensure the response contains at least the block sequence counter
         if resp.is_empty() {
-            return Err(Error::InvalidResponseLength.into());
+            return Err(self.invalid_response_length(response.payload, 2, None));
         }
 
         // Check block sequence counter
-        if resp[0] != block_sequence_counter {
-            return Err(Error::InvalidBlockSequenceCounter(resp[0]).into());
+        if self.config.strict && resp[0] != block_sequence_counter {
+            let actual = resp[0];
+            return Err(
+                response.deviation(ProtocolDeviation::InvalidBlockSequenceCounter {
+                    expected: block_sequence_counter,
+                    actual,
+                }),
+            );
         }
 
         Ok(if resp.len() > 1 {
