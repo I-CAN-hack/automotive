@@ -13,6 +13,5 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     config::register(m)?;
     runtime::register(m)?;
     m.add_class::<uds::Client>()?;
-    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

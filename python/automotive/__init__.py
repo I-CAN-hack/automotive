@@ -5,7 +5,8 @@ Start with ``adapters.Adapter()``, ``IsoTPAdapter.from_id()``, and
 Hardware resources support ``async with`` and must be closed after use.
 """
 
-from ._native import __version__
+from importlib.metadata import version as _distribution_version
+
 from .errors import (
     AdapterError,
     AutomotiveError,
@@ -16,6 +17,8 @@ from .errors import (
     TransmissionCancelledError,
     UDSError,
 )
+
+__version__ = _distribution_version("automotive")
 
 __all__ = [
     "AdapterError",

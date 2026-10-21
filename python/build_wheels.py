@@ -1,7 +1,7 @@
 """Build the release wheel matrix locally without uploading anything.
 
 Run ``./build.sh --help`` inside nix develop. All release targets build by default.
-Upload the resulting artifacts with uv publish; --dry-run previews build commands.
+Upload the resulting artifacts with ./deploy.sh; --dry-run previews build commands.
 Cross builds require Rust target standard libraries, LLVM, and, for macOS, SDKROOT.
 """
 
@@ -16,7 +16,6 @@ import tomllib
 from pathlib import Path
 
 PYTHON_DIR = Path(__file__).resolve().parent
-REPO_DIR = PYTHON_DIR.parent
 TARGETS = {
     "linux-x86_64": "x86_64-unknown-linux-gnu",
     "linux-aarch64": "aarch64-unknown-linux-gnu",
@@ -34,14 +33,9 @@ def run(command: list[str], *, dry_run: bool, env: dict[str, str] | None = None)
 
 
 def version() -> str:
-    """Read the release version and reject mismatched Rust/Python manifests."""
-    with (REPO_DIR / "Cargo.toml").open("rb") as stream:
-        rust_version = tomllib.load(stream)["package"]["version"]
-    with (PYTHON_DIR / "Cargo.toml").open("rb") as stream:
-        python_version = tomllib.load(stream)["package"]["version"]
-    if rust_version != python_version:
-        raise ValueError("Rust and Python Cargo.toml versions must match")
-    return rust_version
+    """Read the Python release version from pyproject.toml."""
+    with (PYTHON_DIR / "pyproject.toml").open("rb") as stream:
+        return tomllib.load(stream)["project"]["version"]
 
 
 def build(targets: list[str], output: Path, *, dry_run: bool) -> None:

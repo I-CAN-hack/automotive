@@ -10,6 +10,12 @@ the Python package, its Rust extension, examples, and Scapy ECU regression tests
 
 ## Installation and development
 
+To test the alpha release from PyPI in another uv project:
+
+```sh
+uv add --prerelease allow automotive
+```
+
 To test the library in another uv project, with Rust and the adapter
 build dependencies available:
 
@@ -19,10 +25,10 @@ uv add "automotive @ git+https://github.com/I-CAN-hack/automotive.git#subdirecto
 
 From the repository root, with Rust and the adapter build dependencies available,
 use the latest
-[uv](https://docs.astral.sh/uv/getting-started/installation/) (at least 0.13.4):
+[uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 With Nix, first run `nix develop` from the repository root. The flake provides
-uv 0.13.4 and the native build dependencies, taking precedence over an older uv
+the required uv version and native build dependencies, taking precedence over an older uv
 on your normal PATH.
 
 ```sh
@@ -177,9 +183,10 @@ explicit runs fail if prerequisites are unavailable.
 
 ## Publishing to PyPI
 
-The Python package follows the Rust release version, currently `0.5.0`.
-`build.sh` handles local artifact builds; `uv publish` handles uploads. No CI publishing is
-configured. Release wheels use CPython's stable ABI starting at 3.11, so each
+Set the Python release version in `pyproject.toml`. Both `build.sh` and `deploy.sh`
+read it automatically: `build.sh` builds the artifacts, and `deploy.sh` uploads
+them with `uv publish`. No CI publishing is configured.
+Release wheels use CPython's stable ABI starting at 3.11, so each
 platform needs one wheel for regular CPython 3.11 and newer. Free-threaded Python
 builds need separate wheels and are not included here.
 
@@ -232,16 +239,16 @@ cross-compiled from Linux with an extracted Apple SDK. For the latter, set `SDKR
 SDKROOT=/path/to/MacOSX.sdk ./build.sh --target macos-arm64
 ```
 
-Cross-compiling produces artifacts; test imports and hardware behavior on the target platforms
-before publishing. See [Maturin's cross-compilation guide](https://www.maturin.rs/distribution.html#cross-compiling)
+Use alpha releases to test imports and hardware behavior on the target platforms
+before a stable release. See [Maturin's cross-compilation guide](https://www.maturin.rs/distribution.html#cross-compiling)
 and [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild).
 
-Builds collect wheels and a source distribution in `python/dist/0.5.0/`. The
+Builds collect wheels and a source distribution in `python/dist/<version>/`. The
 source distribution allows installation on other supported systems with Rust
 and native build prerequisites. Inspect the files and validate an upload:
 
 ```sh
-uv publish --dry-run 'dist/0.5.0/*'
+./deploy.sh --dry-run
 ```
 
 Create a PyPI account with 2FA and a verified email, then create an
@@ -251,16 +258,17 @@ releases. Provide the token through `UV_PUBLISH_TOKEN` in your shell or secret
 manager, and run:
 
 ```sh
-uv publish 'dist/0.5.0/*'
+./deploy.sh
 ```
 
 To rehearse against TestPyPI, use its separate account/token and upload endpoint:
 
 ```sh
-uv publish --publish-url https://test.pypi.org/legacy/ \
-    --check-url https://test.pypi.org/simple/ 'dist/0.5.0/*'
+./deploy.sh --publish-url https://test.pypi.org/legacy/ \
+    --check-url https://test.pypi.org/simple/
 ```
 
-Pass an explicit version directory to upload only that release. The build script's
-`--dist-dir PATH` option selects an alternate artifact directory.
+`deploy.sh` selects only the current version's directory and forwards its arguments
+to `uv publish`. If you build with `--dist-dir PATH`, publish that directory directly
+with `uv publish 'PATH/*'`.
 See the [uv publishing guide](https://docs.astral.sh/uv/guides/package/#publishing-your-package).

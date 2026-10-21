@@ -29,7 +29,7 @@ cargo test --features all
 ```
 
 The shell includes Rust, Cargo, rustfmt, Clippy, rust-analyzer, libusb,
-libclang for bindgen, maturin, uv 0.13.4, and Python with Scapy. On Linux it also
+libclang for bindgen, maturin, uv, and Python with Scapy. On Linux it also
 includes the CAN and network tools used by the virtual ECU tests. The flake lock
 and release checksums pin the packages.
 
@@ -55,8 +55,8 @@ their Windows SDKs and drivers.
 
 ## Publishing the Rust crate
 
-The breaking Rust API changes are released as `0.5.0`. Keep the versions in
-`Cargo.toml` and `python/Cargo.toml` aligned when preparing future releases.
+Keep the Rust versions in `Cargo.toml` and `python/Cargo.toml` aligned when
+preparing releases. The Python package version is set in `python/pyproject.toml`.
 
 After the Rust tests pass, verify the package and publish it locally:
 
