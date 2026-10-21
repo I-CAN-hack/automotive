@@ -7,7 +7,12 @@
 //! [`Error::ProtocolDeviation`]. Minimum safe parsing lengths always apply.
 //! Strict response validation follows ISO 14229-1:2013: negative-response
 //! structure and request SID (§7.4), sub-function echoes (§8.3.2), service-specific
-//! records (§9–§14), and NRC/DTC format values (Annex A.1 and Annex D.4).
+//! records (§9–§14). Unknown NRCs and DTC formats are preserved in both modes.
+//! Service methods accept typed arguments or raw numbers directly, for example
+//! `ecu_reset(ResetType::HardReset)` and `ecu_reset(0x1)`. Code enums preserve
+//! other values in `NonStandard`; use `as_raw()` when a wire integer is needed.
+//! Compression and encryption use separate validated nibble types and also
+//! accept raw numbers. Values above `0xf` return an error before sending.
 //! Memory reads return the requested byte count (§10.3), and memory-write
 //! responses echo the ALFID, address, and size (§10.8.3).
 //! [`UDSClient::suppress_positive_responses`] provides a scoped view for
@@ -23,11 +28,14 @@
 //!     let uds = automotive::protocols::uds::UDSClient::new(&isotp);
 //!
 //!     uds.tester_present().await?;
-//!     let response = uds.read_data_by_identifier(automotive::protocols::uds::DataIdentifier::ApplicationSoftwareIdentification as u16).await?;
+//!     let response = uds.read_data_by_identifier(automotive::protocols::uds::DataIdentifier::ApplicationSoftwareIdentification).await?;
 //!
 //!     println!("Application Software Identification: {}", hex::encode(response));
 //!     Ok(())
 //! }
+
+#[macro_use]
+mod macros;
 
 mod config;
 mod constants;
@@ -46,6 +54,21 @@ pub use types::*;
 
 use std::sync::RwLock;
 use tracing::info;
+
+// Encode numeric memory fields without truncating values or dropping leading zeros.
+fn memory_bytes(value: u64, width: usize) -> std::result::Result<Vec<u8>, Error> {
+    if !(1..=8).contains(&width) {
+        return Err(Error::InvalidMemoryValueWidth(width));
+    }
+
+    let bytes = value.to_be_bytes();
+    let start = bytes.len() - width;
+    if bytes[..start].iter().any(|&byte| byte != 0) {
+        return Err(Error::MemoryValueOverflow { value, width });
+    }
+
+    Ok(bytes[start..].to_vec())
+}
 
 struct Response {
     payload: Vec<u8>,
@@ -118,6 +141,8 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     /// data. Strict mode verifies response headers and negative-response PDUs.
     /// Service methods also validate service-specific records. Deviations include
     /// the full received PDU in [`Error::ProtocolDeviation`].
+    /// The SID can be a [`ServiceIdentifier`] or raw `u8`. Sub-functions remain
+    /// raw because their domain depends on the service.
     ///
     /// Setting bit 7 of `sub_function` suppresses positive responses. Initial
     /// silence returns [`RequestOutcome::Suppressed`]. After NRC 0x78, a final
@@ -128,12 +153,15 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     /// automatically. Requests without a sub-function still require a response.
     pub async fn request(
         &self,
-        sid: u8,
+        sid: impl Into<ServiceIdentifier>,
         sub_function: Option<u8>,
         data: Option<&[u8]>,
     ) -> Result<RequestOutcome<Vec<u8>>> {
         Ok(
-            match self.request_exchange(sid, sub_function, data).await? {
+            match self
+                .request_exchange(sid.into(), sub_function, data)
+                .await?
+            {
                 RequestOutcome::PositiveResponse(response) => {
                     RequestOutcome::PositiveResponse(response.data().to_vec())
                 }
@@ -145,7 +173,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     // Service helpers that require a positive response use this path.
     async fn request_response(
         &self,
-        sid: u8,
+        sid: ServiceIdentifier,
         sub_function: Option<u8>,
         data: Option<&[u8]>,
     ) -> Result<Response> {
@@ -157,7 +185,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
 
     async fn request_exchange(
         &self,
-        sid: u8,
+        sid: ServiceIdentifier,
         sub_function: Option<u8>,
         data: Option<&[u8]>,
     ) -> Result<RequestOutcome<Response>> {
@@ -172,10 +200,11 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
 
     async fn request_inner(
         &self,
-        sid: u8,
+        sid: ServiceIdentifier,
         sub_function: Option<u8>,
         data: Option<&[u8]>,
     ) -> Result<RequestOutcome<Response>> {
+        let sid = sid.as_raw();
         let mut request: Vec<u8> = vec![sid];
 
         if let Some(sub_function) = sub_function {
@@ -221,26 +250,10 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
                         data_start: 0,
                     }
                     .deviation(ProtocolDeviation::InvalidRequestServiceId {
-                        expected: sid,
-                        actual,
+                        expected: ServiceIdentifier::from_raw(sid),
+                        actual: ServiceIdentifier::from_raw(actual),
                     }));
                 }
-                // Annex A.1 reserves 0x38–0x4F for extended data-link security
-                // and 0xF0–0xFE for vehicle-manufacturer conditions.
-                if self.config.strict
-                    && !matches!(response[2],
-                    0x10..=0x14 | 0x21..=0x22 | 0x24..=0x26 | 0x31 | 0x33 |
-                    0x35..=0x4f | 0x70..=0x73 | 0x78 | 0x7e..=0x7f |
-                    0x81..=0x8d | 0x8f..=0x93 | 0xf0..=0xfe)
-                {
-                    let code = response[2];
-                    return Err(Response {
-                        payload: response,
-                        data_start: 0,
-                    }
-                    .deviation(ProtocolDeviation::InvalidNegativeResponseCode(code)));
-                }
-
                 let code: NegativeResponseCode = response[2].into();
                 if code == NegativeResponseCode::RequestCorrectlyReceivedResponsePending {
                     info!("Received Response Pending");
@@ -264,8 +277,8 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
                     data_start: 0,
                 }
                 .deviation(ProtocolDeviation::InvalidServiceId {
-                    expected: sid | POSITIVE_RESPONSE,
-                    actual: response_sid,
+                    expected: ServiceIdentifier::from_raw(sid | POSITIVE_RESPONSE),
+                    actual: ServiceIdentifier::from_raw(response_sid),
                 }));
             }
 
@@ -349,12 +362,13 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     /// Suppressed silence returns `None` and leaves current timings unchanged.
     pub async fn diagnostic_session_control(
         &self,
-        session_type: u8,
+        session_type: impl Into<SessionType>,
     ) -> Result<Option<types::SessionParameterRecord>> {
+        let session_type: SessionType = session_type.into();
         let RequestOutcome::PositiveResponse(response) = self
             .request_exchange(
-                ServiceIdentifier::DiagnosticSessionControl as u8,
-                Some(session_type),
+                ServiceIdentifier::DiagnosticSessionControl,
+                Some(session_type.as_raw()),
                 None,
             )
             .await?
@@ -388,17 +402,20 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         Ok(result)
     }
 
-    /// 0x11 - ECU Reset. The `reset_type` parameter can be used to specify the type of reset to perform. Use the [`constants::ResetType`] enum for  the reset types defined in the standard. This function returns the power down time when the reset type is [`constants::ResetType::EnableRapidPowerShutDown`].
+    /// 0x11 - ECU Reset. Accepts a [`ResetType`] or raw `u8` without conversion.
+    /// Returns the power down time for [`ResetType::EnableRapidPowerShutDown`].
     /// Suppressed silence returns `None`.
-    pub async fn ecu_reset(&self, reset_type: u8) -> Result<Option<u8>> {
+    pub async fn ecu_reset(&self, reset_type: impl Into<ResetType>) -> Result<Option<u8>> {
+        let reset_type: ResetType = reset_type.into();
+        let reset_type = reset_type.as_raw();
         let RequestOutcome::PositiveResponse(response) = self
-            .request_exchange(ServiceIdentifier::EcuReset as u8, Some(reset_type), None)
+            .request_exchange(ServiceIdentifier::EcuReset, Some(reset_type), None)
             .await?
         else {
             return Ok(None);
         };
         // §9.3.3, Table 35: powerDownTime is present only for reset type 0x04.
-        let expected = if reset_type & 0x7f == ResetType::EnableRapidPowerShutDown as u8 {
+        let expected = if reset_type & 0x7f == ResetType::EnableRapidPowerShutDown.as_raw() {
             3
         } else {
             2
@@ -415,25 +432,25 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         Ok(result)
     }
 
-    /// 0x27 - Security Access. Odd `access_type` values are used to request a seed, even values to send a key. The `data` parameter is optional when requesting a seed. You can use the [`constants::SecurityAccessType`] enum for the default security level.
+    /// 0x27 - Security Access. Accepts a [`SecurityAccessType`] or raw `u8`.
+    /// Odd values request a seed; even values send a key. The `data` parameter
+    /// is optional when requesting a seed and required when sending a key.
     /// Returns `Some(seed)` for a received seed. SendKey and suppressed silence
     /// return `None`.
     pub async fn security_access(
         &self,
-        access_type: u8,
+        access_type: impl Into<SecurityAccessType>,
         data: Option<&[u8]>,
     ) -> Result<Option<Vec<u8>>> {
+        let access_type: SecurityAccessType = access_type.into();
+        let access_type = access_type.as_raw();
         let send_key = access_type % 2 == 0;
         if send_key && data.is_none() {
             panic!("Missing data parameter when sending key");
         }
 
         let RequestOutcome::PositiveResponse(response) = self
-            .request_exchange(
-                ServiceIdentifier::SecurityAccess as u8,
-                Some(access_type),
-                data,
-            )
+            .request_exchange(ServiceIdentifier::SecurityAccess, Some(access_type), data)
             .await?
         else {
             return Ok(None);
@@ -452,7 +469,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     /// 0x3E - Tester Present.
     pub async fn tester_present(&self) -> Result<()> {
         let response = self
-            .request_response(ServiceIdentifier::TesterPresent as u8, Some(0), None)
+            .request_response(ServiceIdentifier::TesterPresent, Some(0), None)
             .await?;
         self.validate_response_length(response, 2, Some(2))?;
         Ok(())
@@ -482,7 +499,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
             buf.extend(data);
         }
 
-        let response = self.request_response(sid as u8, None, Some(&buf)).await?;
+        let response = self.request_response(sid, None, Some(&buf)).await?;
         if self.config.strict {
             let resp = response.data();
             if sid == ServiceIdentifier::ReadMemoryByAddress {
@@ -541,15 +558,16 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         Ok(response.data().to_vec())
     }
 
-    /// 0x22 - Read Data By Identifier. Specify a 16 bit data identifier, or use a constant from [`constants::DataIdentifier`] for standardized identifiers. Reading multiple identifiers simultaneously is possible on some ECUs, but not supported by this function.
-    pub async fn read_data_by_identifier(&self, data_identifier: u16) -> Result<Vec<u8>> {
-        let did = data_identifier.to_be_bytes();
+    /// 0x22 - Read Data By Identifier. Accepts a [`DataIdentifier`] or raw `u16`.
+    /// Reading multiple identifiers in one request is not supported.
+    pub async fn read_data_by_identifier(
+        &self,
+        data_identifier: impl Into<DataIdentifier>,
+    ) -> Result<Vec<u8>> {
+        let data_identifier: DataIdentifier = data_identifier.into();
+        let did = data_identifier.as_raw().to_be_bytes();
         let response = self
-            .request_response(
-                ServiceIdentifier::ReadDataByIdentifier as u8,
-                None,
-                Some(&did),
-            )
+            .request_response(ServiceIdentifier::ReadDataByIdentifier, None, Some(&did))
             .await?;
         // §10.2.3, Table 144: at least one data-record byte is mandatory.
         let response = self.validate_response_length(response, 4, None)?;
@@ -559,8 +577,8 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
             return Err(self.invalid_response_length(response.payload, 3, None));
         }
 
-        let did = u16::from_be_bytes([resp[0], resp[1]]);
-        if self.config.strict && did != data_identifier {
+        let did = DataIdentifier::from_raw(u16::from_be_bytes([resp[0], resp[1]]));
+        if self.config.strict && did.as_raw() != data_identifier.as_raw() {
             return Err(
                 response.deviation(ProtocolDeviation::InvalidDataIdentifier {
                     expected: data_identifier,
@@ -573,6 +591,8 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     }
 
     /// 0x23 - Read Memory By Address. The `memory_address` parameter should be the address to read from, and the `memory_size` parameter should be the number of bytes to read.
+    /// Both fields are big-endian bytes. For numeric fields with separate byte
+    /// widths, use [`Self::read_memory_by_address_alfid`].
     pub async fn read_memory_by_address(
         &self,
         memory_address: &[u8],
@@ -587,21 +607,35 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         .await
     }
 
-    /// 0x2E - Write Data By Identifier. Specify a 16 bit data identifier, or use a constant from [`constants::DataIdentifier`] for standardized identifiers.
+    /// 0x23 - Read Memory By Address with numeric address and size.
+    ///
+    /// `address_width` and `size_width` are byte counts from 1 to 8, in that
+    /// order. Invalid widths return [`Error::InvalidMemoryValueWidth`]; values
+    /// that do not fit return [`Error::MemoryValueOverflow`] before sending.
+    pub async fn read_memory_by_address_alfid(
+        &self,
+        memory_address: u64,
+        memory_size: u64,
+        address_width: usize,
+        size_width: usize,
+    ) -> Result<Vec<u8>> {
+        let address = memory_bytes(memory_address, address_width)?;
+        let size = memory_bytes(memory_size, size_width)?;
+        self.read_memory_by_address(&address, &size).await
+    }
+
+    /// 0x2E - Write Data By Identifier. Accepts a [`DataIdentifier`] or raw `u16`.
     pub async fn write_data_by_identifier(
         &self,
-        data_identifier: u16,
+        data_identifier: impl Into<DataIdentifier>,
         data_record: &[u8],
     ) -> Result<()> {
-        let mut data: Vec<u8> = data_identifier.to_be_bytes().to_vec();
+        let data_identifier: DataIdentifier = data_identifier.into();
+        let mut data: Vec<u8> = data_identifier.as_raw().to_be_bytes().to_vec();
         data.extend(data_record);
 
         let response = self
-            .request_response(
-                ServiceIdentifier::WriteDataByIdentifier as u8,
-                None,
-                Some(&data),
-            )
+            .request_response(ServiceIdentifier::WriteDataByIdentifier, None, Some(&data))
             .await?;
         let response = self.validate_response_length(response, 3, Some(3))?;
         let resp = response.data();
@@ -610,8 +644,8 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
             return Err(self.invalid_response_length(response.payload, 3, None));
         }
 
-        let did = u16::from_be_bytes([resp[0], resp[1]]);
-        if self.config.strict && did != data_identifier {
+        let did = DataIdentifier::from_raw(u16::from_be_bytes([resp[0], resp[1]]));
+        if self.config.strict && did.as_raw() != data_identifier.as_raw() {
             return Err(
                 response.deviation(ProtocolDeviation::InvalidDataIdentifier {
                     expected: data_identifier,
@@ -624,6 +658,8 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     }
 
     /// 0x3D - Write Memory By Address. The `memory_address` parameter should be the address to write to, and the `memory_size` parameter should be the number of bytes to write. The `data` parameter should be the data to write.
+    /// Both fields are big-endian bytes. For numeric fields with separate byte
+    /// widths, use [`Self::write_memory_by_address_alfid`].
     pub async fn write_memory_by_address(
         &self,
         memory_address: &[u8],
@@ -640,6 +676,24 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         Ok(())
     }
 
+    /// 0x3D - Write Memory By Address with numeric address and size.
+    ///
+    /// `address_width` and `size_width` are byte counts from 1 to 8, in that
+    /// order. Invalid widths return [`Error::InvalidMemoryValueWidth`]; values
+    /// that do not fit return [`Error::MemoryValueOverflow`] before sending.
+    pub async fn write_memory_by_address_alfid(
+        &self,
+        memory_address: u64,
+        memory_size: u64,
+        address_width: usize,
+        size_width: usize,
+        data: &[u8],
+    ) -> Result<()> {
+        let address = memory_bytes(memory_address, address_width)?;
+        let size = memory_bytes(memory_size, size_width)?;
+        self.write_memory_by_address(&address, &size, data).await
+    }
+
     /// 0x19, sub-function 0x01 - Report the number of DTCs matching `mask`.
     pub async fn read_dtc_information_number_of_dtc_by_status_mask(
         &self,
@@ -647,8 +701,8 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     ) -> Result<DTCReportNumberByStatusMask> {
         let response = self
             .request_response(
-                ServiceIdentifier::ReadDTCInformation as u8,
-                Some(ReportType::ReportNumberOfDTCByStatusMask as u8),
+                ServiceIdentifier::ReadDTCInformation,
+                Some(ReportType::ReportNumberOfDTCByStatusMask.as_raw()),
                 Some(&[mask]),
             )
             .await?;
@@ -666,14 +720,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         }
 
         let mask = resp[0];
-        let Some(format) = DTCFormatIdentifier::from_repr(resp[1]) else {
-            let format = resp[1];
-            return Err(if self.config.strict {
-                response.deviation(ProtocolDeviation::InvalidDTCFormatIdentifier(format))
-            } else {
-                Error::InvalidDTCFormatIdentifier(format).into()
-            });
-        };
+        let format = DTCFormatIdentifier::from_raw(resp[1]);
         let count = u16::from_be_bytes([resp[2], resp[3]]);
 
         Ok(DTCReportNumberByStatusMask {
@@ -683,33 +730,27 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         })
     }
 
-    /// 0x31 - Routine Control. The `routine_control_type` selects the operation such as Start and Stop, see [`constants::RoutineControlType`]. The `routine_identifier` is a 16-bit identifier for the routine. The `data` parameter is optional and can be used when starting or stopping a routine. The ECU can optionally return data for all routine operations.
+    /// 0x31 - Routine Control. Accepts a [`RoutineControlType`] or raw `u8`,
+    /// and a [`RoutineIdentifier`] or raw `u16`. Request and response data are
+    /// optional for all routine operations.
     pub async fn routine_control(
         &self,
-        routine_control_type: constants::RoutineControlType,
-        routine_identifier: u16,
+        routine_control_type: impl Into<RoutineControlType>,
+        routine_identifier: impl Into<RoutineIdentifier>,
         data: Option<&[u8]>,
     ) -> Result<Option<Vec<u8>>> {
-        self.routine_control_inner(routine_control_type as u8, routine_identifier, data)
-            .await
-    }
-
-    async fn routine_control_inner(
-        &self,
-        routine_control_type: u8,
-        routine_identifier: u16,
-        data: Option<&[u8]>,
-    ) -> Result<Option<Vec<u8>>> {
+        let routine_control_type: RoutineControlType = routine_control_type.into();
+        let routine_identifier: RoutineIdentifier = routine_identifier.into();
         let mut buf: Vec<u8> = vec![];
-        buf.extend(routine_identifier.to_be_bytes());
+        buf.extend(routine_identifier.as_raw().to_be_bytes());
         if let Some(data) = data {
             buf.extend(data);
         }
 
         let RequestOutcome::PositiveResponse(response) = self
             .request_exchange(
-                ServiceIdentifier::RoutineControl as u8,
-                Some(routine_control_type),
+                ServiceIdentifier::RoutineControl,
+                Some(routine_control_type.as_raw()),
                 Some(&buf),
             )
             .await?
@@ -722,8 +763,8 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
             return Err(self.invalid_response_length(response.payload, 4, None));
         }
 
-        let id = u16::from_be_bytes([resp[0], resp[1]]);
-        if self.config.strict && id != routine_identifier {
+        let id = RoutineIdentifier::from_raw(u16::from_be_bytes([resp[0], resp[1]]));
+        if self.config.strict && id.as_raw() != routine_identifier.as_raw() {
             return Err(
                 response.deviation(ProtocolDeviation::InvalidRoutineIdentifier {
                     expected: routine_identifier,
@@ -742,20 +783,18 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     async fn request_download_upload(
         &self,
         sid: ServiceIdentifier,
-        compression_method: u8,
-        encryption_method: u8,
+        compression_method: CompressionMethod,
+        encryption_method: EncryptionMethod,
         memory_address: &[u8],
         memory_size: &[u8],
     ) -> Result<usize> {
         assert!(
             sid == ServiceIdentifier::RequestDownload || sid == ServiceIdentifier::RequestUpload
         );
-        assert!(compression_method <= 0xF);
-        assert!(encryption_method <= 0xF);
         assert!(!memory_address.is_empty() && memory_address.len() <= 0xF);
         assert!(!memory_size.is_empty() && memory_size.len() <= 0xF);
 
-        let data_format = (compression_method << 4) | encryption_method;
+        let data_format = (compression_method.as_raw() << 4) | encryption_method.as_raw();
         let address_and_length_format =
             ((memory_size.len() as u8) << 4) | (memory_address.len() as u8);
 
@@ -763,7 +802,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         data.extend(memory_address);
         data.extend(memory_size);
 
-        let response = self.request_response(sid as u8, None, Some(&data)).await?;
+        let response = self.request_response(sid, None, Some(&data)).await?;
         let resp = response.data();
 
         // Ensure the response contains at least a length format
@@ -813,15 +852,29 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     }
 
     /// 0x34 - Request Download. Initiates a transfer from the client to the ECU.
+    /// Address and size are big-endian bytes. For numeric fields with separate
+    /// byte widths, use [`Self::request_download_alfid`].
+    /// Compression and encryption accept validated types or raw values in
+    /// `0..=0xf`, occupying the high and low nibble respectively. Invalid raw
+    /// values return [`Error::InvalidCompressionMethod`] or
+    /// [`Error::InvalidEncryptionMethod`] before sending.
     /// Returns the maximum complete TransferData request length, including SID
     /// and block counter. Values above `usize::MAX` return [`Error::BlockLengthOverflow`].
-    pub async fn request_download(
+    pub async fn request_download<C, E>(
         &self,
-        compression_method: u8,
-        encryption_method: u8,
+        compression_method: C,
+        encryption_method: E,
         memory_address: &[u8],
         memory_size: &[u8],
-    ) -> Result<usize> {
+    ) -> Result<usize>
+    where
+        C: TryInto<CompressionMethod>,
+        C::Error: Into<Error>,
+        E: TryInto<EncryptionMethod>,
+        E::Error: Into<Error>,
+    {
+        let compression_method = compression_method.try_into().map_err(Into::into)?;
+        let encryption_method = encryption_method.try_into().map_err(Into::into)?;
         self.request_download_upload(
             ServiceIdentifier::RequestDownload,
             compression_method,
@@ -832,16 +885,55 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         .await
     }
 
+    /// 0x34 - Request Download with numeric address and size.
+    ///
+    /// `address_width` and `size_width` are byte counts from 1 to 8, in that
+    /// order. Invalid widths return [`Error::InvalidMemoryValueWidth`]; values
+    /// that do not fit return [`Error::MemoryValueOverflow`] before sending.
+    /// Compression, encryption, and the returned block length follow
+    /// [`Self::request_download`].
+    pub async fn request_download_alfid<C, E>(
+        &self,
+        compression_method: C,
+        encryption_method: E,
+        memory_address: u64,
+        memory_size: u64,
+        address_width: usize,
+        size_width: usize,
+    ) -> Result<usize>
+    where
+        C: TryInto<CompressionMethod>,
+        C::Error: Into<Error>,
+        E: TryInto<EncryptionMethod>,
+        E::Error: Into<Error>,
+    {
+        let address = memory_bytes(memory_address, address_width)?;
+        let size = memory_bytes(memory_size, size_width)?;
+        self.request_download(compression_method, encryption_method, &address, &size)
+            .await
+    }
+
     /// 0x35 - Request Upload. Initiates a transfer from the ECU to the client.
+    /// Address and size are big-endian bytes. For numeric fields with separate
+    /// byte widths, use [`Self::request_upload_alfid`].
+    /// Compression and encryption follow the same rules as [`Self::request_download`].
     /// Returns the maximum complete TransferData response length, including SID
     /// and block counter. Values above `usize::MAX` return [`Error::BlockLengthOverflow`].
-    pub async fn request_upload(
+    pub async fn request_upload<C, E>(
         &self,
-        compression_method: u8,
-        encryption_method: u8,
+        compression_method: C,
+        encryption_method: E,
         memory_address: &[u8],
         memory_size: &[u8],
-    ) -> Result<usize> {
+    ) -> Result<usize>
+    where
+        C: TryInto<CompressionMethod>,
+        C::Error: Into<Error>,
+        E: TryInto<EncryptionMethod>,
+        E::Error: Into<Error>,
+    {
+        let compression_method = compression_method.try_into().map_err(Into::into)?;
+        let encryption_method = encryption_method.try_into().map_err(Into::into)?;
         self.request_download_upload(
             ServiceIdentifier::RequestUpload,
             compression_method,
@@ -850,6 +942,34 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
             memory_size,
         )
         .await
+    }
+
+    /// 0x35 - Request Upload with numeric address and size.
+    ///
+    /// `address_width` and `size_width` are byte counts from 1 to 8, in that
+    /// order. Invalid widths return [`Error::InvalidMemoryValueWidth`]; values
+    /// that do not fit return [`Error::MemoryValueOverflow`] before sending.
+    /// Compression, encryption, and the returned block length follow
+    /// [`Self::request_upload`].
+    pub async fn request_upload_alfid<C, E>(
+        &self,
+        compression_method: C,
+        encryption_method: E,
+        memory_address: u64,
+        memory_size: u64,
+        address_width: usize,
+        size_width: usize,
+    ) -> Result<usize>
+    where
+        C: TryInto<CompressionMethod>,
+        C::Error: Into<Error>,
+        E: TryInto<EncryptionMethod>,
+        E::Error: Into<Error>,
+    {
+        let address = memory_bytes(memory_address, address_width)?;
+        let size = memory_bytes(memory_size, size_width)?;
+        self.request_upload(compression_method, encryption_method, &address, &size)
+            .await
     }
 
     /// 0x36 - Transfer Data. Used to transfer data to or from the ECU. The `data` parameter should be a slice of the data to transfer. The `transfer_request` parameter should be the sequence number of the transfer request, starting at 1. The `data` parameter should be `None` when an upload is requested, and the function will return the data received from the ECU. The `data` parameter should be `Some` when a download is requested, and the function will return `None`.
@@ -864,7 +984,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         }
 
         let response = self
-            .request_response(ServiceIdentifier::TransferData as u8, None, Some(&buf))
+            .request_response(ServiceIdentifier::TransferData, None, Some(&buf))
             .await?;
         // §14.4.3, Table 405: upload responses contain at least one data byte.
         let minimum = if data.is_none() { 3 } else { 2 };
@@ -897,7 +1017,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     /// 0x37 - Request Transfer Exit. Used to terminate an upload or download. Has optional `data` parameter for additional information, and can optionally return additional information from the ECU. For example, this can be used to contain a checksum.
     pub async fn request_transfer_exit(&self, data: Option<&[u8]>) -> Result<Option<Vec<u8>>> {
         let response = self
-            .request_response(ServiceIdentifier::RequestTransferExit as u8, None, data)
+            .request_response(ServiceIdentifier::RequestTransferExit, None, data)
             .await?;
         let resp = response.data();
 

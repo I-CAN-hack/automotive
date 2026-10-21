@@ -1,8 +1,9 @@
 //! Scoped access to services with positive-response suppression enabled.
 
 use super::{
-    DTCReportNumberByStatusMask, ReportType, RequestOutcome, RoutineControlType, ServiceIdentifier,
-    SessionParameterRecord, UDSClient,
+    DTCReportNumberByStatusMask, ReportType, RequestOutcome, ResetType, RoutineControlType,
+    RoutineIdentifier, SecurityAccessType, ServiceIdentifier, SessionParameterRecord, SessionType,
+    UDSClient,
 };
 use crate::{Result, TransportLayer};
 use std::ops::Deref;
@@ -29,7 +30,7 @@ impl<T: TransportLayer> SuppressedUDSClient<'_, '_, T> {
     /// Requests without a sub-function still require a response.
     pub async fn request(
         &self,
-        sid: u8,
+        sid: impl Into<ServiceIdentifier>,
         sub_function: Option<u8>,
         data: Option<&[u8]>,
     ) -> Result<RequestOutcome<Vec<u8>>> {
@@ -41,33 +42,38 @@ impl<T: TransportLayer> SuppressedUDSClient<'_, '_, T> {
     /// 0x10 - Diagnostic Session Control.
     pub async fn diagnostic_session_control(
         &self,
-        session_type: u8,
+        session_type: impl Into<SessionType>,
     ) -> Result<Option<SessionParameterRecord>> {
+        let session_type: SessionType = session_type.into();
         self.client
-            .diagnostic_session_control(session_type | 0x80)
+            .diagnostic_session_control(session_type.as_raw() | 0x80)
             .await
     }
 
     /// 0x11 - ECU Reset.
-    pub async fn ecu_reset(&self, reset_type: u8) -> Result<Option<u8>> {
-        self.client.ecu_reset(reset_type | 0x80).await
+    pub async fn ecu_reset(&self, reset_type: impl Into<ResetType>) -> Result<Option<u8>> {
+        let reset_type: ResetType = reset_type.into();
+        self.client.ecu_reset(reset_type.as_raw() | 0x80).await
     }
 
     /// 0x27 - Security Access. Returns a received seed, or `None` for SendKey
     /// and suppressed silence.
     pub async fn security_access(
         &self,
-        access_type: u8,
+        access_type: impl Into<SecurityAccessType>,
         data: Option<&[u8]>,
     ) -> Result<Option<Vec<u8>>> {
-        self.client.security_access(access_type | 0x80, data).await
+        let access_type: SecurityAccessType = access_type.into();
+        self.client
+            .security_access(access_type.as_raw() | 0x80, data)
+            .await
     }
 
     /// 0x3E - Tester Present.
     pub async fn tester_present(&self) -> Result<()> {
         if let RequestOutcome::PositiveResponse(response) = self
             .client
-            .request_exchange(ServiceIdentifier::TesterPresent as u8, Some(0x80), None)
+            .request_exchange(ServiceIdentifier::TesterPresent, Some(0x80), None)
             .await?
         {
             self.client.validate_response_length(response, 2, Some(2))?;
@@ -84,8 +90,8 @@ impl<T: TransportLayer> SuppressedUDSClient<'_, '_, T> {
         match self
             .client
             .request_exchange(
-                ServiceIdentifier::ReadDTCInformation as u8,
-                Some(ReportType::ReportNumberOfDTCByStatusMask as u8 | 0x80),
+                ServiceIdentifier::ReadDTCInformation,
+                Some(ReportType::ReportNumberOfDTCByStatusMask.as_raw() | 0x80),
                 Some(&[mask]),
             )
             .await?
@@ -101,12 +107,17 @@ impl<T: TransportLayer> SuppressedUDSClient<'_, '_, T> {
     /// 0x31 - Routine Control.
     pub async fn routine_control(
         &self,
-        routine_control_type: RoutineControlType,
-        routine_identifier: u16,
+        routine_control_type: impl Into<RoutineControlType>,
+        routine_identifier: impl Into<RoutineIdentifier>,
         data: Option<&[u8]>,
     ) -> Result<Option<Vec<u8>>> {
+        let routine_control_type: RoutineControlType = routine_control_type.into();
         self.client
-            .routine_control_inner(routine_control_type as u8 | 0x80, routine_identifier, data)
+            .routine_control(
+                routine_control_type.as_raw() | 0x80,
+                routine_identifier,
+                data,
+            )
             .await
     }
 }

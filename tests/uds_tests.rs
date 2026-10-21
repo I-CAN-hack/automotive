@@ -6,8 +6,8 @@ use automotive::can::Identifier;
 use automotive::protocols::uds::Error as UDSError;
 use automotive::protocols::uds::NegativeResponseCode;
 use automotive::protocols::uds::{
-    DTCFormatIdentifier, ProtocolDeviation, RequestOutcome, RoutineControlType, UDSClient,
-    UDSConfig,
+    DTCFormatIdentifier, ProtocolDeviation, RequestOutcome, RoutineControlType, ServiceIdentifier,
+    UDSClient, UDSConfig,
 };
 use automotive::transports::isotp::{IsoTPAdapter, IsoTPConfig};
 use automotive::Error;
@@ -148,17 +148,21 @@ async fn uds_test_sids() {
     );
     assert_eq!(dtcs.dtc_count, 2);
 
-    let address = [0x12, 0x34, 0x56];
-    let size = [0, 8];
+    let address = 0x123456;
+    let size = 8;
     assert_eq!(
-        uds.read_memory_by_address(&address, &size).await.unwrap(),
+        uds.read_memory_by_address_alfid(address, size, 3, 2)
+            .await
+            .unwrap(),
         b"abcdefgh"
     );
-    uds.write_memory_by_address(&address, &size, b"written!")
+    uds.write_memory_by_address_alfid(address, size, 3, 2, b"written!")
         .await
         .unwrap();
     assert_eq!(
-        uds.read_memory_by_address(&address, &size).await.unwrap(),
+        uds.read_memory_by_address_alfid(address, size, 3, 2)
+            .await
+            .unwrap(),
         b"written!"
     );
 
@@ -182,17 +186,26 @@ async fn uds_test_sids() {
     );
 
     assert_eq!(
-        uds.request_download(0, 0, &address, &size).await.unwrap(),
+        uds.request_download_alfid(0, 0, address, size, 3, 2)
+            .await
+            .unwrap(),
         10
     );
     assert_eq!(uds.transfer_data(1, Some(b"download")).await.unwrap(), None);
     assert_eq!(uds.request_transfer_exit(None).await.unwrap(), None);
     assert_eq!(
-        uds.read_memory_by_address(&address, &size).await.unwrap(),
+        uds.read_memory_by_address_alfid(address, size, 3, 2)
+            .await
+            .unwrap(),
         b"download"
     );
 
-    assert_eq!(uds.request_upload(0, 0, &address, &size).await.unwrap(), 10);
+    assert_eq!(
+        uds.request_upload_alfid(0, 0, address, size, 3, 2)
+            .await
+            .unwrap(),
+        10
+    );
     assert_eq!(
         uds.transfer_data(1, None).await.unwrap(),
         Some(b"download".to_vec())
@@ -456,8 +469,8 @@ async fn uds_suppressed_pending_pdus_are_validated_before_extending_the_wait() {
             "wrong-pending-sid",
             vec![0x7f, 0x3f, 0x78],
             ProtocolDeviation::InvalidRequestServiceId {
-                expected: 0x3e,
-                actual: 0x3f,
+                expected: ServiceIdentifier::TesterPresent,
+                actual: ServiceIdentifier::NonStandard(0x3f),
             },
         ),
         (
@@ -468,11 +481,6 @@ async fn uds_suppressed_pending_pdus_are_validated_before_extending_the_wait() {
                 maximum: Some(3),
             },
         ),
-        (
-            "reserved-nrc",
-            vec![0x7f, 0x3e, 0x15],
-            ProtocolDeviation::InvalidNegativeResponseCode(0x15),
-        ),
     ] {
         let adapter = vcan_adapter();
         let _vecu = vecu_spawn_with_case(&adapter, Some(case)).await;
@@ -482,13 +490,6 @@ async fn uds_suppressed_pending_pdus_are_validated_before_extending_the_wait() {
             let result = uds.suppress_positive_responses().tester_present().await;
             if strict {
                 assert_deviation(result.unwrap_err(), deviation.clone(), &payload);
-            } else if case == "reserved-nrc" {
-                assert!(matches!(
-                    result,
-                    Err(Error::UDSError(UDSError::NegativeResponse(
-                        NegativeResponseCode::NonStandard(0x15)
-                    )))
-                ));
             } else {
                 assert!(matches!(result, Err(Error::Timeout)));
             }
@@ -567,4 +568,21 @@ async fn uds_suppressed_session_silence_preserves_shared_server_timings() {
     let start = tokio::time::Instant::now();
     suppressed.tester_present().await.unwrap();
     assert!(start.elapsed() >= timing.p2_server_max);
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn uds_suppressed_unknown_response_codes_are_preserved_in_both_modes() {
+    let adapter = vcan_adapter();
+    let _vecu = vecu_spawn_with_case(&adapter, Some("reserved-nrc")).await;
+    let transport = suppression_transport(&adapter);
+    for strict in [true, false] {
+        let uds = UDSClient::with_config(&transport, suppression_config(strict));
+        assert!(matches!(
+            uds.suppress_positive_responses().tester_present().await,
+            Err(Error::UDSError(UDSError::NegativeResponse(
+                NegativeResponseCode::NonStandard(0x15)
+            )))
+        ));
+    }
 }

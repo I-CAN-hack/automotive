@@ -1,64 +1,33 @@
 //! Error types for the UDS Client.
 use thiserror::Error;
 
-/// Negative Response Codes returned by ECU as defined in ISO 14229
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(u8)]
-pub enum NegativeResponseCode {
-    GeneralReject = 0x10,
-    ServiceNotSupported = 0x11,
-    SubFunctionNotSupported = 0x12,
-    IncorrectMessageLengthOrInvalidFormat = 0x13,
-    ResponseTooLong = 0x14,
-    BusyRepeatRequest = 0x21,
-    ConditionsNotCorrect = 0x22,
-    RequestSequenceError = 0x24,
-    NoResponseFromSubnetComponent = 0x25,
-    FailurePreventsExecutionOfRequestedAction = 0x26,
-    RequestOutOfRange = 0x31,
-    SecurityAccessDenied = 0x33,
-    InvalidKey = 0x35,
-    ExeedNumberOfAttempts = 0x36,
-    RequiredTimeDelayNotExpired = 0x37,
-    UploadDownloadNotAccepted = 0x70,
-    TransferDataSuspended = 0x71,
-    GeneralProgrammingFailure = 0x72,
-    WrongBlockSequenceCounter = 0x73,
-    RequestCorrectlyReceivedResponsePending = 0x78,
-    SubFunctionNotSupportedInActiveSession = 0x7e,
-    ServiceNotSupportedInActiveSession = 0x7f,
+use super::{DataIdentifier, RoutineIdentifier, ServiceIdentifier};
 
-    NonStandard(u8),
-}
-
-impl From<u8> for NegativeResponseCode {
-    fn from(val: u8) -> NegativeResponseCode {
-        match val {
-            0x10 => NegativeResponseCode::GeneralReject,
-            0x11 => NegativeResponseCode::ServiceNotSupported,
-            0x12 => NegativeResponseCode::SubFunctionNotSupported,
-            0x13 => NegativeResponseCode::IncorrectMessageLengthOrInvalidFormat,
-            0x14 => NegativeResponseCode::ResponseTooLong,
-            0x21 => NegativeResponseCode::BusyRepeatRequest,
-            0x22 => NegativeResponseCode::ConditionsNotCorrect,
-            0x24 => NegativeResponseCode::RequestSequenceError,
-            0x25 => NegativeResponseCode::NoResponseFromSubnetComponent,
-            0x26 => NegativeResponseCode::FailurePreventsExecutionOfRequestedAction,
-            0x31 => NegativeResponseCode::RequestOutOfRange,
-            0x33 => NegativeResponseCode::SecurityAccessDenied,
-            0x35 => NegativeResponseCode::InvalidKey,
-            0x36 => NegativeResponseCode::ExeedNumberOfAttempts,
-            0x37 => NegativeResponseCode::RequiredTimeDelayNotExpired,
-            0x70 => NegativeResponseCode::UploadDownloadNotAccepted,
-            0x71 => NegativeResponseCode::TransferDataSuspended,
-            0x72 => NegativeResponseCode::GeneralProgrammingFailure,
-            0x73 => NegativeResponseCode::WrongBlockSequenceCounter,
-            0x78 => NegativeResponseCode::RequestCorrectlyReceivedResponsePending,
-            0x7e => NegativeResponseCode::SubFunctionNotSupportedInActiveSession,
-            0x7f => NegativeResponseCode::ServiceNotSupportedInActiveSession,
-            _ => NegativeResponseCode::NonStandard(val),
-        }
+uds_code_enum! {
+    /// Negative Response Codes returned by ECU as defined in ISO 14229
+    pub enum NegativeResponseCode: u8 {
+        GeneralReject = 0x10,
+        ServiceNotSupported = 0x11,
+        SubFunctionNotSupported = 0x12,
+        IncorrectMessageLengthOrInvalidFormat = 0x13,
+        ResponseTooLong = 0x14,
+        BusyRepeatRequest = 0x21,
+        ConditionsNotCorrect = 0x22,
+        RequestSequenceError = 0x24,
+        NoResponseFromSubnetComponent = 0x25,
+        FailurePreventsExecutionOfRequestedAction = 0x26,
+        RequestOutOfRange = 0x31,
+        SecurityAccessDenied = 0x33,
+        InvalidKey = 0x35,
+        ExeedNumberOfAttempts = 0x36,
+        RequiredTimeDelayNotExpired = 0x37,
+        UploadDownloadNotAccepted = 0x70,
+        TransferDataSuspended = 0x71,
+        GeneralProgrammingFailure = 0x72,
+        WrongBlockSequenceCounter = 0x73,
+        RequestCorrectlyReceivedResponsePending = 0x78,
+        SubFunctionNotSupportedInActiveSession = 0x7e,
+        ServiceNotSupportedInActiveSession = 0x7f,
     }
 }
 
@@ -66,19 +35,29 @@ impl From<u8> for NegativeResponseCode {
 #[derive(Error, Debug, PartialEq, Clone)]
 pub enum ProtocolDeviation {
     #[error("Expected response service ID {expected:#04x}, received {actual:#04x}")]
-    InvalidServiceId { expected: u8, actual: u8 },
+    InvalidServiceId {
+        expected: ServiceIdentifier,
+        actual: ServiceIdentifier,
+    },
     #[error("Expected echoed request service ID {expected:#04x}, received {actual:#04x}")]
-    InvalidRequestServiceId { expected: u8, actual: u8 },
-    #[error("Negative response code {0:#04x} is reserved or prohibited")]
-    InvalidNegativeResponseCode(u8),
+    InvalidRequestServiceId {
+        expected: ServiceIdentifier,
+        actual: ServiceIdentifier,
+    },
     #[error("Expected sub-function {expected:#04x}, received {actual:#04x}")]
     InvalidSubFunction { expected: u8, actual: u8 },
     #[error("Received a suppressed positive response without a preceding NRC 0x78")]
     UnexpectedPositiveResponse,
     #[error("Expected data identifier {expected:#06x}, received {actual:#06x}")]
-    InvalidDataIdentifier { expected: u16, actual: u16 },
+    InvalidDataIdentifier {
+        expected: DataIdentifier,
+        actual: DataIdentifier,
+    },
     #[error("Expected routine identifier {expected:#06x}, received {actual:#06x}")]
-    InvalidRoutineIdentifier { expected: u16, actual: u16 },
+    InvalidRoutineIdentifier {
+        expected: RoutineIdentifier,
+        actual: RoutineIdentifier,
+    },
     #[error("Expected block sequence counter {expected:#04x}, received {actual:#04x}")]
     InvalidBlockSequenceCounter { expected: u8, actual: u8 },
     #[error("Invalid response length (minimum {minimum}, maximum {maximum:?})")]
@@ -100,8 +79,6 @@ pub enum ProtocolDeviation {
     InvalidMemorySize { expected: Vec<u8>, actual: Vec<u8> },
     #[error("Expected {expected} memory-record bytes, received {actual}")]
     InvalidMemoryRecordLength { expected: u128, actual: usize },
-    #[error("DTC format identifier {0:#04x} is reserved")]
-    InvalidDTCFormatIdentifier(u8),
 }
 
 #[derive(Error, Debug, PartialEq, Clone)]
@@ -114,21 +91,34 @@ pub enum Error {
         response: Vec<u8>,
     },
     #[error("Invalid Reponse Service ID: {0}")]
-    InvalidServiceId(u8),
+    InvalidServiceId(ServiceIdentifier),
     #[error("Invalid Response Sub Function ID: {0}")]
     InvalidSubFunction(u8),
     #[error("Invalid Response Data Identifer: {0}")]
-    InvalidDataIdentifier(u16),
+    InvalidDataIdentifier(DataIdentifier),
     #[error("Invalid Response Routine Identifer: {0}")]
-    InvalidRoutineIdentifier(u16),
+    InvalidRoutineIdentifier(RoutineIdentifier),
     #[error("Invalid Block Sequence Counter: {0}")]
     InvalidBlockSequenceCounter(u8),
     #[error("Invalid Response Length")]
     InvalidResponseLength,
-    #[error("Unsupported DTC format identifier: {0:#04x}")]
-    InvalidDTCFormatIdentifier(u8),
+    #[error("Compression method {0:#04x} does not fit in a nibble")]
+    InvalidCompressionMethod(u8),
+    #[error("Encryption method {0:#04x} does not fit in a nibble")]
+    InvalidEncryptionMethod(u8),
+    #[error("Memory field width must be 1 to 8 bytes, received {0}")]
+    InvalidMemoryValueWidth(usize),
+    #[error("Memory value {value:#x} does not fit in {width} bytes")]
+    MemoryValueOverflow { value: u64, width: usize },
     #[error("Block length {value} cannot be represented as usize; response: {response:02x?}")]
     BlockLengthOverflow { value: u128, response: Vec<u8> },
     #[error("Negative Response: {0:?}")]
     NegativeResponse(NegativeResponseCode),
+}
+
+// TryInto is infallible when a caller supplies an already-validated method.
+impl From<std::convert::Infallible> for Error {
+    fn from(value: std::convert::Infallible) -> Self {
+        match value {}
+    }
 }
