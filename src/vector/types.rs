@@ -158,17 +158,17 @@ impl TryFrom<&crate::can::Frame> for XLcanTxEvent {
             };
         let mut flags = 0;
         match frame.content() {
-            FrameContent::Fd(fd) => {
-                if fd.esi() {
+            FrameContent::Fd { brs, esi, .. } => {
+                if *esi {
                     return Err(crate::Error::NotSupported);
                 }
                 flags |= xl::XL_CAN_TXMSG_FLAG_EDL;
-                if fd.brs() {
+                if *brs {
                     flags |= xl::XL_CAN_TXMSG_FLAG_BRS;
                 }
             }
-            FrameContent::Remote(_) => flags |= xl::XL_CAN_TXMSG_FLAG_RTR,
-            FrameContent::Classic(_) => {}
+            FrameContent::Remote { .. } => flags |= xl::XL_CAN_TXMSG_FLAG_RTR,
+            FrameContent::Classic { .. } => {}
             FrameContent::Error(_) => return Err(crate::Error::NotSupported),
         }
         let dlc = frame.dlc().ok_or(crate::Error::NotSupported)?;
@@ -217,25 +217,19 @@ impl TryFrom<XLcanRxEvent> for crate::can::Frame {
                     if fd {
                         return Err(());
                     }
-                    return Self::remote_builder(id, frame.dlc)
-                        .loopback(loopback)
-                        .build()
-                        .map_err(|_| ());
+                    let mut remote = Self::remote(0, id, frame.dlc).map_err(|_| ())?;
+                    remote.loopback = loopback;
+                    return Ok(remote);
                 }
                 let len = if fd { len } else { len.min(8) };
-                let builder = Self::builder(id)
+                Self::builder(id)
                     .loopback(loopback)
-                    .data(&frame.data[..len]);
-                if fd {
-                    builder
-                        .fd()
-                        .brs(frame.msgFlags & xl::XL_CAN_RXMSG_FLAG_BRS != 0)
-                        .esi(frame.msgFlags & xl::XL_CAN_RXMSG_FLAG_ESI != 0)
-                        .build()
-                } else {
-                    builder.build()
-                }
-                .map_err(|_| ())
+                    .data(&frame.data[..len])
+                    .fd(fd)
+                    .brs(fd && frame.msgFlags & xl::XL_CAN_RXMSG_FLAG_BRS != 0)
+                    .esi(fd && frame.msgFlags & xl::XL_CAN_RXMSG_FLAG_ESI != 0)
+                    .build()
+                    .map_err(|_| ())
             }
             RxTags::XL_CAN_EV_TAG_CHIP_STATE | RxTags::XL_CAN_EV_TAG_TX_ERROR => {
                 Err(()) // Ignore these for now

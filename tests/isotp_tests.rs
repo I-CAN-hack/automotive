@@ -77,7 +77,7 @@ async fn isotp_test_echo(msg_len: usize, config: VECUConfig) {
         automotive::socketcan::SocketCan::new_async(SocketCanConfig::new("vcan0")).unwrap();
     let _vecu = vecu_spawn(&adapter, config).await;
 
-    let mut isotp_config = IsoTPConfig::new(0, Identifier::standard(0x7a1).unwrap());
+    let mut isotp_config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
     isotp_config.padding = config.padding;
     isotp_config.fd = config.fd;
     isotp_config.ext_address = config.ext_address;

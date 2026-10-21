@@ -47,7 +47,7 @@ impl TryFrom<can_frame> for Frame {
             } else {
                 frame.can_dlc
             };
-            return Frame::remote_builder(id, dlc).build();
+            return Frame::remote(0, id, dlc);
         }
         let data = frame
             .data
@@ -69,7 +69,7 @@ impl TryFrom<canfd_frame> for Frame {
             .get(..frame.len as usize)
             .ok_or(crate::Error::MalformedFrame)?;
         Frame::builder(canid_t_to_id(frame.can_id)?)
-            .fd()
+            .fd(true)
             .brs(frame.flags & BRS != 0)
             .esi(frame.flags & ESI != 0)
             .data(data)
@@ -82,9 +82,10 @@ impl TryFrom<&Frame> for can_frame {
 
     fn try_from(frame: &Frame) -> crate::Result<Self> {
         let id = match frame.content() {
-            FrameContent::Classic(frame) => frame.id(),
-            FrameContent::Remote(frame) => frame.id(),
-            FrameContent::Fd(_) | FrameContent::Error(_) => return Err(crate::Error::NotSupported),
+            FrameContent::Classic { id, .. } | FrameContent::Remote { id, .. } => *id,
+            FrameContent::Fd { .. } | FrameContent::Error(_) => {
+                return Err(crate::Error::NotSupported)
+            }
         };
         let mut raw = can_frame_default();
         raw.can_id = id_to_canid_t(id);
@@ -105,14 +106,14 @@ impl TryFrom<&Frame> for canfd_frame {
     type Error = crate::Error;
 
     fn try_from(frame: &Frame) -> crate::Result<Self> {
-        let FrameContent::Fd(fd) = frame.content() else {
+        let FrameContent::Fd { id, data, brs, esi } = frame.content() else {
             return Err(crate::Error::NotSupported);
         };
         let mut raw = canfd_frame_default();
-        raw.can_id = id_to_canid_t(fd.id());
-        raw.len = fd.data().len() as u8;
-        raw.flags = if fd.brs() { BRS } else { 0 } | if fd.esi() { ESI } else { 0 };
-        raw.data[..fd.data().len()].copy_from_slice(fd.data());
+        raw.can_id = id_to_canid_t(*id);
+        raw.len = data.len() as u8;
+        raw.flags = if *brs { BRS } else { 0 } | if *esi { ESI } else { 0 };
+        raw.data[..data.len()].copy_from_slice(data);
         Ok(raw)
     }
 }
@@ -124,14 +125,11 @@ mod tests {
 
     #[test]
     fn data_round_trips_preserve_format_and_flags() {
-        for id in [
-            Identifier::standard(0x123).unwrap(),
-            Identifier::extended(0x123).unwrap(),
-        ] {
+        for id in [Identifier::Standard(0x123), Identifier::Extended(0x123)] {
             for &len in DLC_TO_LEN {
                 let data = vec![0xaa; len];
                 let fd = Frame::builder(id)
-                    .fd()
+                    .fd(true)
                     .brs(true)
                     .esi(true)
                     .data(data.clone())
@@ -153,9 +151,7 @@ mod tests {
     #[test]
     fn remote_round_trip_retains_requested_dlc_without_payload() {
         for dlc in 0..=15 {
-            let frame = Frame::remote_builder(Identifier::extended(0x123).unwrap(), dlc)
-                .build()
-                .unwrap();
+            let frame = Frame::remote(0, Identifier::Extended(0x123), dlc).unwrap();
             let raw = can_frame::try_from(&frame).unwrap();
             assert_ne!(raw.can_id & CAN_RTR_FLAG, 0);
             assert_eq!(Frame::try_from(raw).unwrap(), frame);
@@ -183,7 +179,7 @@ mod tests {
 
     #[test]
     fn error_frames_are_not_sent_or_misread_as_data() {
-        let error = Frame::error_builder(ErrorFlag::Active).build().unwrap();
+        let error = Frame::error(0, ErrorFlag::Active);
         assert!(can_frame::try_from(&error).is_err());
         assert!(canfd_frame::try_from(&error).is_err());
         let mut raw = can_frame_default();

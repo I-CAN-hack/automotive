@@ -62,7 +62,7 @@ fn get_test_frames(amount: usize) -> Vec<Frame> {
     frames.push(
         Frame::new(
             0,
-            Identifier::extended(0x1234).unwrap(),
+            Identifier::Extended(0x1234),
             &[0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA],
         )
         .unwrap(),
@@ -72,7 +72,7 @@ fn get_test_frames(amount: usize) -> Vec<Frame> {
     frames.push(
         Frame::new(
             0,
-            Identifier::extended(0x123).unwrap(),
+            Identifier::Extended(0x123),
             &[0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA],
         )
         .unwrap(),

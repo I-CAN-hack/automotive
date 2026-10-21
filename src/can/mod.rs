@@ -14,8 +14,8 @@ pub static DLC_TO_LEN: &[usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 3
 mod frame;
 mod identifier;
 
-pub use frame::{ClassicFrame, ErrorFlag, FdFrame, Frame, FrameBuilder, FrameContent, RemoteFrame};
-pub use identifier::{ExtendedId, Identifier, StandardId};
+pub use frame::{ErrorFlag, Frame, FrameBuilder, FrameContent};
+pub use identifier::Identifier;
 
 /// Trait for a Blocking CAN Adapter
 pub trait CanAdapter {
@@ -77,10 +77,10 @@ mod tests {
 
     #[test]
     fn id_compare() {
-        assert!(Identifier::standard(0x123).unwrap() < Identifier::standard(0x124).unwrap());
-        assert!(Identifier::standard(0x7ff).unwrap() > Identifier::standard(0x100).unwrap());
+        assert!(Identifier::Standard(0x123) < Identifier::Standard(0x124));
+        assert!(Identifier::Standard(0x7ff) > Identifier::Standard(0x100));
 
         // Preserve the existing ordering of standard and extended formats.
-        assert!(Identifier::extended(0x1).unwrap() > Identifier::standard(0x100).unwrap());
+        assert!(Identifier::Extended(0x1) > Identifier::Standard(0x100));
     }
 }

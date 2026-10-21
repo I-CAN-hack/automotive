@@ -1,26 +1,52 @@
-use automotive::can::{
-    ErrorFlag, ExtendedId, Frame, FrameContent, Identifier, StandardId, DLC_TO_LEN,
-};
+use automotive::can::{ErrorFlag, Frame, FrameContent, Identifier, DLC_TO_LEN};
 
 fn id() -> Identifier {
-    Identifier::standard(0x123).unwrap()
+    Identifier::Standard(0x123)
 }
 
 #[test]
 fn identifier_bounds_and_explicit_format() {
-    assert!(StandardId::new(0).is_ok());
-    assert!(StandardId::new(0x7ff).is_ok());
-    assert!(StandardId::new(0x800).is_err());
-    assert!(ExtendedId::new(0).is_ok());
-    assert!(ExtendedId::new(0x1fff_ffff).is_ok());
-    assert!(ExtendedId::new(0x2000_0000).is_err());
+    assert!(Identifier::standard(0).is_ok());
+    assert!(Identifier::standard(0x7ff).is_ok());
+    assert!(Identifier::standard(0x800).is_err());
+    assert!(Identifier::extended(0).is_ok());
+    assert!(Identifier::extended(0x1fff_ffff).is_ok());
+    assert!(Identifier::extended(0x2000_0000).is_err());
     assert!(Identifier::try_from(u32::MAX).is_err());
     assert!(Identifier::try_from(0x7ff).unwrap().is_standard());
     assert!(Identifier::try_from(0x800).unwrap().is_extended());
-    let extended = Identifier::extended(0x123).unwrap();
+    let extended = Identifier::Extended(0x123);
     assert!(extended.is_extended());
     assert_eq!(extended.as_raw(), id().as_raw());
     assert_ne!(extended, id());
+}
+
+#[test]
+fn frame_construction_validates_direct_identifier_variants() {
+    for id in [
+        Identifier::Standard(0x800),
+        Identifier::Standard(u32::MAX),
+        Identifier::Extended(0x2000_0000),
+        Identifier::Extended(u32::MAX),
+    ] {
+        assert!(Frame::new(0, id, &[]).is_err());
+        assert!(Frame::builder(id).build().is_err());
+        assert!(Frame::builder(id).fd(true).build().is_err());
+        assert!(Frame::remote(0, id, 8).is_err());
+    }
+}
+
+#[test]
+fn classic_frames_reject_fd_flags() {
+    assert!(Frame::builder(id()).brs(true).build().is_err());
+    assert!(Frame::builder(id()).esi(true).build().is_err());
+    assert!(Frame::builder(id()).brs(false).esi(false).build().is_ok());
+    assert!(Frame::builder(id())
+        .fd(true)
+        .brs(true)
+        .fd(false)
+        .build()
+        .is_err());
 }
 
 #[test]
@@ -32,7 +58,7 @@ fn validates_every_payload_length_without_padding() {
         let data = vec![0xaa; len];
         let classic = Frame::builder(id()).data(data.clone()).build();
         assert_eq!(classic.is_ok(), len <= 8, "classic length {len}");
-        let fd = Frame::builder(id()).fd().data(data.clone()).build();
+        let fd = Frame::builder(id()).fd(true).data(data.clone()).build();
         assert_eq!(fd.is_ok(), fd_lengths.contains(&len), "FD length {len}");
         if let Ok(frame) = fd {
             assert_eq!(frame.data(), data);
@@ -48,7 +74,7 @@ fn short_fd_frames_remain_fd_and_keep_flags() {
             .bus(2)
             .loopback(true)
             .data(vec![0x55; len])
-            .fd()
+            .fd(true)
             .brs(true)
             .esi(true)
             .build()
@@ -57,38 +83,34 @@ fn short_fd_frames_remain_fd_and_keep_flags() {
         assert!(frame.loopback);
         assert!(frame.is_data());
         assert_eq!(frame.id(), Some(id()));
-        let FrameContent::Fd(fd) = frame.content() else {
+        let FrameContent::Fd { data, brs, esi, .. } = frame.content() else {
             panic!("lost FD format")
         };
-        assert!(fd.brs());
-        assert!(fd.esi());
-        assert_eq!(fd.data().len(), len);
+        assert!(brs);
+        assert!(esi);
+        assert_eq!(data.len(), len);
     }
 }
 
 #[test]
 fn remote_frames_have_dlc_without_data() {
     for dlc in 0..=15 {
-        let frame = Frame::remote_builder(id(), dlc).build().unwrap();
+        let frame = Frame::remote(0, id(), dlc).unwrap();
         assert!(frame.is_remote());
         assert!(!frame.is_fd());
         assert!(!frame.is_data());
         assert_eq!(frame.id(), Some(id()));
         assert_eq!(frame.dlc(), Some(dlc));
         assert!(frame.data().is_empty());
-        let FrameContent::Remote(remote) = frame.content() else {
-            unreachable!()
-        };
-        assert_eq!(remote.requested_len(), dlc.min(8) as usize);
     }
-    assert!(Frame::remote_builder(id(), 16).build().is_err());
-    assert!(Frame::remote_builder(id(), u8::MAX).build().is_err());
+    assert!(Frame::remote(0, id(), 16).is_err());
+    assert!(Frame::remote(0, id(), u8::MAX).is_err());
 }
 
 #[test]
 fn error_frames_have_no_identifier_dlc_or_payload() {
     for flag in [ErrorFlag::Active, ErrorFlag::Passive] {
-        let frame = Frame::error_builder(flag).bus(3).build().unwrap();
+        let frame = Frame::error(3, flag);
         assert_eq!(frame.bus, 3);
         assert_eq!(frame.content(), &FrameContent::Error(flag));
         assert!(frame.is_error());
@@ -101,23 +123,35 @@ fn error_frames_have_no_identifier_dlc_or_payload() {
 
 #[cfg(feature = "serde")]
 #[test]
-fn serialization_round_trips_each_frame_variant() {
+fn serialization_preserves_shape_and_round_trips_each_frame_variant() {
+    use serde_json::json;
     let frames = [
         Frame::builder(id()).data([0xaa; 8]).build().unwrap(),
-        Frame::builder(Identifier::extended(0x123).unwrap())
-            .fd()
+        Frame::builder(Identifier::Extended(0x123))
+            .fd(true)
             .brs(true)
             .esi(true)
             .data([0x55; 12])
             .build()
             .unwrap(),
-        Frame::remote_builder(id(), 15).build().unwrap(),
-        Frame::error_builder(ErrorFlag::Active).build().unwrap(),
-        Frame::error_builder(ErrorFlag::Passive).build().unwrap(),
+        Frame::remote(0, id(), 15).unwrap(),
+        Frame::error(0, ErrorFlag::Active),
+        Frame::error(0, ErrorFlag::Passive),
     ];
-    for frame in frames {
-        let serialized = serde_json::to_string(&frame).unwrap();
-        assert_eq!(serde_json::from_str::<Frame>(&serialized).unwrap(), frame);
+    let contents = [
+        json!({"Classic": {"id": {"Standard": 0x123}, "data": vec![0xaa; 8]}}),
+        json!({"Fd": {"id": {"Extended": 0x123}, "data": vec![0x55; 12], "brs": true, "esi": true}}),
+        json!({"Remote": {"id": {"Standard": 0x123}, "dlc": 15}}),
+        json!({"Error": "Active"}),
+        json!({"Error": "Passive"}),
+    ];
+    for (frame, content) in frames.into_iter().zip(contents) {
+        let serialized = serde_json::to_value(&frame).unwrap();
+        assert_eq!(
+            serialized,
+            json!({"bus": 0, "loopback": false, "content": content})
+        );
+        assert_eq!(serde_json::from_value::<Frame>(serialized).unwrap(), frame);
     }
 }
 

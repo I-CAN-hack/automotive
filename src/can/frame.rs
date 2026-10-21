@@ -2,90 +2,7 @@
 
 use super::{Identifier, DLC_TO_LEN};
 
-/// A Classical CAN data frame, containing zero to eight bytes.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(deny_unknown_fields))]
-pub struct ClassicFrame {
-    id: Identifier,
-    #[cfg_attr(
-        feature = "serde",
-        serde(deserialize_with = "deserialize_classic_data")
-    )]
-    data: Vec<u8>,
-}
-
-/// A CAN FD data frame. BRS and ESI exist only on this frame type.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(deny_unknown_fields))]
-pub struct FdFrame {
-    id: Identifier,
-    #[cfg_attr(feature = "serde", serde(deserialize_with = "deserialize_fd_data"))]
-    data: Vec<u8>,
-    brs: bool,
-    /// A recessive ESI bit indicates an error-passive transmitter.
-    esi: bool,
-}
-
-/// A Classical CAN remote request, with a DLC and no payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(deny_unknown_fields))]
-pub struct RemoteFrame {
-    id: Identifier,
-    #[cfg_attr(feature = "serde", serde(deserialize_with = "deserialize_dlc"))]
-    dlc: u8,
-}
-
-impl ClassicFrame {
-    pub fn id(&self) -> Identifier {
-        self.id
-    }
-
-    pub fn data(&self) -> &[u8] {
-        &self.data
-    }
-}
-
-impl FdFrame {
-    pub fn id(&self) -> Identifier {
-        self.id
-    }
-
-    pub fn data(&self) -> &[u8] {
-        &self.data
-    }
-
-    pub fn brs(&self) -> bool {
-        self.brs
-    }
-
-    pub fn esi(&self) -> bool {
-        self.esi
-    }
-}
-
-impl RemoteFrame {
-    pub fn id(&self) -> Identifier {
-        self.id
-    }
-
-    /// The raw four-bit DLC. Codes 8 through 15 request eight bytes.
-    pub fn dlc(&self) -> u8 {
-        self.dlc
-    }
-
-    pub fn requested_len(&self) -> usize {
-        self.dlc.min(8) as usize
-    }
-}
-
-/// Error flags defined by ISO 11898-1:2015, 10.4.4.2.
-///
-/// Error frames contain an error flag and delimiter, with no identifier, DLC,
-/// or data field. Adapters do not currently transmit these frames. These are
-/// wire error flags, rather than operating-system-specific error reports.
+/// A wire error flag, rather than an operating-system-specific error report.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ErrorFlag {
@@ -93,28 +10,50 @@ pub enum ErrorFlag {
     Passive,
 }
 
-/// The mutually exclusive CAN frame types.
+/// The mutually exclusive CAN frame types and their fields.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(deny_unknown_fields))]
 pub enum FrameContent {
-    Classic(ClassicFrame),
-    Fd(FdFrame),
-    Remote(RemoteFrame),
+    Classic {
+        id: Identifier,
+        #[cfg_attr(
+            feature = "serde",
+            serde(deserialize_with = "deserialize_classic_data")
+        )]
+        data: Vec<u8>,
+    },
+    Fd {
+        id: Identifier,
+        #[cfg_attr(feature = "serde", serde(deserialize_with = "deserialize_fd_data"))]
+        data: Vec<u8>,
+        brs: bool,
+        /// A recessive ESI bit indicates an error-passive transmitter.
+        esi: bool,
+    },
+    /// A Classical CAN remote request, with a raw four-bit DLC and no payload.
+    /// Codes 8 through 15 request eight bytes.
+    Remote {
+        id: Identifier,
+        #[cfg_attr(feature = "serde", serde(deserialize_with = "deserialize_dlc"))]
+        dlc: u8,
+    },
+    /// Error frames have no identifier, DLC, or payload.
     Error(ErrorFlag),
 }
 
 /// A validated CAN frame and adapter metadata.
 ///
-/// Payloads remain `Vec<u8>` internally. Lengths are checked on construction
-/// and deserialization; shared slices prevent resizing a valid frame.
+/// Payloads are checked on construction and deserialization. Shared slices
+/// prevent resizing a valid frame.
 ///
 /// ```
 /// use automotive::can::{Frame, Identifier};
 /// # fn example() -> automotive::Result<()> {
-/// let id = Identifier::standard(0x123)?;
+/// let id = Identifier::Standard(0x123);
 /// let classic = Frame::builder(id).bus(1).data([1, 2]).build()?;
-/// let fd = Frame::builder(id).fd().brs(true).data([0; 12]).build()?;
-/// let remote = Frame::remote_builder(id, 8).build()?;
+/// let fd = Frame::builder(id).fd(true).brs(true).data([0; 12]).build()?;
+/// let remote = Frame::remote(0, id, 8)?;
 /// # Ok(())
 /// # }
 /// ```
@@ -130,34 +69,47 @@ pub struct Frame {
 }
 
 impl Frame {
-    /// Compatibility constructor: selects FD for payloads longer than eight
-    /// bytes. Use the builder to choose FD explicitly, including short frames.
+    /// Selects FD for payloads longer than eight bytes. Use the builder to
+    /// choose FD explicitly, including short frames.
     pub fn new(bus: u8, id: Identifier, data: &[u8]) -> crate::Result<Self> {
-        let builder = Self::builder(id).bus(bus).data(data);
-        if data.len() > 8 {
-            builder.fd().build()
-        } else {
-            builder.build()
+        Self::builder(id)
+            .bus(bus)
+            .data(data)
+            .fd(data.len() > 8)
+            .build()
+    }
+
+    /// Start a data frame. Bus defaults to zero and payload to empty.
+    pub fn builder(id: Identifier) -> FrameBuilder {
+        FrameBuilder {
+            bus: 0,
+            loopback: false,
+            id,
+            data: Vec::new(),
+            fd: false,
+            brs: false,
+            esi: false,
         }
     }
 
-    /// Start a Classical data frame. The identifier is required; bus defaults
-    /// to zero and the payload defaults to empty. Call `.fd()` to select FD.
-    pub fn builder(id: Identifier) -> FrameBuilder<ClassicFrame> {
-        FrameBuilder::new(ClassicFrame {
-            id,
-            data: Vec::new(),
+    /// Create a remote request with a raw DLC (0–15) and no payload.
+    pub fn remote(bus: u8, id: Identifier, dlc: u8) -> crate::Result<Self> {
+        id.validate()?;
+        validate_dlc(dlc)?;
+        Ok(Self {
+            bus,
+            loopback: false,
+            content: FrameContent::Remote { id, dlc },
         })
     }
 
-    /// Start a remote request. Payload and FD options are unavailable.
-    pub fn remote_builder(id: Identifier, dlc: u8) -> FrameBuilder<RemoteFrame> {
-        FrameBuilder::new(RemoteFrame { id, dlc })
-    }
-
     /// Represent an error frame. Adapter transmission is currently unsupported.
-    pub fn error_builder(flag: ErrorFlag) -> FrameBuilder<ErrorFlag> {
-        FrameBuilder::new(flag)
+    pub fn error(bus: u8, flag: ErrorFlag) -> Self {
+        Self {
+            bus,
+            loopback: false,
+            content: FrameContent::Error(flag),
+        }
     }
 
     pub fn content(&self) -> &FrameContent {
@@ -167,9 +119,9 @@ impl Frame {
     /// Error frames have no arbitration identifier.
     pub fn id(&self) -> Option<Identifier> {
         match &self.content {
-            FrameContent::Classic(frame) => Some(frame.id),
-            FrameContent::Fd(frame) => Some(frame.id),
-            FrameContent::Remote(frame) => Some(frame.id),
+            FrameContent::Classic { id, .. }
+            | FrameContent::Fd { id, .. }
+            | FrameContent::Remote { id, .. } => Some(*id),
             FrameContent::Error(_) => None,
         }
     }
@@ -177,38 +129,36 @@ impl Frame {
     /// Remote and error frames have no payload and return an empty slice.
     pub fn data(&self) -> &[u8] {
         match &self.content {
-            FrameContent::Classic(frame) => &frame.data,
-            FrameContent::Fd(frame) => &frame.data,
-            FrameContent::Remote(_) | FrameContent::Error(_) => &[],
+            FrameContent::Classic { data, .. } | FrameContent::Fd { data, .. } => data,
+            FrameContent::Remote { .. } | FrameContent::Error(_) => &[],
         }
     }
 
-    /// The wire DLC, or `None` for error frames. Data frame DLCs are derived
-    /// from the validated payload length; remote requests retain their own DLC.
+    /// The wire DLC, or `None` for error frames.
     pub fn dlc(&self) -> Option<u8> {
         match &self.content {
-            FrameContent::Classic(frame) => Some(frame.data.len() as u8),
-            FrameContent::Fd(frame) => Some(
-                DLC_TO_LEN
-                    .iter()
-                    .position(|&len| len == frame.data.len())
-                    .unwrap() as u8,
-            ),
-            FrameContent::Remote(frame) => Some(frame.dlc),
+            FrameContent::Classic { data, .. } | FrameContent::Fd { data, .. } => DLC_TO_LEN
+                .iter()
+                .position(|&len| len == data.len())
+                .map(|dlc| dlc as u8),
+            FrameContent::Remote { dlc, .. } => Some(*dlc),
             FrameContent::Error(_) => None,
         }
     }
 
     pub fn is_data(&self) -> bool {
-        matches!(self.content, FrameContent::Classic(_) | FrameContent::Fd(_))
+        matches!(
+            self.content,
+            FrameContent::Classic { .. } | FrameContent::Fd { .. }
+        )
     }
 
     pub fn is_fd(&self) -> bool {
-        matches!(self.content, FrameContent::Fd(_))
+        matches!(self.content, FrameContent::Fd { .. })
     }
 
     pub fn is_remote(&self) -> bool {
-        matches!(self.content, FrameContent::Remote(_))
+        matches!(self.content, FrameContent::Remote { .. })
     }
 
     pub fn is_error(&self) -> bool {
@@ -222,47 +172,24 @@ impl std::fmt::Display for Frame {
     }
 }
 
-/// Consuming builder whose methods depend on the selected frame type.
+/// Builder for Classical and FD data frames.
 ///
-/// Invalid lengths return [`crate::Error::MalformedFrame`] from `build()`.
-/// Data is copied as supplied, without implicit padding or truncation.
-///
-/// FD-only options cannot be set on a Classical frame:
-/// ```compile_fail
-/// # use automotive::can::{Frame, Identifier};
-/// Frame::builder(Identifier::standard(0x123).unwrap()).brs(true);
-/// ```
-/// Remote requests cannot contain data or select FD:
-/// ```compile_fail
-/// # use automotive::can::{Frame, Identifier};
-/// Frame::remote_builder(Identifier::standard(0x123).unwrap(), 8).data([1, 2]);
-/// ```
-/// ```compile_fail
-/// # use automotive::can::{Frame, Identifier};
-/// Frame::remote_builder(Identifier::standard(0x123).unwrap(), 8).fd();
-/// ```
-/// Error frames have neither identifiers nor payloads:
-/// ```compile_fail
-/// # use automotive::can::{Frame, ErrorFlag};
-/// Frame::error_builder(ErrorFlag::Active).data([1]);
-/// ```
+/// `build()` rejects invalid identifiers, invalid lengths, and BRS/ESI on
+/// Classical frames with [`crate::Error::MalformedFrame`].
+/// Data is never padded or truncated.
 #[derive(Debug, Clone)]
 #[must_use]
-pub struct FrameBuilder<T = ClassicFrame> {
+pub struct FrameBuilder {
     bus: u8,
     loopback: bool,
-    state: T,
+    id: Identifier,
+    data: Vec<u8>,
+    fd: bool,
+    brs: bool,
+    esi: bool,
 }
 
-impl<T> FrameBuilder<T> {
-    fn new(state: T) -> Self {
-        Self {
-            bus: 0,
-            loopback: false,
-            state,
-        }
-    }
-
+impl FrameBuilder {
     pub fn bus(mut self, bus: u8) -> Self {
         self.bus = bus;
         self
@@ -273,72 +200,51 @@ impl<T> FrameBuilder<T> {
         self
     }
 
-    fn finish(self, into_content: impl FnOnce(T) -> FrameContent) -> Frame {
-        Frame {
-            bus: self.bus,
-            loopback: self.loopback,
-            content: into_content(self.state),
-        }
-    }
-}
-
-impl FrameBuilder<ClassicFrame> {
     pub fn data(mut self, data: impl Into<Vec<u8>>) -> Self {
-        self.state.data = data.into();
+        self.data = data.into();
         self
     }
 
-    pub fn fd(self) -> FrameBuilder<FdFrame> {
-        FrameBuilder {
-            bus: self.bus,
-            loopback: self.loopback,
-            state: FdFrame {
-                id: self.state.id,
-                data: self.state.data,
-                brs: false,
-                esi: false,
-            },
-        }
-    }
-
-    pub fn build(self) -> crate::Result<Frame> {
-        validate_classic_data(&self.state.data)?;
-        Ok(self.finish(FrameContent::Classic))
-    }
-}
-
-impl FrameBuilder<FdFrame> {
-    pub fn data(mut self, data: impl Into<Vec<u8>>) -> Self {
-        self.state.data = data.into();
+    pub fn fd(mut self, fd: bool) -> Self {
+        self.fd = fd;
         self
     }
 
     pub fn brs(mut self, brs: bool) -> Self {
-        self.state.brs = brs;
+        self.brs = brs;
         self
     }
 
     pub fn esi(mut self, esi: bool) -> Self {
-        self.state.esi = esi;
+        self.esi = esi;
         self
     }
 
     pub fn build(self) -> crate::Result<Frame> {
-        validate_fd_data(&self.state.data)?;
-        Ok(self.finish(FrameContent::Fd))
-    }
-}
-
-impl FrameBuilder<RemoteFrame> {
-    pub fn build(self) -> crate::Result<Frame> {
-        validate_dlc(self.state.dlc)?;
-        Ok(self.finish(FrameContent::Remote))
-    }
-}
-
-impl FrameBuilder<ErrorFlag> {
-    pub fn build(self) -> crate::Result<Frame> {
-        Ok(self.finish(FrameContent::Error))
+        self.id.validate()?;
+        let content = if self.fd {
+            validate_fd_data(&self.data)?;
+            FrameContent::Fd {
+                id: self.id,
+                data: self.data,
+                brs: self.brs,
+                esi: self.esi,
+            }
+        } else {
+            validate_classic_data(&self.data)?;
+            if self.brs || self.esi {
+                return Err(crate::Error::MalformedFrame);
+            }
+            FrameContent::Classic {
+                id: self.id,
+                data: self.data,
+            }
+        };
+        Ok(Frame {
+            bus: self.bus,
+            loopback: self.loopback,
+            content,
+        })
     }
 }
 

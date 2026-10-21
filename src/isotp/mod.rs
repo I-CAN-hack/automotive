@@ -4,7 +4,7 @@
 //! use automotive::StreamExt;
 //! async fn isotp_example() {
 //!    let adapter = automotive::can::get_adapter().unwrap();
-//!    let config = automotive::isotp::IsoTPConfig::new(0, automotive::can::Identifier::standard(0x7a1).unwrap());
+//!    let config = automotive::isotp::IsoTPConfig::new(0, automotive::can::Identifier::Standard(0x7a1));
 //!    let isotp = automotive::isotp::IsoTPAdapter::new(&adapter, config);
 //!
 //!    let mut stream = isotp.recv(); // Create receiver before sending request
@@ -133,10 +133,11 @@ impl IsoTPConfig {
     pub fn new(bus: u8, id: Identifier) -> Self {
         let tx_id = id;
         let rx_id = match id {
-            Identifier::Standard(id) => Identifier::standard(id.as_raw() + 8)
-                .expect("ISO-TP receive identifier exceeds 11 bits"),
+            Identifier::Standard(id) => {
+                Identifier::standard(id + 8).expect("ISO-TP receive identifier exceeds 11 bits")
+            }
             Identifier::Extended(id) => {
-                let bytes = id.as_raw().to_be_bytes();
+                let bytes = id.to_be_bytes();
                 let id = u32::from_be_bytes([bytes[0], bytes[1], bytes[3], bytes[2]]); // Swap last two bytes
                 Identifier::extended(id).expect("swapping address bytes preserves a 29-bit ID")
             }
@@ -152,12 +153,10 @@ impl IsoTPConfig {
     pub fn new_from_offset(bus: u8, id: Identifier, offset: u32) -> Self {
         let tx_id = id;
         let rx_id = match id {
-            Identifier::Standard(id) => Identifier::standard(
-                id.as_raw()
-                    .checked_add(offset)
-                    .expect("ISO-TP ID offset overflow"),
-            )
-            .expect("ISO-TP receive identifier exceeds 11 bits"),
+            Identifier::Standard(id) => {
+                Identifier::standard(id.checked_add(offset).expect("ISO-TP ID offset overflow"))
+                    .expect("ISO-TP receive identifier exceeds 11 bits")
+            }
             Identifier::Extended(_) => panic!("Extended IDs do not support offset"),
         };
 
@@ -269,14 +268,11 @@ impl<'a> IsoTPAdapter<'a> {
             data.insert(0, ext_address);
         }
 
-        let builder = Frame::builder(self.config.tx_id)
+        Frame::builder(self.config.tx_id)
             .bus(self.config.bus)
-            .data(data);
-        if self.config.fd {
-            builder.fd().build()
-        } else {
-            builder.build()
-        }
+            .data(data)
+            .fd(self.config.fd)
+            .build()
     }
 
     pub async fn send_single_frame(&self, data: &[u8]) -> Result<()> {

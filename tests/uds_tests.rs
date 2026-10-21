@@ -40,7 +40,7 @@ async fn uds_test_sids() {
         automotive::socketcan::SocketCan::new_async(SocketCanConfig::new("vcan0")).unwrap();
     let _vecu = vecu_spawn(&adapter).await;
 
-    let mut isotp_config = IsoTPConfig::new(0, Identifier::standard(0x7a1).unwrap());
+    let mut isotp_config = IsoTPConfig::new(0, Identifier::Standard(0x7a1));
     isotp_config.timeout = std::time::Duration::from_millis(1000);
 
     let isotp = IsoTPAdapter::new(&adapter, isotp_config);

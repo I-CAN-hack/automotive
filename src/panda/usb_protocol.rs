@@ -37,7 +37,10 @@ pub fn pack_can_buffer(frames: &[Frame]) -> Result<Vec<Vec<u8>>, Error> {
             return Err(Error::NotSupported);
         }
         // The panda wire protocol does not expose per-frame BRS or ESI.
-        if matches!(frame.content(), FrameContent::Fd(fd) if fd.brs() || fd.esi()) {
+        if matches!(
+            frame.content(),
+            FrameContent::Fd { brs: true, .. } | FrameContent::Fd { esi: true, .. }
+        ) {
             return Err(Error::NotSupported);
         }
         let id = frame.id().ok_or(Error::NotSupported)?;
@@ -110,15 +113,14 @@ pub fn unpack_can_buffer(dat: &mut Vec<u8>) -> Result<Vec<Frame>, Error> {
             ));
         }
 
-        let builder = Frame::builder(id)
-            .bus(bus)
-            .loopback(returned)
-            .data(&dat[CANPACKET_HEAD_SIZE..(CANPACKET_HEAD_SIZE + data_len)]);
-        ret.push(if fd {
-            builder.fd().build()?
-        } else {
-            builder.build()?
-        });
+        ret.push(
+            Frame::builder(id)
+                .bus(bus)
+                .loopback(returned)
+                .data(&dat[CANPACKET_HEAD_SIZE..(CANPACKET_HEAD_SIZE + data_len)])
+                .fd(fd)
+                .build()?,
+        );
 
         dat.drain(0..(CANPACKET_HEAD_SIZE + data_len));
     }
@@ -142,7 +144,7 @@ mod tests {
         assert_eq!(buffer.len(), 0);
 
         assert_eq!(frames.len(), 1);
-        assert_eq!(frames[0].id(), Some(Identifier::standard(48).unwrap()));
+        assert_eq!(frames[0].id(), Some(Identifier::Standard(48)));
         assert_eq!(frames[0].bus, 0);
         assert_eq!(
             frames[0].data(),
@@ -167,8 +169,8 @@ mod tests {
 
     #[test]
     fn test_round_trip() {
-        let id = Identifier::standard(0x123).unwrap();
-        let extended = Identifier::extended(0x123).unwrap();
+        let id = Identifier::Standard(0x123);
+        let extended = Identifier::Extended(0x123);
         let frames = vec![
             Frame::builder(id)
                 .data([1, 2, 3, 4, 5, 6, 7, 8])
@@ -181,7 +183,7 @@ mod tests {
                 .unwrap(),
             Frame::builder(extended)
                 .bus(1)
-                .fd()
+                .fd(true)
                 .data([1, 2, 3, 4])
                 .build()
                 .unwrap(),
@@ -207,13 +209,11 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_frames() {
-        let id = Identifier::standard(0x123).unwrap();
+        let id = Identifier::Standard(0x123);
         for frame in [
-            Frame::remote_builder(id, 8).build().unwrap(),
-            Frame::error_builder(crate::can::ErrorFlag::Active)
-                .build()
-                .unwrap(),
-            Frame::builder(id).fd().brs(true).build().unwrap(),
+            Frame::remote(0, id, 8).unwrap(),
+            Frame::error(0, crate::can::ErrorFlag::Active),
+            Frame::builder(id).fd(true).brs(true).build().unwrap(),
         ] {
             assert!(matches!(
                 pack_can_buffer(&[frame]),
