@@ -10,6 +10,13 @@ the Python package, its Rust extension, examples, and Scapy ECU regression tests
 
 ## Installation and development
 
+To test the library in another uv project, with Rust and the adapter
+build dependencies available:
+
+```sh
+uv add "automotive @ git+https://github.com/I-CAN-hack/automotive.git#subdirectory=python"
+```
+
 From the repository root, with Rust and the adapter build dependencies available,
 use the latest
 [uv](https://docs.astral.sh/uv/getting-started/installation/) (at least 0.13.4):
