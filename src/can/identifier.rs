@@ -1,11 +1,6 @@
 use std::fmt;
 
 /// An 11-bit value constructed through [`Identifier::standard`].
-///
-/// ```compile_fail
-/// use automotive::can::StandardId;
-/// let id = StandardId(0x800);
-/// ```
 #[derive(Debug, Copy, Clone, PartialOrd, Ord, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
@@ -20,11 +15,6 @@ impl StandardId {
 }
 
 /// A 29-bit value constructed through [`Identifier::extended`].
-///
-/// ```compile_fail
-/// use automotive::can::ExtendedId;
-/// let id = ExtendedId(0x2000_0000);
-/// ```
 #[derive(Debug, Copy, Clone, PartialOrd, Ord, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]

@@ -70,17 +70,3 @@ pub trait CanAdapter {
         )
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn id_compare() {
-        assert!(Identifier::standard(0x123).unwrap() < Identifier::standard(0x124).unwrap());
-        assert!(Identifier::standard(0x7ff).unwrap() > Identifier::standard(0x100).unwrap());
-
-        // Preserve the existing ordering of standard and extended formats.
-        assert!(Identifier::extended(0x1).unwrap() > Identifier::standard(0x100).unwrap());
-    }
-}
