@@ -171,6 +171,7 @@ impl From<IoctlId> for u32 {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum IoctlParam {
+    Iso15765Bs = 0x1E,
     Iso15765Stmin = 0x1F,
     StminTx = 0x23,
 }

@@ -98,8 +98,8 @@ impl J2534NativeIsoTpTransport {
     ///
     /// This avoids closing and reopening the physical device when switching
     /// channels (e.g. from OBD DTC-clear to the main flash channel).
-    /// Uses `tx_id`, `rx_id`, `padding`, `separation_time_min`, and
-    /// `ext_address` from `config`.
+    /// Uses `tx_id`, `rx_id`, `padding`, `timeout`, `separation_time_min`,
+    /// `ext_address`, `block_size`, and `receive_separation_time_min` from `config`.
     /// The remaining [`IsoTPConfig`] fields are ignored by the native J2534
     /// transport.
     ///
@@ -145,9 +145,22 @@ impl J2534NativeIsoTpTransport {
         let status = channel.clear_rx_buffer();
         tracing::debug!(ret = %status, "PassThruIoctl CLEAR_RX_BUFFER");
 
-        // Set receive ISO15765_STMIN = 0 to get fastest allowed by the module
-        let status = channel.set_config(IoctlParam::Iso15765Stmin, 0);
-        tracing::debug!(ret = %status, "PassThruIoctl SET_CONFIG ISO15765_STMIN=0");
+        for (parameter, value) in [
+            (IoctlParam::Iso15765Bs, u32::from(config.block_size)),
+            (
+                IoctlParam::Iso15765Stmin,
+                u32::from(duration_to_stmin_byte(config.receive_separation_time_min)),
+            ),
+        ] {
+            let status = channel.set_config(parameter, value);
+            if status != Status::NoError {
+                let _ = channel.disconnect();
+                return Err(J2534Error::DllError(format!(
+                    "PassThruIoctl SET_CONFIG {parameter:?}={value} failed: {status}"
+                ))
+                .into());
+            }
+        }
 
         // STMIN_TX ioctl; if stmin_tx is not specified, do not invoke ioctl
         // (which allows the adapter to choose based on the control flow frames)

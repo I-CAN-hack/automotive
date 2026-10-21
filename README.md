@@ -195,6 +195,32 @@ each result. The second frame is queued 250 ms later so the first can time out
 and cancel it before its own deadline. After timeout/cancellation, the example
 waits one second and retries both frames with the same adapter open.
 
+## ISO-TP receive flow control
+
+`IsoTPConfig::block_size` selects how many consecutive frames the peer may send
+before another flow-control frame. Zero allows all remaining frames.
+`receive_separation_time_min` selects the STmin advertised to the peer. Both
+default to zero. Configure them before creating the ISO-TP transport:
+
+```rust
+use automotive::can::Identifier;
+use automotive::transports::isotp::IsoTPConfig;
+use std::time::Duration;
+
+# fn example() -> automotive::Result<()> {
+let mut config = IsoTPConfig::new(0, Identifier::standard(0x7a1)?);
+config.block_size = 8;
+config.receive_separation_time_min = Duration::from_micros(300);
+# Ok(())
+# }
+```
+
+The software transport sends flow control after each complete receive block
+when more data remains. Transmissions follow the block size and STmin from
+each peer flow-control frame; `separation_time_min` can override transmit STmin.
+The native J2534 transport applies receive flow control through its channel
+configuration.
+
 ## UDS Example
 The automotive crate also supplies interfaces for various diagnostic protocols such as UDS. The adapter is first wrapped to support the ISO Transport Layer, then a UDS Client is created. All methods are fully async, making it easy to communicate with multiple ECUs in parallel. See [automotive#21](https://github.com/I-CAN-hack/automotive/issues/21) for progress on the supported SIDs.
 
