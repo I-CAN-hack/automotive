@@ -10,6 +10,10 @@
 //! records (§9–§14), and NRC/DTC format values (Annex A.1 and Annex D.4).
 //! Memory reads return the requested byte count (§10.3), and memory-write
 //! responses echo the ALFID, address, and size (§10.8.3).
+//! [`UDSClient::suppress_positive_responses`] provides a scoped view for
+//! suppressed requests. [`UDSClient::request`] distinguishes positive responses
+//! from expected silence with [`RequestOutcome`]. NRCs remain errors; after NRC
+//! 0x78 a final response is mandatory, even when suppression was requested.
 //!
 //! ## Example
 //! ```rust
@@ -28,6 +32,7 @@
 mod config;
 mod constants;
 mod error;
+mod suppressed;
 mod types;
 
 use crate::transports::TransportLayer;
@@ -36,6 +41,7 @@ use crate::StreamExt;
 pub use config::{UDSConfig, UDSConfigBuilder};
 pub use constants::*;
 pub use error::{Error, NegativeResponseCode, ProtocolDeviation};
+pub use suppressed::SuppressedUDSClient;
 pub use types::*;
 
 use std::sync::RwLock;
@@ -86,29 +92,73 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         }
     }
 
+    /// Borrow a view that suppresses positive responses for supported requests.
+    ///
+    /// The original client keeps its response behavior. Both views share session
+    /// timings. The view still waits for negative responses and, after NRC 0x78,
+    /// a mandatory final response.
+    ///
+    /// ```rust
+    /// # async fn example<T: automotive::TransportLayer>(transport: &T) -> automotive::Result<()> {
+    /// let uds = automotive::protocols::uds::UDSClient::new(transport);
+    /// {
+    ///     let suppressed = uds.suppress_positive_responses();
+    ///     suppressed.tester_present().await?;
+    /// }
+    /// uds.tester_present().await?; // Requests a positive response as usual.
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn suppress_positive_responses(&self) -> SuppressedUDSClient<'_, 'a, T> {
+        SuppressedUDSClient { client: self }
+    }
+
     /// Make a custom UDS request, handle negative responses, and return response
     /// data. Strict mode verifies response headers and negative-response PDUs.
     /// Service methods also validate service-specific records. Deviations include
     /// the full received PDU in [`Error::ProtocolDeviation`].
+    ///
+    /// Setting bit 7 of `sub_function` suppresses positive responses. Initial
+    /// silence returns [`RequestOutcome::Suppressed`]. After NRC 0x78, a final
+    /// response is required and silence returns [`crate::Error::Timeout`].
+    /// Strict mode rejects a positive response to a suppressed request unless
+    /// NRC 0x78 preceded it ([`ProtocolDeviation::UnexpectedPositiveResponse`]).
     pub async fn request(
         &self,
         sid: u8,
         sub_function: Option<u8>,
         data: Option<&[u8]>,
-    ) -> Result<Vec<u8>> {
-        Ok(self
-            .request_response(sid, sub_function, data)
-            .await?
-            .data()
-            .to_vec())
+    ) -> Result<RequestOutcome<Vec<u8>>> {
+        Ok(
+            match self.request_exchange(sid, sub_function, data).await? {
+                RequestOutcome::PositiveResponse(response) => {
+                    RequestOutcome::PositiveResponse(response.data().to_vec())
+                }
+                RequestOutcome::Suppressed => RequestOutcome::Suppressed,
+            },
+        )
     }
 
+    // For service helpers that always require a response. Suppression-capable
+    // helpers use request_exchange and handle the absent response explicitly.
     async fn request_response(
         &self,
         sid: u8,
         sub_function: Option<u8>,
         data: Option<&[u8]>,
     ) -> Result<Response> {
+        match self.request_exchange(sid, sub_function, data).await? {
+            RequestOutcome::PositiveResponse(response) => Ok(response),
+            RequestOutcome::Suppressed => Err(Error::InvalidResponseLength.into()),
+        }
+    }
+
+    async fn request_exchange(
+        &self,
+        sid: u8,
+        sub_function: Option<u8>,
+        data: Option<&[u8]>,
+    ) -> Result<RequestOutcome<Response>> {
         let exchange = self.request_inner(sid, sub_function, data);
         match self.config.request_timeout {
             Some(timeout) => tokio::time::timeout(timeout, exchange)
@@ -123,7 +173,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         sid: u8,
         sub_function: Option<u8>,
         data: Option<&[u8]>,
-    ) -> Result<Response> {
+    ) -> Result<RequestOutcome<Response>> {
         let mut request: Vec<u8> = vec![sid];
 
         if let Some(sub_function) = sub_function {
@@ -139,12 +189,16 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         self.adapter.send(&request).await?;
 
         let timing = *self.session_timing.read().unwrap();
-        let mut response_timeout = timing.p2_server_max;
+        let suppress = sub_function.is_some_and(|value| value & 0x80 != 0);
+        let initial_deadline = tokio::time::Instant::now() + timing.p2_server_max;
+        let mut response_deadline = initial_deadline;
+        let mut pending_received = false;
         loop {
-            let response = tokio::time::timeout(response_timeout, stream.next())
-                .await
-                .map_err(|_| crate::Error::Timeout)?
-                .ok_or(crate::Error::Disconnected)??;
+            let response = match tokio::time::timeout_at(response_deadline, stream.next()).await {
+                Err(_) if suppress && !pending_received => return Ok(RequestOutcome::Suppressed),
+                Err(_) => return Err(crate::Error::Timeout),
+                Ok(response) => response.ok_or(crate::Error::Disconnected)??,
+            };
 
             // Ensure we got a reply at all
             if response.is_empty() {
@@ -188,10 +242,16 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
                 let code: NegativeResponseCode = response[2].into();
                 if code == NegativeResponseCode::RequestCorrectlyReceivedResponsePending {
                     info!("Received Response Pending");
-                    response_timeout = timing.p2_star_server_max;
+                    // ISO 14229-1:2013, Annex A.1: NRC 0x78 makes a final
+                    // response mandatory, regardless of the suppression bit.
+                    pending_received = true;
+                    response_deadline = tokio::time::Instant::now() + timing.p2_star_server_max;
                     continue;
                 }
 
+                if suppress {
+                    tokio::time::sleep_until(initial_deadline).await;
+                }
                 return Err(Error::NegativeResponse(code).into());
             }
 
@@ -226,11 +286,26 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
                 }
             }
 
+            // §8.2.2 suppresses positive replies unless NRC 0x78 made a final
+            // response mandatory (Annex A.1).
+            if self.config.strict && suppress && !pending_received {
+                return Err(Response {
+                    payload: response,
+                    data_start: 0,
+                }
+                .deviation(ProtocolDeviation::UnexpectedPositiveResponse));
+            }
+
             let start: usize = if sub_function.is_some() { 2 } else { 1 };
-            return Ok(Response {
+            if suppress {
+                // Keep sequential suppressed requests spaced by at least the
+                // initial response window (ISO 14229-2:2013, §8.3).
+                tokio::time::sleep_until(initial_deadline).await;
+            }
+            return Ok(RequestOutcome::PositiveResponse(Response {
                 payload: response,
                 data_start: start,
-            });
+            }));
         }
     }
 
@@ -269,17 +344,21 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     /// 0x10 - Diagnostic Session Control. Strict mode requires four bytes of
     /// session timing information (ISO 14229-1:2013, §9.2.3). These timings apply
     /// to subsequent requests unless [`UDSConfig::use_server_timing`] is disabled.
+    /// Suppressed silence returns `None` and leaves current timings unchanged.
     pub async fn diagnostic_session_control(
         &self,
         session_type: u8,
     ) -> Result<Option<types::SessionParameterRecord>> {
-        let response = self
-            .request_response(
+        let RequestOutcome::PositiveResponse(response) = self
+            .request_exchange(
                 ServiceIdentifier::DiagnosticSessionControl as u8,
                 Some(session_type),
                 None,
             )
-            .await?;
+            .await?
+        else {
+            return Ok(None);
+        };
         let response = self.validate_response_length(response, 6, Some(6))?;
         let result = response.data();
 
@@ -308,10 +387,14 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     }
 
     /// 0x11 - ECU Reset. The `reset_type` parameter can be used to specify the type of reset to perform. Use the [`constants::ResetType`] enum for  the reset types defined in the standard. This function returns the power down time when the reset type is [`constants::ResetType::EnableRapidPowerShutDown`].
+    /// Suppressed silence returns `None`.
     pub async fn ecu_reset(&self, reset_type: u8) -> Result<Option<u8>> {
-        let response = self
-            .request_response(ServiceIdentifier::EcuReset as u8, Some(reset_type), None)
-            .await?;
+        let RequestOutcome::PositiveResponse(response) = self
+            .request_exchange(ServiceIdentifier::EcuReset as u8, Some(reset_type), None)
+            .await?
+        else {
+            return Ok(None);
+        };
         // §9.3.3, Table 35: powerDownTime is present only for reset type 0x04.
         let expected = if reset_type & 0x7f == ResetType::EnableRapidPowerShutDown as u8 {
             3
@@ -331,19 +414,24 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     }
 
     /// 0x27 - Security Access. Odd `access_type` values are used to request a seed, even values to send a key. The `data` parameter is optional when requesting a seed. You can use the [`constants::SecurityAccessType`] enum for the default security level.
+    /// Suppressed silence returns an empty vector.
     pub async fn security_access(&self, access_type: u8, data: Option<&[u8]>) -> Result<Vec<u8>> {
         let send_key = access_type % 2 == 0;
         if send_key && data.is_none() {
             panic!("Missing data parameter when sending key");
         }
 
-        let response = self
-            .request_response(
+        let RequestOutcome::PositiveResponse(response) = self
+            .request_exchange(
                 ServiceIdentifier::SecurityAccess as u8,
                 Some(access_type),
                 data,
             )
-            .await?;
+            .await?
+        else {
+            return Ok(Vec::new());
+        };
+
         // §9.4.3, Table 44: a seed is mandatory for requestSeed and absent for sendKey.
         let response = if send_key {
             self.validate_response_length(response, 2, Some(2))?
@@ -586,19 +674,32 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         routine_identifier: u16,
         data: Option<&[u8]>,
     ) -> Result<Option<Vec<u8>>> {
+        self.routine_control_inner(routine_control_type as u8, routine_identifier, data)
+            .await
+    }
+
+    async fn routine_control_inner(
+        &self,
+        routine_control_type: u8,
+        routine_identifier: u16,
+        data: Option<&[u8]>,
+    ) -> Result<Option<Vec<u8>>> {
         let mut buf: Vec<u8> = vec![];
         buf.extend(routine_identifier.to_be_bytes());
         if let Some(data) = data {
             buf.extend(data);
         }
 
-        let response = self
-            .request_response(
+        let RequestOutcome::PositiveResponse(response) = self
+            .request_exchange(
                 ServiceIdentifier::RoutineControl as u8,
-                Some(routine_control_type as u8),
+                Some(routine_control_type),
                 Some(&buf),
             )
-            .await?;
+            .await?
+        else {
+            return Ok(None);
+        };
         let resp = response.data();
 
         if resp.len() < 2 {
@@ -779,10 +880,15 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
 
     /// 0x37 - Request Transfer Exit. Used to terminate an upload or download. Has optional `data` parameter for additional information, and can optionally return additional information from the ECU. For example, this can be used to contain a checksum.
     pub async fn request_transfer_exit(&self, data: Option<&[u8]>) -> Result<Option<Vec<u8>>> {
-        let resp = self
-            .request(ServiceIdentifier::RequestTransferExit as u8, None, data)
+        let response = self
+            .request_response(ServiceIdentifier::RequestTransferExit as u8, None, data)
             .await?;
+        let resp = response.data();
 
-        Ok(if !resp.is_empty() { Some(resp) } else { None })
+        Ok(if !resp.is_empty() {
+            Some(resp.to_vec())
+        } else {
+            None
+        })
     }
 }

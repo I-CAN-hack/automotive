@@ -73,6 +73,8 @@ pub enum ProtocolDeviation {
     InvalidNegativeResponseCode(u8),
     #[error("Expected sub-function {expected:#04x}, received {actual:#04x}")]
     InvalidSubFunction { expected: u8, actual: u8 },
+    #[error("Received a suppressed positive response without a preceding NRC 0x78")]
+    UnexpectedPositiveResponse,
     #[error("Expected data identifier {expected:#06x}, received {actual:#06x}")]
     InvalidDataIdentifier { expected: u16, actual: u16 },
     #[error("Expected routine identifier {expected:#06x}, received {actual:#06x}")]
