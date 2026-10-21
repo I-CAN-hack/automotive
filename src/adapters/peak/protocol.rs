@@ -4,10 +4,10 @@
 //! and variable length *message* records (CAN frames, status, ...) on the
 //! message endpoints. Both are little-endian.
 
+use crate::adapters::peak::constants::*;
+use crate::adapters::peak::error::Error;
 use crate::can::bitrate::AdapterBitTiming;
 use crate::can::{Frame, FrameContent, Identifier, DLC_TO_LEN};
-use crate::peak::constants::*;
-use crate::peak::error::Error;
 
 /// Round `n` up to the next multiple of 4.
 fn align4(n: usize) -> usize {

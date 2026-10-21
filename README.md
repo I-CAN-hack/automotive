@@ -4,6 +4,15 @@
 
 Welcome to the `automotive` crate documentation. The purpose of this crate is to help you with all things automotive related. Most importantly, it provides a fully async CAN interface supporting multiple adapters.
 
+## Modules
+
+- `automotive::adapters` contains the feature-gated hardware adapters: `j2534`,
+  `panda`, `peak`, `socketcan`, and `vector`, plus the `get_adapter()` discovery
+  helper.
+- `automotive::transports` contains `isotp` and the shared `TransportLayer` trait.
+- `automotive::protocols` contains `uds`, which uses a `TransportLayer`.
+- `automotive::can` provides shared CAN types and traits.
+
 ## Development with Nix
 
 Enter the development environment and run the tests:
@@ -36,7 +45,7 @@ The following adapter opens the first available adapter on the system, and then 
 ```rust
 use automotive::StreamExt;
 async fn can_example() -> automotive::Result<()> {
-    let adapter = automotive::can::get_adapter()?;
+    let adapter = automotive::adapters::get_adapter()?;
     let mut stream = adapter.recv();
 
     let frame = automotive::can::Frame::builder(0x541.try_into()?).data(&[0xff; 8]).build()?;
@@ -114,8 +123,8 @@ data, with an 80% sample point for both phases:
 ```rust,no_run
 # #[cfg(feature = "peak")]
 # fn example() -> automotive::Result<()> {
-let config = automotive::peak::PeakConfig::builder().build()?;
-let adapter = automotive::peak::Peak::new_async(config)?;
+let config = automotive::adapters::peak::PeakConfig::builder().build()?;
+let adapter = automotive::adapters::peak::Peak::new_async(config)?;
 # Ok(())
 # }
 ```
@@ -131,7 +140,7 @@ type for the bitrate builder:
 ```rust,no_run
 # #[cfg(all(target_os = "windows", feature = "vector-xl"))]
 # fn example() -> automotive::Result<()> {
-use automotive::vector::{VectorCan, VectorConfig};
+use automotive::adapters::vector::{VectorCan, VectorConfig};
 
 let config = VectorConfig::builder(0)
     .bitrate(|bitrate| {
@@ -191,12 +200,12 @@ The automotive crate also supplies interfaces for various diagnostic protocols s
 
 ```rust
  async fn uds_example() -> automotive::Result<()> {
-    let adapter = automotive::can::get_adapter()?;
-    let isotp = automotive::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
-    let uds = automotive::uds::UDSClient::new(&isotp);
+    let adapter = automotive::adapters::get_adapter()?;
+    let isotp = automotive::transports::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
+    let uds = automotive::protocols::uds::UDSClient::new(&isotp);
 
     uds.tester_present().await.unwrap();
-    let response = uds.read_data_by_identifier(automotive::uds::DataIdentifier::ApplicationSoftwareIdentification as u16).await?;
+    let response = uds.read_data_by_identifier(automotive::protocols::uds::DataIdentifier::ApplicationSoftwareIdentification as u16).await?;
 
     println!("Application Software Identification: {}", hex::encode(response));
     Ok(())
@@ -247,7 +256,7 @@ This library supports awaiting a sent frame and waiting for the ACK on the CAN b
 
 
 ### Implementing a New Adapter
-Implementing a new adapter is done by implementing the `CanAdapter` Trait. Hardware implementations can be blocking, as the [AsyncCanAdapter](https://docs.rs/automotive/latest/automotive/async_can/struct.AsyncCanAdapter.html) takes care of presenting an async interface to the user. The library makes some assumptions around sending/receiving frames. These assumption are also verified by the tests in `tests/adapter_tests.rs`.
+Implementing a new adapter is done by implementing the `CanAdapter` Trait. Hardware implementations can be blocking, as the [AsyncCanAdapter](https://docs.rs/automotive/latest/automotive/can/struct.AsyncCanAdapter.html) takes care of presenting an async interface to the user. The library makes some assumptions around sending/receiving frames. These assumption are also verified by the tests in `tests/adapter_tests.rs`.
 
  - The `send` function takes a `&mut VecDequeue` of frames. Frames to be sent are taken from the *front* of this queue. If there is no space in the hardware or driver buffer to send out all messages it's OK to return before the queue is fully empty. If an error occurs make sure to put the message back at the beginning of the queue and return.
  - The hardware or driver is free to prioritize sending frames with a lower Arbitration ID to prevent priority inversion. However frames with the same Arbitration ID need to be send out on the CAN bus in the same order as they were queued. This assumption is needed to match a received ACK to the correct frame.

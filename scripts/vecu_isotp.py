@@ -21,7 +21,7 @@ if __name__ == "__main__":
     parser.add_argument("--stmin", type=int, default=0)
     parser.add_argument("--bs", type=int, default=0)
     parser.add_argument("--padding", type=int, nargs="?", default=None, const=0xaa)
-    parser.add_argument("--fd", action=argparse.BooleanOptionalAction)
+    parser.add_argument("--fd", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--ext-address", type=int, default=None)
 
     args = parser.parse_args()

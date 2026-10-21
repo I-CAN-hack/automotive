@@ -3,9 +3,9 @@
 //! Provides two adapters:
 //!
 //! * [`J2534CanAdapter`] — raw CAN channel implementing [`CanAdapter`](crate::can::CanAdapter).
-//!   Paired with the software ISO-TP layer ([`IsoTPAdapter`](crate::isotp::IsoTPAdapter)) for
+//!   Paired with the software ISO-TP layer ([`IsoTPAdapter`](crate::transports::isotp::IsoTPAdapter)) for
 //!   UDS communication.
-//! * [`J2534NativeIsoTpTransport`] — ISO 15765 channel implementing [`TransportLayer`](crate::TransportLayer).
+//! * [`J2534NativeIsoTpTransport`] — ISO 15765 channel implementing [`TransportLayer`](crate::transports::TransportLayer).
 //!   The adapter firmware handles all ISO-TP framing in hardware; the host exchanges complete
 //!   UDS PDUs.
 //!
@@ -24,5 +24,6 @@ mod error;
 mod isotp_adapter;
 
 pub use can_adapter::J2534CanAdapter;
+pub use common::J2534Device;
 pub use error::Error;
 pub use isotp_adapter::J2534NativeIsoTpTransport;

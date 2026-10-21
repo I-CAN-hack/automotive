@@ -1,8 +1,8 @@
 use std::sync::LazyLock;
 
-use crate::vector::bindings as xl;
-use crate::vector::error::Error;
-use crate::vector::types::{
+use crate::adapters::vector::bindings as xl;
+use crate::adapters::vector::error::Error;
+use crate::adapters::vector::types::{
     ChannelConfig, HwType, PortHandle, XLaccess, XLcanFdConf, XLcanRxEvent, XLcanTxEvent,
 };
 use crate::Result;

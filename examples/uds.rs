@@ -1,13 +1,13 @@
-use automotive::uds::{DataIdentifier, SessionType};
+use automotive::protocols::uds::{DataIdentifier, SessionType};
 use bstr::ByteSlice;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    let adapter = automotive::can::get_adapter()?;
-    let isotp = automotive::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
-    let uds = automotive::uds::UDSClient::new(&isotp);
+    let adapter = automotive::adapters::get_adapter()?;
+    let isotp = automotive::transports::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
+    let uds = automotive::protocols::uds::UDSClient::new(&isotp);
 
     uds.tester_present().await?;
     uds.diagnostic_session_control(SessionType::ExtendedDiagnostic as u8)

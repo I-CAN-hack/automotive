@@ -9,9 +9,9 @@ pub use config::{PandaConfig, PandaConfigBuilder};
 pub use error::Error;
 use std::collections::VecDeque;
 
+use crate::adapters::panda::constants::{Endpoint, HwType, SafetyModel};
 use crate::can::bitrate::{AdapterTimingConst, BitTimingConst, BitrateConfig};
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
-use crate::panda::constants::{Endpoint, HwType, SafetyModel};
 use crate::Result;
 use tracing::{info, warn};
 

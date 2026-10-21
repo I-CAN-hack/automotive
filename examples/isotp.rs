@@ -1,5 +1,5 @@
 use automotive::can::Identifier;
-use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
+use automotive::transports::isotp::{IsoTPAdapter, IsoTPConfig};
 use automotive::StreamExt;
 use tracing_subscriber;
 
@@ -7,7 +7,7 @@ use tracing_subscriber;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let adapter = automotive::can::get_adapter().unwrap();
+    let adapter = automotive::adapters::get_adapter().unwrap();
     let config = IsoTPConfig::new(0, Identifier::standard(0x7a1).unwrap());
     let isotp = IsoTPAdapter::new(&adapter, config);
 

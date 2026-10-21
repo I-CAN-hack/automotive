@@ -13,7 +13,7 @@
 
 mod config;
 mod constants;
-pub mod error;
+mod error;
 mod protocol;
 
 pub use config::{PeakConfig, PeakConfigBuilder};
@@ -22,10 +22,10 @@ pub use error::Error;
 use std::collections::VecDeque;
 use std::time::Duration;
 
-use crate::can::adapter::validate_tx_timeout;
+use crate::adapters::peak::constants::*;
+use crate::adapters::validate_tx_timeout;
 use crate::can::bitrate::{AdapterTimingConst, BitTimingConst, BitrateConfig};
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
-use crate::peak::constants::*;
 use crate::Result;
 use tracing::{info, warn};
 

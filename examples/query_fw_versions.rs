@@ -1,11 +1,11 @@
 use std::time::Duration;
 
 use automotive::can::AsyncCanAdapter;
-use automotive::isotp::{IsoTPAdapter, IsoTPConfig};
+use automotive::transports::isotp::{IsoTPAdapter, IsoTPConfig};
 use automotive::Result;
 
-use automotive::uds::DataIdentifier;
-use automotive::uds::UDSClient;
+use automotive::protocols::uds::DataIdentifier;
+use automotive::protocols::uds::UDSClient;
 
 use bstr::ByteSlice;
 use strum::IntoEnumIterator;
@@ -41,7 +41,7 @@ async fn get_version(adapter: &AsyncCanAdapter, identifier: u32) -> Result<()> {
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let adapter = automotive::can::get_adapter().unwrap();
+    let adapter = automotive::adapters::get_adapter().unwrap();
 
     let standard_ids = 0x700..=0x7f7;
     let extended_ids = (0x00..=0xff).map(|i| 0x18da0000 + (i << 8) + 0xf1);

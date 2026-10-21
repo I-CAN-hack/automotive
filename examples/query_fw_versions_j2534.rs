@@ -1,9 +1,9 @@
 #[cfg(all(target_os = "windows", feature = "j2534"))]
 mod app {
+    use automotive::adapters::j2534::{J2534CanAdapter, J2534NativeIsoTpTransport};
     use automotive::can::bitrate::BitrateBuilder;
-    use automotive::isotp::IsoTPConfig;
-    use automotive::j2534::{J2534CanAdapter, J2534NativeIsoTpTransport};
-    use automotive::uds::{DataIdentifier, UDSClient};
+    use automotive::protocols::uds::{DataIdentifier, UDSClient};
+    use automotive::transports::isotp::IsoTPConfig;
     use automotive::Result;
 
     use bstr::ByteSlice;

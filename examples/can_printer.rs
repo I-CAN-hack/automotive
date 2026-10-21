@@ -5,7 +5,7 @@ use tracing_subscriber;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let adapter = automotive::can::get_adapter().unwrap();
+    let adapter = automotive::adapters::get_adapter().unwrap();
     let mut stream = adapter.recv();
 
     while let Some(frame) = stream.next().await {
