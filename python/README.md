@@ -8,6 +8,9 @@ configuration objects, typed values, context managers, and documented services.
 Requires CPython 3.11+ and builds locally with maturin. This directory contains
 the Python package, its Rust extension, examples, and Scapy ECU regression tests.
 
+Read the [Python documentation](https://i-can-hack.github.io/automotive/) for the
+user guide, examples, and generated API reference.
+
 ## Installation and development
 
 To test the alpha release from PyPI in another uv project:
@@ -156,6 +159,25 @@ The Python examples mirror every Rust example, including transmit timeout
 recovery, advanced bitrate configuration, concurrent firmware queries, and
 native J2534 device reuse. Read installed API documentation using
 `uv run python -m pydoc automotive.protocols.uds`, or Python's `help()`.
+
+The documentation site uses Sphinx, with its sources in `python/docs/`. Build it
+locally from this directory after entering `nix develop`:
+
+```sh
+uv run --locked --group docs sphinx-build -b html -W --keep-going docs docs/_build/html
+```
+
+Open `docs/_build/html/index.html` to preview it. The site reuses this README and
+the example files, and generates the API reference from the installed package's
+docstrings. Its release version comes from `pyproject.toml` automatically.
+
+The documentation workflow builds on pushes and deploys pushes to the repository's
+default branch or `feat/python` to GitHub Pages, allowing testing before merging.
+Both branches publish to the same Pages URL. In GitHub, select **Settings → Pages
+→ Build and deployment → Source → GitHub Actions**. Deployment uses the built-in
+GitHub token; no custom secret is needed. Under **Settings → Environments →
+github-pages → Deployment branches and tags**, allow the default branch and
+`feat/python` if deployment branches are restricted.
 
 ## End-to-end regression tests
 

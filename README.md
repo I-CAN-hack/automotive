@@ -35,6 +35,8 @@ and release checksums pin the packages.
 
 The shell also supplies the cross-compilation toolchains for Python wheels.
 Run `python/build.sh`; see the [Python release instructions](python/README.md#publishing-to-pypi).
+The [Python documentation](https://i-can-hack.github.io/automotive/) includes its
+user guide, examples, and API reference.
 
 To run the virtual CAN tests on Linux, first load the host's CAN/ISO-TP kernel
 modules and create `vcan0` using the existing setup scripts:
