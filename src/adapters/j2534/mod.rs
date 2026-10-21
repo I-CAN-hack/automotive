@@ -24,5 +24,6 @@ mod error;
 mod isotp_adapter;
 
 pub use can_adapter::J2534CanAdapter;
+pub use common::J2534Device;
 pub use error::Error;
 pub use isotp_adapter::J2534NativeIsoTpTransport;

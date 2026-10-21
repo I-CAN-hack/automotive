@@ -13,7 +13,7 @@
 
 mod config;
 mod constants;
-pub mod error;
+mod error;
 mod protocol;
 
 pub use config::{PeakConfig, PeakConfigBuilder};

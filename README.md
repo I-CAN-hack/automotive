@@ -256,7 +256,7 @@ This library supports awaiting a sent frame and waiting for the ACK on the CAN b
 
 
 ### Implementing a New Adapter
-Implementing a new adapter is done by implementing the `CanAdapter` Trait. Hardware implementations can be blocking, as the [AsyncCanAdapter](https://docs.rs/automotive/latest/automotive/async_can/struct.AsyncCanAdapter.html) takes care of presenting an async interface to the user. The library makes some assumptions around sending/receiving frames. These assumption are also verified by the tests in `tests/adapter_tests.rs`.
+Implementing a new adapter is done by implementing the `CanAdapter` Trait. Hardware implementations can be blocking, as the [AsyncCanAdapter](https://docs.rs/automotive/latest/automotive/can/struct.AsyncCanAdapter.html) takes care of presenting an async interface to the user. The library makes some assumptions around sending/receiving frames. These assumption are also verified by the tests in `tests/adapter_tests.rs`.
 
  - The `send` function takes a `&mut VecDequeue` of frames. Frames to be sent are taken from the *front* of this queue. If there is no space in the hardware or driver buffer to send out all messages it's OK to return before the queue is fully empty. If an error occurs make sure to put the message back at the beginning of the queue and return.
  - The hardware or driver is free to prioritize sending frames with a lower Arbitration ID to prevent priority inversion. However frames with the same Arbitration ID need to be send out on the CAN bus in the same order as they were queued. This assumption is needed to match a received ACK to the correct frame.

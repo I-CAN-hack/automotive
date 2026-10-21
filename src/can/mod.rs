@@ -1,6 +1,6 @@
 //! Generic CAN types and traits
 
-pub mod async_can;
+mod async_can;
 pub mod bitrate;
 
 use std::collections::VecDeque;

@@ -1,7 +1,7 @@
 //! Vector CAN Adapter support through the XL Driver
 mod bindings;
 mod config;
-pub mod error;
+mod error;
 pub mod types;
 mod vxlapi;
 
