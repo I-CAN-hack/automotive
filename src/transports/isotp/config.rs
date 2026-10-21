@@ -145,6 +145,31 @@ impl IsoTPConfig {
             receive_id: ReceiveId::Automatic,
         }
     }
+
+    /// Validate public fields again before using them for transport arithmetic.
+    pub(super) fn validate(&self) -> Result<()> {
+        let length = self.max_dlen.unwrap_or(if self.fd { 64 } else { 8 });
+        if length < 8 || !DLC_TO_LEN.contains(&length) || (!self.fd && length != 8) {
+            return Err(Error::InvalidConfig(
+                "TX_DL must be 8 for CAN or 8/12/16/20/24/32/48/64 for CAN FD",
+            )
+            .into());
+        }
+        if self.timeout.is_zero() {
+            return Err(Error::InvalidConfig("frame timeout must be greater than zero").into());
+        }
+        if self.rx_ext_address.is_some() && self.ext_address.is_none() {
+            return Err(Error::InvalidConfig(
+                "a receive address byte requires a transmit address byte",
+            )
+            .into());
+        }
+        let stmin = self.receive_separation_time_min;
+        if stmin > Duration::from_millis(127) {
+            return Err(Error::InvalidConfig("receive STmin must not exceed 127 ms").into());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -270,29 +295,8 @@ impl IsoTPConfigBuilder {
                 Identifier::standard(raw)?
             }
         };
-        let length = self
-            .config
-            .max_dlen
-            .unwrap_or(if self.config.fd { 64 } else { 8 });
-        if length < 8 || !DLC_TO_LEN.contains(&length) || (!self.config.fd && length != 8) {
-            return Err(Error::InvalidConfig(
-                "TX_DL must be 8 for CAN or 8/12/16/20/24/32/48/64 for CAN FD",
-            )
-            .into());
-        }
-        if self.config.timeout.is_zero() {
-            return Err(Error::InvalidConfig("frame timeout must be greater than zero").into());
-        }
-        if self.config.rx_ext_address.is_some() && self.config.ext_address.is_none() {
-            return Err(Error::InvalidConfig(
-                "a receive address byte requires a transmit address byte",
-            )
-            .into());
-        }
+        self.config.validate()?;
         let stmin = self.config.receive_separation_time_min;
-        if stmin > Duration::from_millis(127) {
-            return Err(Error::InvalidConfig("receive STmin must not exceed 127 ms").into());
-        }
         let byte = duration_to_stmin_byte(stmin);
         self.config.receive_separation_time_min = if byte >= 0xf1 {
             Duration::from_micros(u64::from(byte - 0xf0) * 100)

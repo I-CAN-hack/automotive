@@ -211,6 +211,9 @@ assert_eq!(config.rx_id, Identifier::standard(0x7a9)?);
 # }
 ```
 
+Empty ISO-TP payloads are rejected. Transport operations also validate public
+config fields before framing, including configs modified after `build()`.
+
 Defaults are bus zero, Classical CAN, padding enabled, a 100 ms per-frame receive
 timeout, unlimited receive blocks, and zero receive STmin.
 Transmitted consecutive frames follow the peer's block size and

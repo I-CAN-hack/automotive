@@ -175,6 +175,15 @@ impl<'a> IsoTPAdapter<'a> {
         }
     }
 
+    fn max_single_frame_length(&self) -> usize {
+        let header_length = if self.max_can_data_length() + self.offset() > CAN_MAX_DLEN {
+            2
+        } else {
+            1
+        };
+        self.max_can_data_length() - header_length
+    }
+
     /// Maximum data length for an ISO-TP packet based on the current config
     fn max_isotp_data_length(&self) -> usize {
         if self.config.fd {
@@ -199,6 +208,13 @@ impl<'a> IsoTPAdapter<'a> {
     }
 
     pub async fn send_single_frame(&self, data: &[u8]) -> Result<()> {
+        self.config.validate()?;
+        if data.is_empty() {
+            return Err(Error::EmptyPayload.into());
+        }
+        if data.len() > self.max_single_frame_length() {
+            return Err(Error::DataTooLarge.into());
+        }
         let mut buf = ArrayVec::new();
 
         if data.len() < self.can_max_dlen() {
@@ -221,6 +237,13 @@ impl<'a> IsoTPAdapter<'a> {
     }
 
     pub async fn send_first_frame(&self, data: &[u8]) -> Result<usize> {
+        self.config.validate()?;
+        if data.len() <= self.max_single_frame_length() {
+            return Err(Error::MalformedFrame.into());
+        }
+        if data.len() > self.max_isotp_data_length() {
+            return Err(Error::DataTooLarge.into());
+        }
         let mut buf = ArrayVec::new();
         if data.len() <= ISO_TP_MAX_DLEN {
             let b0: u8 = FrameType::First as u8 | ((data.len() >> 8) & 0xF) as u8;
@@ -244,7 +267,14 @@ impl<'a> IsoTPAdapter<'a> {
     }
 
     pub async fn send_consecutive_frame(&self, data: &[u8], idx: usize) -> Result<()> {
-        let idx = ((idx + 1) & 0xF) as u8;
+        self.config.validate()?;
+        if data.is_empty() {
+            return Err(Error::EmptyPayload.into());
+        }
+        if data.len() >= self.max_can_data_length() {
+            return Err(Error::DataTooLarge.into());
+        }
+        let idx = (idx.wrapping_add(1) & 0xF) as u8;
 
         let mut buf = ArrayVec::new();
         buf.push(FrameType::Consecutive as u8 | idx);
@@ -354,11 +384,11 @@ impl<'a> IsoTPAdapter<'a> {
     pub async fn send(&self, data: &[u8]) -> Result<()> {
         debug!("TX {}", hex::encode(data));
 
-        // Single frame has 1 byte of overhead for CAN, and 2 bytes for CAN-FD with escape sequence
-        let fits_in_single_frame =
-            data.len() < self.can_max_dlen() || data.len() < self.max_can_data_length() - 1;
-
-        if fits_in_single_frame {
+        self.config.validate()?;
+        if data.is_empty() {
+            return Err(Error::EmptyPayload.into());
+        }
+        if data.len() <= self.max_single_frame_length() {
             self.send_single_frame(data).await?;
         } else if data.len() <= self.max_isotp_data_length() {
             self.send_multiple(data).await?;
@@ -498,6 +528,10 @@ impl<'a> IsoTPAdapter<'a> {
             .timeout(self.config.timeout);
 
         Box::pin(stream! {
+            if let Err(error) = self.config.validate() {
+                yield Err(error);
+                return;
+            }
             tokio::pin!(stream);
             let mut reception: Option<Reception> = None;
             while let Some(frame) = stream.next().await {

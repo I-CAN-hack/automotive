@@ -8,6 +8,8 @@ pub enum Error {
     InvalidConfig(&'static str),
     #[error("Data Too Large")]
     DataTooLarge,
+    #[error("ISO-TP payload must not be empty")]
+    EmptyPayload,
     #[error("Flow Control")]
     FlowControl,
     #[error("Overflow")]
