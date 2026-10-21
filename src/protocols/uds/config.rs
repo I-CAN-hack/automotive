@@ -24,7 +24,7 @@ pub struct UDSConfig {
     /// Adopt P2/P2* reported by DiagnosticSessionControl. Defaults to `true`.
     /// A response without a timing record leaves the current timings unchanged.
     pub use_server_timing: bool,
-    /// Enforce existing response echo and format checks. Defaults to `true`.
+    /// Whether response echoes and formats are validated. Defaults to `true`.
     /// Failures include the full response in [`super::Error::ProtocolDeviation`].
     /// Minimum lengths needed for safe parsing apply in both modes.
     pub strict: bool,
@@ -88,7 +88,7 @@ impl UDSConfigBuilder {
         self
     }
 
-    /// Enable existing protocol checks. Safe parsing lengths always apply.
+    /// Controls response echo and format validation. Safe parsing lengths always apply.
     pub fn strict(mut self, enabled: bool) -> Self {
         self.config.strict = enabled;
         self

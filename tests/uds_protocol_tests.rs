@@ -1,4 +1,4 @@
-//! Scripted UDS PDUs exercise timing and existing response validation.
+//! Scripted UDS PDUs exercise response timing and validation.
 
 use automotive::protocols::uds::{
     Error as UDSError, NegativeResponseCode, ProtocolDeviation, RoutineControlType, UDSClient,
@@ -344,9 +344,9 @@ async fn truncated_responses_are_safe_in_both_modes_and_strict_errors_include_pa
 }
 
 #[tokio::test(start_paused = true)]
-async fn negative_responses_remain_errors_in_both_modes_without_new_validation() {
+async fn negative_responses_report_nrc_in_both_modes() {
     for strict in [true, false] {
-        // Existing behavior permits trailing data and does not validate the echoed SID.
+        // Negative responses allow trailing data and any echoed SID.
         let transport = ScriptedTransport::new(vec![vec![(0, vec![0x7f, 0x10, 0x33, 0xaa])]]);
         let uds = UDSClient::with_config(&transport, UDSConfig::builder().strict(strict).build());
         assert!(matches!(

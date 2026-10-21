@@ -281,7 +281,7 @@ addressing (§10.3.4–§10.3.5). `.rx_ext_address(byte)` overrides the receive 
 when the two directions use different addresses. Receive block size and STmin
 are advertised in flow-control frames (§9.6.5); STmin rounds up to a wire value
 and values above 127 ms are rejected. The frame timeout must be nonzero.
-New config fields have Serde defaults for existing serialized configs.
+Fields with Serde defaults may be omitted from serialized configs.
 
 For CAN FD with a 32-byte transmit length and receive flow control:
 
@@ -359,13 +359,13 @@ example, raise `IsoTPConfig::timeout` above the longest UDS response wait to avo
 receive timeout expiring first. Session keepalive remains caller-managed through
 `tester_present()`.
 
-Strict mode controls the existing service, sub-function, identifier, block
-counter, and response-format checks. Failures return
+Strict mode validates service IDs, sub-functions, identifiers, block counters,
+and response formats. Failures return
 `uds::Error::ProtocolDeviation { deviation, response }` inside
 `automotive::Error::UDSError`. The deviation describes the expectation, and
 `response` contains the complete received UDS payload, including its service
 header. `.strict(false)` disables these checks; minimum lengths needed for safe
-parsing remain enforced. This configuration adds no new response validation rules.
+parsing remain enforced.
 
 ## CAN Adapters
 The following CAN adapters are supported.

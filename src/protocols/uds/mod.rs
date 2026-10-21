@@ -533,7 +533,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
                 response.deviation(ProtocolDeviation::InvalidLengthFormat(num_length_bytes))
             );
         }
-        // Keep the existing arithmetic bound even when protocol checks are disabled.
+        // The block-length parser supports at most eight bytes.
         if num_length_bytes > 8 {
             return Err(Error::InvalidResponseLength.into());
         }

@@ -62,7 +62,7 @@ impl From<u8> for NegativeResponseCode {
     }
 }
 
-/// An existing protocol requirement enforced by strict mode.
+/// A protocol requirement enforced by strict mode.
 #[derive(Error, Debug, PartialEq, Clone)]
 pub enum ProtocolDeviation {
     #[error("Expected response service ID {expected:#04x}, received {actual:#04x}")]
