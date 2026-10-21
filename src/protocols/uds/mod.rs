@@ -423,8 +423,8 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     }
 
     /// 0x27 - Security Access. Odd `access_type` values are used to request a seed, even values to send a key. The `data` parameter is optional when requesting a seed. You can use the [`constants::SecurityAccessType`] enum for the default security level.
-    /// Returns `Some(seed)` for a received seed and `Some(vec![])` for a positive
-    /// SendKey acknowledgement. Suppressed silence returns `None`.
+    /// Returns `Some(seed)` for a received seed. SendKey and suppressed silence
+    /// return `None`.
     pub async fn security_access(
         &self,
         access_type: u8,
@@ -447,16 +447,16 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         };
 
         // §9.4.3, Table 44: a seed is mandatory for requestSeed and absent for sendKey.
-        let response = if send_key {
-            self.validate_response_length(response, 2, Some(2))?
+        if send_key {
+            self.validate_response_length(response, 2, Some(2))?;
+            Ok(None)
         } else {
-            self.validate_response_length(response, 3, None)?
-        };
-        Ok(Some(response.data().to_vec()))
+            let response = self.validate_response_length(response, 3, None)?;
+            Ok(Some(response.data().to_vec()))
+        }
     }
 
-    /// 0x3E - Tester Present. On a suppressed view, sends `[0x3e, 0x80]` and
-    /// accepts initial silence. NRC 0x78 still requires a final response.
+    /// 0x3E - Tester Present.
     pub async fn tester_present(&self) -> Result<()> {
         if let RequestOutcome::PositiveResponse(response) = self
             .request_exchange(ServiceIdentifier::TesterPresent as u8, Some(0), None)

@@ -123,10 +123,7 @@ async fn uds_test_sids() {
             NegativeResponseCode::InvalidKey
         )))
     ));
-    assert_eq!(
-        uds.security_access(2, Some(b"key!")).await.unwrap(),
-        Some(vec![])
-    );
+    assert_eq!(uds.security_access(2, Some(b"key!")).await.unwrap(), None);
 
     assert_eq!(
         uds.read_data_by_identifier(0x1234).await.unwrap(),
@@ -328,7 +325,7 @@ async fn uds_suppressed_pending_replies_require_a_final_response() {
                         .security_access(2, Some(b"key!"))
                         .await
                         .unwrap(),
-                    Some(vec![])
+                    None
                 );
                 let report = uds
                     .suppress_positive_responses()

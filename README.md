@@ -395,11 +395,10 @@ responses and space sequential requests (ISO 14229-2:2013, §8.3). Initial silen
 returns `RequestOutcome::Suppressed` from `request()`; a received positive
 response returns `RequestOutcome::PositiveResponse(data)`. Typed helpers
 represent silence as `None`, or `()` for TesterPresent. `security_access()`
-returns `Option<Vec<u8>>`: `None` means suppression, `Some(seed)` contains a
-received seed, and `Some(vec![])` is a positive SendKey acknowledgement. Silence
-from `read_dtc_information_number_of_dtc_by_status_mask()` returns `None`; a
-received report returns `Some(report)`. Silence does not confirm that the ECU
-executed the request.
+returns `Some(seed)` for a received seed and `None` for SendKey or suppressed
+silence. `read_dtc_information_number_of_dtc_by_status_mask()` returns `None`
+for silence and `Some(report)` for a received report. Silence does not confirm
+that the ECU executed the request.
 Strict mode rejects a positive reply to a suppressed request unless NRC 0x78
 preceded it (`ProtocolDeviation::UnexpectedPositiveResponse`, ISO 14229-1:2013,
 §8.2.2). `.strict(false)` accepts such replies. Expected silence is valid in
