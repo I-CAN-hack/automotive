@@ -23,7 +23,7 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 use crate::adapters::peak::constants::*;
-use crate::can::adapter::validate_tx_timeout;
+use crate::adapters::validate_tx_timeout;
 use crate::can::bitrate::{AdapterTimingConst, BitTimingConst, BitrateConfig};
 use crate::can::{AsyncCanAdapter, CanAdapter, Frame};
 use crate::Result;

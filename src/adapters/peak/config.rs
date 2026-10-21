@@ -1,5 +1,5 @@
 use super::Peak;
-use crate::can::adapter::{default_bitrate, default_tx_timeout};
+use crate::adapters::{default_bitrate, default_tx_timeout};
 use crate::can::bitrate::{BitrateBuilder, BitrateConfig, BitrateError};
 use std::time::Duration;
 
@@ -11,7 +11,7 @@ pub struct PeakConfig {
     /// Queue/confirmation deadline. Defaults to one second; `None` disables it.
     #[cfg_attr(
         feature = "serde",
-        serde(default = "crate::can::adapter::default_tx_timeout")
+        serde(default = "crate::adapters::default_tx_timeout")
     )]
     pub tx_timeout: Option<Duration>,
 }

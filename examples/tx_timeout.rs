@@ -16,7 +16,7 @@ async fn main() -> automotive::Result<()> {
 
     tracing_subscriber::fmt::init();
 
-    let adapter = automotive::can::get_adapter()?;
+    let adapter = automotive::adapters::get_adapter()?;
     let mut counter = 0_u64;
 
     loop {

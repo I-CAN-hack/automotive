@@ -5,7 +5,7 @@ use bstr::ByteSlice;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    let adapter = automotive::can::get_adapter()?;
+    let adapter = automotive::adapters::get_adapter()?;
     let isotp = automotive::transports::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
     let uds = automotive::protocols::uds::UDSClient::new(&isotp);
 

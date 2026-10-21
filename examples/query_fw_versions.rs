@@ -41,7 +41,7 @@ async fn get_version(adapter: &AsyncCanAdapter, identifier: u32) -> Result<()> {
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let adapter = automotive::can::get_adapter().unwrap();
+    let adapter = automotive::adapters::get_adapter().unwrap();
 
     let standard_ids = 0x700..=0x7f7;
     let extended_ids = (0x00..=0xff).map(|i| 0x18da0000 + (i << 8) + 0xf1);

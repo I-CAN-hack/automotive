@@ -3,7 +3,7 @@
 //! ```rust
 //! use automotive::StreamExt;
 //! async fn isotp_example() {
-//!    let adapter = automotive::can::get_adapter().unwrap();
+//!    let adapter = automotive::adapters::get_adapter().unwrap();
 //!    let config = automotive::transports::isotp::IsoTPConfig::new(0, automotive::can::Identifier::standard(0x7a1).unwrap());
 //!    let isotp = automotive::transports::isotp::IsoTPAdapter::new(&adapter, config);
 //!

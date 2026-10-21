@@ -1,5 +1,5 @@
 use super::VectorCan;
-use crate::can::adapter::default_tx_timeout;
+use crate::adapters::default_tx_timeout;
 use crate::can::bitrate::{BitrateBuilder, BitrateConfig, BitrateError};
 use std::time::Duration;
 

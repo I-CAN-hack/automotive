@@ -1,5 +1,5 @@
 use super::Panda;
-use crate::can::adapter::default_bitrate;
+use crate::adapters::default_bitrate;
 use crate::can::bitrate::{BitrateBuilder, BitrateConfig, BitrateError};
 
 /// Configuration for a panda CAN adapter.

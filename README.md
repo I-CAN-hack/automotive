@@ -7,10 +7,11 @@ Welcome to the `automotive` crate documentation. The purpose of this crate is to
 ## Modules
 
 - `automotive::adapters` contains the feature-gated hardware adapters: `j2534`,
-  `panda`, `peak`, `socketcan`, and `vector`.
+  `panda`, `peak`, `socketcan`, and `vector`, plus the `get_adapter()` discovery
+  helper.
 - `automotive::transports` contains `isotp` and the shared `TransportLayer` trait.
 - `automotive::protocols` contains `uds`, which uses a `TransportLayer`.
-- `automotive::can` provides shared CAN types, traits, and adapter discovery.
+- `automotive::can` provides shared CAN types and traits.
 
 ## Development with Nix
 
@@ -44,7 +45,7 @@ The following adapter opens the first available adapter on the system, and then 
 ```rust
 use automotive::StreamExt;
 async fn can_example() -> automotive::Result<()> {
-    let adapter = automotive::can::get_adapter()?;
+    let adapter = automotive::adapters::get_adapter()?;
     let mut stream = adapter.recv();
 
     let frame = automotive::can::Frame::builder(0x541.try_into()?).data(&[0xff; 8]).build()?;
@@ -199,7 +200,7 @@ The automotive crate also supplies interfaces for various diagnostic protocols s
 
 ```rust
  async fn uds_example() -> automotive::Result<()> {
-    let adapter = automotive::can::get_adapter()?;
+    let adapter = automotive::adapters::get_adapter()?;
     let isotp = automotive::transports::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
     let uds = automotive::protocols::uds::UDSClient::new(&isotp);
 
