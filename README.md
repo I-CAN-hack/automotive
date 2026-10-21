@@ -49,6 +49,26 @@ The setup scripts require `sudo`; entering the shell does not change the host's
 network interfaces or load kernel modules. Windows-only adapters still require
 their Windows SDKs and drivers.
 
+## Publishing the Rust crate
+
+The breaking Rust API changes are released as `0.5.0`. Keep the versions in
+`Cargo.toml` and `python/Cargo.toml` aligned when preparing future releases.
+
+After the Rust tests pass, verify the package and publish it locally:
+
+```sh
+scripts/deploy_crates.sh --dry-run
+cargo login
+scripts/deploy_crates.sh
+```
+
+The script publishes only the `automotive` Rust crate to crates.io, using the
+lockfile and verifying a build with all adapters enabled. Cargo requires a clean
+working tree; use `--dry-run --allow-dirty` to inspect an uncommitted release.
+`CARGO_REGISTRY_TOKEN` can be used instead of `cargo login`. See the
+[Cargo publishing documentation](https://doc.rust-lang.org/cargo/commands/cargo-publish.html).
+Python builds and PyPI publishing are documented in the [Python README](python/README.md#publishing-to-pypi).
+
 ## Async CAN Example
 The following adapter opens the first available adapter on the system, and then receives all frames. Note how the sent frame is awaited, which waits until the message is ACKed on the CAN bus.
 

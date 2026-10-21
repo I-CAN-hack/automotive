@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from automotive.adapters import Adapter, SocketCanConfig, get_adapter
+from automotive.adapters import Adapter, SocketCanAdapter
 from automotive.can import Frame, Identifier
 from automotive.transports.isotp import IsoTPConfig
 
@@ -59,7 +59,7 @@ async def test_echo_and_flow_control(
     )
     async with (
         ecu_factory(script="vecu_isotp.py", config=config, stmin=1, bs=bs) as ecu,
-        await get_adapter(SocketCanConfig(interface="vcan0")) as monitor,
+        SocketCanAdapter("vcan0") as monitor,
     ):
         await _echo_and_capture(ecu, monitor, fd, bs, receive_bs, address)
 

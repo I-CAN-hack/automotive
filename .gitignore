@@ -4,5 +4,6 @@
 **/__pycache__/
 **/.pytest_cache/
 python/.venv/
+python/dist/
 python/automotive/*.so
 python/automotive/*.pyd

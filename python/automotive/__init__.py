@@ -1,6 +1,6 @@
 """Async CAN, ISO-TP, and UDS powered by the automotive Rust crate.
 
-Start with ``adapters.get_adapter()``, ``IsoTPAdapter.from_id()``, and
+Start with ``adapters.Adapter()``, ``IsoTPAdapter.from_id()``, and
 ``UDSClient(transport)``. Explicit config objects expose advanced settings.
 Hardware resources support ``async with`` and must be closed after use.
 """

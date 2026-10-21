@@ -2,14 +2,14 @@
 
 import asyncio
 
-from automotive.adapters import get_adapter
+from automotive.adapters import Adapter
 from automotive.transports.isotp import IsoTPAdapter, IsoTPConfig
 
 
 async def main() -> None:
     """Subscribe before sending so fast ECU replies are retained."""
     async with (
-        await get_adapter() as adapter,
+        Adapter() as adapter,
         IsoTPAdapter(adapter, IsoTPConfig(tx_id=0x7A1)) as transport,
         transport.recv() as messages,
     ):

@@ -6,14 +6,14 @@ Other adapters may wait indefinitely because they do not support TX deadlines.
 
 import asyncio
 
-from automotive.adapters import get_adapter
+from automotive.adapters import Adapter
 from automotive.can import Frame
 from automotive.errors import TransmissionCancelledError
 
 
 async def main() -> None:
     """Keep the same adapter open and report both concurrent send results."""
-    async with await get_adapter() as adapter:
+    async with Adapter() as adapter:
         counter = 0
         while True:
             first = Frame(id=0x123, data=counter.to_bytes(8, "little"))

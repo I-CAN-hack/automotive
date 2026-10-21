@@ -12,6 +12,7 @@ license = "MIT"
 
 [dependency-groups]
 dev = ["maturin>=1.8,<2", "pytest>=8", "pytest-asyncio>=0.24", "scapy==2.8.0"]
+release = ["maturin[zig]>=1.15,<2", "patchelf; sys_platform == 'linux'"]
 
 [tool.uv]
 required-version = ">=0.13.4"

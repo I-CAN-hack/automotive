@@ -14,7 +14,7 @@ from typing import Protocol
 
 import pytest
 
-from automotive.adapters import Adapter, SocketCanConfig, get_adapter
+from automotive.adapters import Adapter, SocketCanAdapter
 from automotive.transports.isotp import IsoTPAdapter, IsoTPConfig
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -99,7 +99,7 @@ def ecu_factory() -> EcuFactory:
             if config.ext_address is not None:
                 args += ["--ext-address", str(config.ext_address)]
         async with (
-            await get_adapter(SocketCanConfig(interface="vcan0")) as adapter,
+            SocketCanAdapter("vcan0") as adapter,
             IsoTPAdapter(adapter, config) as transport,
         ):
             with tempfile.TemporaryFile() as stderr:

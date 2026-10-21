@@ -2,12 +2,12 @@
 
 import asyncio
 
-from automotive.adapters import get_adapter
+from automotive.adapters import Adapter
 
 
 async def main() -> None:
     """Discover an adapter and print frames until interrupted."""
-    async with await get_adapter() as adapter, adapter.recv() as frames:
+    async with Adapter() as adapter, adapter.recv() as frames:
         async for frame in frames:
             print(frame)
 

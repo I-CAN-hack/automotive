@@ -1,22 +1,24 @@
 """Hardware discovery, explicit adapter selection, and reusable configuration.
 
-Use ``async with await get_adapter() as adapter`` for discovery, or pass a
-config to select a backend. Opening and closing run outside the Python thread.
+Use ``async with Adapter() as adapter`` for discovery, or select a backend with
+``async with PeakAdapter(config) as adapter``. Opening and closing run outside
+the Python thread. SocketCanAdapter also accepts an interface name directly.
 SocketCAN uses OS-configured timing; USB adapters require their permissions and
 Windows adapters require the vendor driver/DLL.
 """
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
-from typing import ClassVar, TypeAlias
+from typing import ClassVar, Self, TypeAlias, TypeVar
 
-from .. import _native
-from .._base import AsyncResource, Receiver
+from .. import _native as _rust
+from .._base import Receiver
 from ..can import Frame
 from ..can.bitrate import BitrateConfig, BitrateSettings, _resolved
 
-_DEFAULTS = _native.defaults()
+_DEFAULTS = _rust.defaults()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -110,7 +112,7 @@ class J2534Config(_TimingConfig):
         dll_path: Vendor DLL path; None discovers it from the Windows registry.
         bitrate: Timing inputs; None selects 500 kbit/s Classic CAN.
 
-    Use with get_adapter for raw CAN, or J2534NativeIsoTpTransport.open for
+    Use with J2534Adapter for raw CAN, or J2534NativeIsoTpTransport.open for
     firmware-managed ISO-TP. The vendor DLL must support the Python process's
     architecture and concurrent native ISO-TP read/write calls.
     """
@@ -120,19 +122,82 @@ class J2534Config(_TimingConfig):
 
 
 AdapterConfig: TypeAlias = SocketCanConfig | PandaConfig | PeakConfig | VectorConfig | J2534Config
+ConfigT = TypeVar("ConfigT", bound=AdapterConfig)
 
 
-class Adapter(AsyncResource[_native._Adapter]):
-    """An open CAN adapter with asynchronous transmit confirmation and reception.
+def _adapter_config(config: ConfigT | None, config_type: type[ConfigT]) -> ConfigT:
+    if config is None:
+        return config_type()
+    if not isinstance(config, config_type):
+        raise TypeError(f"config must be {config_type.__name__} or None")
+    return config
 
-    Obtain one from get_adapter. The object retains its native resources until
-    closed or released; prefer ``async with``. Transport/client references keep
-    it alive, but explicitly closing it invalidates all dependent operations.
+
+class Adapter:
+    """Discover a CAN adapter with Rust defaults when opened.
+
+    Construction performs no I/O. Prefer ``async with Adapter() as adapter``;
+    alternatively call ``await adapter.open()`` and ``await adapter.aclose()``.
+    Use a named class such as PeakAdapter to select a backend and configuration.
+    Transports and clients keep the native adapter alive, but explicitly closing
+    it invalidates all dependent operations. A closed adapter cannot be reopened.
     """
 
-    def __init__(self, native: _native._Adapter, config: AdapterConfig | None) -> None:
-        super().__init__(native)
-        self.config = config
+    def __init__(self) -> None:
+        self._config: AdapterConfig | None = None
+        self._handle: _rust._Adapter | None = None
+        self._closed = False
+        self._lifecycle = asyncio.Lock()
+
+    @property
+    def config(self) -> AdapterConfig | None:
+        """Backend configuration, or None for automatic discovery."""
+        return self._config
+
+    @property
+    def _native(self) -> _rust._Adapter:
+        if self._handle is None:
+            raise RuntimeError("adapter is not open; use async with or await adapter.open()")
+        return self._handle
+
+    async def open(self) -> Self:
+        """Open this adapter without blocking the event loop; return self.
+
+        Repeated calls retain the same open connection. Calls racing with close
+        are serialized. Automatic discovery skips unavailable devices.
+
+        Raises:
+            ValueError: Explicit configuration is invalid.
+            NotSupportedError: This backend is unavailable on this platform.
+            AdapterError: Opening failed, or discovery found no usable adapter.
+            RuntimeError: This adapter has already been closed.
+        """
+        async with self._lifecycle:
+            if self._closed:
+                raise RuntimeError("adapter is closed")
+            if self._handle is None:
+                self._handle = await _rust.open_adapter(self._config)
+        return self
+
+    async def __aenter__(self) -> Self:
+        """Open this adapter and return it."""
+        return await self.open()
+
+    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+        """Close hardware even when the context exits with an exception."""
+        await self.aclose()
+
+    async def aclose(self) -> None:
+        """Close this adapter and wake dependent operations; repeated calls are safe."""
+        async with self._lifecycle:
+            self._closed = True
+            if self._handle is not None:
+                await self._handle.aclose()
+
+    @property
+    def closed(self) -> bool:
+        """Whether this adapter has been closed; False before its first open."""
+        return self._closed or (self._handle is not None and self._handle.closed)
 
     async def send(self, frame: Frame) -> None:
         """Send a frame and await the backend's transmit confirmation.
@@ -163,47 +228,88 @@ class Adapter(AsyncResource[_native._Adapter]):
         return Receiver(self._native.recv(), Frame._from_native)
 
 
-async def get_adapter(config: AdapterConfig | None = None) -> Adapter:
-    """Open an adapter without blocking Python's event loop.
+class SocketCanAdapter(Adapter):
+    """A Linux SocketCAN adapter; open with ``async with SocketCanAdapter('can0')``.
 
     Args:
-        config: Select a backend explicitly. None uses Rust's discovery order
-            and defaults; unavailable devices are skipped during discovery.
+        interface: Interface name, default "can0", or a reusable SocketCanConfig.
 
-    Returns:
-        An open Adapter supporting ``async with`` and ``aclose()``.
-
-    Raises:
-        ValueError: Explicit configuration is invalid.
-        NotSupportedError: The requested backend is not compiled for this platform.
-        AdapterError: Opening failed, or discovery found no usable adapter.
-
-    Examples:
-        Requires an existing Linux interface::
-
-            async with await get_adapter(SocketCanConfig(interface="vcan0")) as can:
-                await can.send(Frame(id=0x123, data=bytes([1, 2])))
+    Timing is configured through the OS. Construction performs no I/O.
     """
-    if config is not None and not isinstance(
-        config, (SocketCanConfig, PandaConfig, PeakConfig, VectorConfig, J2534Config)
-    ):
-        raise TypeError("config must be an adapter config or None")
-    return Adapter(await _native.open_adapter(config), config)
+
+    def __init__(self, interface: str | SocketCanConfig = "can0") -> None:
+        super().__init__()
+        config = SocketCanConfig(interface=interface) if isinstance(interface, str) else interface
+        self._config = _adapter_config(config, SocketCanConfig)
+
+
+class PandaAdapter(Adapter):
+    """A panda USB adapter; open it with async with or await open().
+
+    Args:
+        config: Reusable PandaConfig; None uses Rust defaults.
+    """
+
+    def __init__(self, config: PandaConfig | None = None) -> None:
+        super().__init__()
+        self._config = _adapter_config(config, PandaConfig)
+
+
+class PeakAdapter(Adapter):
+    """A PEAK PCAN-USB FD adapter; open it with async with or await open().
+
+    Args:
+        config: Reusable PeakConfig; None uses Rust defaults.
+    """
+
+    def __init__(self, config: PeakConfig | None = None) -> None:
+        super().__init__()
+        self._config = _adapter_config(config, PeakConfig)
+
+
+class VectorAdapter(Adapter):
+    """A Windows Vector XL adapter; open it with async with or await open().
+
+    Args:
+        config: Reusable VectorConfig; None retains shared channel access.
+    """
+
+    def __init__(self, config: VectorConfig | None = None) -> None:
+        super().__init__()
+        self._config = _adapter_config(config, VectorConfig)
+
+
+class J2534Adapter(Adapter):
+    """A Windows J2534 raw CAN adapter; open it with async with or await open().
+
+    Args:
+        config: Reusable J2534Config; None discovers a DLL and uses Rust defaults.
+
+    For firmware-managed ISO-TP, use J2534NativeIsoTpTransport instead.
+    """
+
+    def __init__(self, config: J2534Config | None = None) -> None:
+        super().__init__()
+        self._config = _adapter_config(config, J2534Config)
 
 
 def available_adapters() -> tuple[str, ...]:
     """Return compiled backend names; this does not probe connected hardware."""
-    return tuple(_native.available_adapters())
+    return tuple(_rust.available_adapters())
 
 
 __all__ = [
     "Adapter",
     "AdapterConfig",
+    "J2534Adapter",
     "J2534Config",
+    "PandaAdapter",
     "PandaConfig",
+    "PeakAdapter",
     "PeakConfig",
+    "SocketCanAdapter",
     "SocketCanConfig",
+    "VectorAdapter",
     "VectorConfig",
     "available_adapters",
-    "get_adapter",
 ]

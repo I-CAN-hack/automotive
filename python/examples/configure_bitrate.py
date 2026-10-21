@@ -2,7 +2,7 @@
 
 import asyncio
 
-from automotive.adapters import VectorConfig, available_adapters, get_adapter
+from automotive.adapters import VectorAdapter, VectorConfig, available_adapters
 from automotive.can.bitrate import BitrateSettings
 
 
@@ -21,7 +21,7 @@ async def main() -> None:
         ),
     )
     print("Resolved timing:", config.resolved_bitrate)
-    async with await get_adapter(config) as adapter, adapter.recv() as frames:
+    async with VectorAdapter(config) as adapter, adapter.recv() as frames:
         async for frame in frames:
             print(frame)
 

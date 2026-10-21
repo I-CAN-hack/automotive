@@ -1,6 +1,6 @@
 [package]
 name = "automotive-python"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2021"
 license = "MIT"
 publish = false
@@ -10,6 +10,10 @@ repository = "https://github.com/I-CAN-hack/automotive"
 [lib]
 name = "_native"
 crate-type = ["cdylib"]
+
+[features]
+# One release wheel per platform supports regular CPython 3.11 and newer.
+wheel = ["pyo3/abi3-py311", "pyo3/generate-import-lib"]
 
 [dependencies]
 automotive = { path = "..", features = ["all-adapters"] }
