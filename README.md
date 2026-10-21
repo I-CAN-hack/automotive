@@ -60,7 +60,7 @@ Use the data-frame builder or the remote/error constructors below. Payloads are 
 use automotive::can::{ErrorFlag, Frame, Identifier};
 
 # fn example() -> automotive::Result<()> {
-let id = Identifier::Standard(0x123);
+let id = Identifier::standard(0x123)?;
 let classic = Frame::builder(id).data(vec![1, 2, 3]).build()?;
 let fd = Frame::builder(id).fd(true).brs(true).data(vec![0xaa; 12]).build()?;
 let remote = Frame::remote(1, id, 8)?;
@@ -81,9 +81,9 @@ BRS is selected per frame and requires a configured data bitrate on PEAK adapter
 Frame fields `id`, `data`, and `fd` are now accessed through `id()`, `data()`,
 and `is_fd()`. `id()` returns `None` for error frames. Use `content()` to match on
 `FrameContent` and access type-specific fields. Identifiers use the
-`Identifier::Standard(u32)` and `Identifier::Extended(u32)` enum variants;
-frame construction checks their ranges. The checked `Identifier::standard(...)`,
-`Identifier::extended(...)`, and `u32::try_into()` constructors are also available.
+`Identifier::standard(...)?` and `Identifier::extended(...)?` constructors,
+which check their ranges immediately. The enum variants contain wrappers with
+private numeric fields, so their checks cannot be bypassed.
 An explicitly extended ID keeps its format even when its value fits in 11 bits.
 Serde deserialization applies the same validation, using the new
 `content` enum in place of the old flat frame fields.

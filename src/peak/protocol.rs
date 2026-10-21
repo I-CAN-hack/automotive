@@ -213,9 +213,9 @@ pub fn parse_rx_buffer(data: &[u8]) -> (Vec<Frame>, u32) {
                 let loopback = flags & FLAG_LOOPED_BACK != 0;
 
                 let id = if flags & FLAG_EXT_ID != 0 {
-                    Identifier::Extended(id & 0x1fff_ffff)
+                    Identifier::extended(id & 0x1fff_ffff).expect("ID is masked to 29 bits")
                 } else {
-                    Identifier::Standard(id & 0x7ff)
+                    Identifier::standard(id & 0x7ff).expect("ID is masked to 11 bits")
                 };
 
                 let parsed = if rtr && !fd {
@@ -313,7 +313,12 @@ mod tests {
 
     #[test]
     fn encode_standard_frame_sets_looped_back() {
-        let frame = Frame::new(0, Identifier::Standard(0x123), &[1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
+        let frame = Frame::new(
+            0,
+            Identifier::standard(0x123).unwrap(),
+            &[1, 2, 3, 4, 5, 6, 7, 8],
+        )
+        .unwrap();
         let buf = encode_tx_frame(&frame, false).unwrap();
 
         assert_eq!(buf.len(), align4(TX_MSG_HEADER_SIZE + 8));
@@ -332,7 +337,7 @@ mod tests {
 
     #[test]
     fn encode_extended_fd_frame_sets_flags() {
-        let frame = Frame::builder(Identifier::Extended(0x1234))
+        let frame = Frame::builder(Identifier::extended(0x1234).unwrap())
             .fd(true)
             .brs(true)
             .data([0xAA; 16])
@@ -361,7 +366,7 @@ mod tests {
     #[test]
     fn remote_requests_keep_dlc_and_have_no_payload() {
         for dlc in 0..=15 {
-            let frame = Frame::remote(0, Identifier::Standard(0x123), dlc).unwrap();
+            let frame = Frame::remote(0, Identifier::standard(0x123).unwrap(), dlc).unwrap();
             let tx = encode_tx_frame(&frame, false).unwrap();
             assert_eq!(tx.len(), TX_MSG_HEADER_SIZE);
             assert_eq!(tx[12] >> 4, dlc);
@@ -373,7 +378,7 @@ mod tests {
 
     #[test]
     fn fd_flags_are_preserved_and_brs_requires_data_timing() {
-        let frame = Frame::builder(Identifier::Standard(0x123))
+        let frame = Frame::builder(Identifier::standard(0x123).unwrap())
             .fd(true)
             .brs(true)
             .esi(true)
@@ -391,7 +396,7 @@ mod tests {
         let (decoded, _) = parse_rx_buffer(&build_rx_record(&frame));
         assert_eq!(decoded, vec![frame]);
 
-        let frame = Frame::builder(Identifier::Standard(0x123))
+        let frame = Frame::builder(Identifier::standard(0x123).unwrap())
             .fd(true)
             .build()
             .unwrap();
@@ -404,7 +409,7 @@ mod tests {
 
     #[test]
     fn fd_remote_requests_are_rejected_on_receive() {
-        let frame = Frame::remote(0, Identifier::Standard(0x123), 8).unwrap();
+        let frame = Frame::remote(0, Identifier::standard(0x123).unwrap(), 8).unwrap();
         let mut record = build_rx_record(&frame);
         let flags = FLAG_RTR | FLAG_EXT_DATA_LEN;
         record[22..24].copy_from_slice(&flags.to_le_bytes());
@@ -449,7 +454,12 @@ mod tests {
 
     #[test]
     fn decode_single_standard_frame() {
-        let frame = Frame::new(0, Identifier::Standard(0x123), &[1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
+        let frame = Frame::new(
+            0,
+            Identifier::standard(0x123).unwrap(),
+            &[1, 2, 3, 4, 5, 6, 7, 8],
+        )
+        .unwrap();
         let record = build_rx_record(&frame);
 
         let (frames, overruns) = parse_rx_buffer(&record);
@@ -460,8 +470,13 @@ mod tests {
 
     #[test]
     fn decode_multiple_records_and_stops_at_terminator() {
-        let f1 = Frame::new(0, Identifier::Standard(0x100), &[0xDE, 0xAD]).unwrap();
-        let f2 = Frame::new(0, Identifier::Extended(0x1abcd), &[0xBE, 0xEF, 0x00, 0x11]).unwrap();
+        let f1 = Frame::new(0, Identifier::standard(0x100).unwrap(), &[0xDE, 0xAD]).unwrap();
+        let f2 = Frame::new(
+            0,
+            Identifier::extended(0x1abcd).unwrap(),
+            &[0xBE, 0xEF, 0x00, 0x11],
+        )
+        .unwrap();
 
         let mut buf = build_rx_record(&f1);
         buf.extend_from_slice(&build_rx_record(&f2));
@@ -474,7 +489,7 @@ mod tests {
 
     #[test]
     fn decode_marks_loopback_frames() {
-        let mut frame = Frame::new(0, Identifier::Standard(0x321), &[0xCA, 0xFE]).unwrap();
+        let mut frame = Frame::new(0, Identifier::standard(0x321).unwrap(), &[0xCA, 0xFE]).unwrap();
         frame.loopback = true;
         let record = build_rx_record(&frame);
 
@@ -487,10 +502,15 @@ mod tests {
     #[test]
     fn encode_decode_round_trip() {
         let frames = vec![
-            Frame::new(0, Identifier::Standard(0x123), &[1, 2, 3, 4, 5, 6, 7, 8]).unwrap(),
-            Frame::new(0, Identifier::Extended(0x1234), &[0xAA; 8]).unwrap(),
-            Frame::new(0, Identifier::Standard(0x0), &[]).unwrap(),
-            Frame::new(0, Identifier::Extended(0x18DAF110), &[0u8; 64]).unwrap(),
+            Frame::new(
+                0,
+                Identifier::standard(0x123).unwrap(),
+                &[1, 2, 3, 4, 5, 6, 7, 8],
+            )
+            .unwrap(),
+            Frame::new(0, Identifier::extended(0x1234).unwrap(), &[0xAA; 8]).unwrap(),
+            Frame::new(0, Identifier::standard(0x0).unwrap(), &[]).unwrap(),
+            Frame::new(0, Identifier::extended(0x18DAF110).unwrap(), &[0u8; 64]).unwrap(),
         ];
 
         for frame in frames {
@@ -509,7 +529,12 @@ mod tests {
 
     #[test]
     fn decode_truncated_record_is_ignored() {
-        let frame = Frame::new(0, Identifier::Standard(0x123), &[1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
+        let frame = Frame::new(
+            0,
+            Identifier::standard(0x123).unwrap(),
+            &[1, 2, 3, 4, 5, 6, 7, 8],
+        )
+        .unwrap();
         let mut record = build_rx_record(&frame);
         record.truncate(record.len() - 4); // cut off part of the payload
 

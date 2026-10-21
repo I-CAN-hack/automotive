@@ -20,10 +20,10 @@ async fn main() -> automotive::Result<()> {
     let mut counter = 0_u64;
 
     loop {
-        let first = Frame::builder(Identifier::Standard(0x123))
+        let first = Frame::builder(Identifier::standard(0x123)?)
             .data(counter.to_le_bytes())
             .build()?;
-        let second = Frame::builder(Identifier::Standard(0x124))
+        let second = Frame::builder(Identifier::standard(0x124)?)
             .data(counter.to_le_bytes())
             .build()?;
         counter = counter.wrapping_add(1);

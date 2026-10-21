@@ -1,7 +1,7 @@
 use automotive::can::{ErrorFlag, Frame, FrameContent, Identifier, DLC_TO_LEN};
 
 fn id() -> Identifier {
-    Identifier::Standard(0x123)
+    Identifier::standard(0x123).unwrap()
 }
 
 #[test]
@@ -9,31 +9,18 @@ fn identifier_bounds_and_explicit_format() {
     assert!(Identifier::standard(0).is_ok());
     assert!(Identifier::standard(0x7ff).is_ok());
     assert!(Identifier::standard(0x800).is_err());
+    assert!(Identifier::standard(u32::MAX).is_err());
     assert!(Identifier::extended(0).is_ok());
     assert!(Identifier::extended(0x1fff_ffff).is_ok());
     assert!(Identifier::extended(0x2000_0000).is_err());
+    assert!(Identifier::extended(u32::MAX).is_err());
     assert!(Identifier::try_from(u32::MAX).is_err());
     assert!(Identifier::try_from(0x7ff).unwrap().is_standard());
     assert!(Identifier::try_from(0x800).unwrap().is_extended());
-    let extended = Identifier::Extended(0x123);
+    let extended = Identifier::extended(0x123).unwrap();
     assert!(extended.is_extended());
     assert_eq!(extended.as_raw(), id().as_raw());
     assert_ne!(extended, id());
-}
-
-#[test]
-fn frame_construction_validates_direct_identifier_variants() {
-    for id in [
-        Identifier::Standard(0x800),
-        Identifier::Standard(u32::MAX),
-        Identifier::Extended(0x2000_0000),
-        Identifier::Extended(u32::MAX),
-    ] {
-        assert!(Frame::new(0, id, &[]).is_err());
-        assert!(Frame::builder(id).build().is_err());
-        assert!(Frame::builder(id).fd(true).build().is_err());
-        assert!(Frame::remote(0, id, 8).is_err());
-    }
 }
 
 #[test]
@@ -127,7 +114,7 @@ fn serialization_preserves_shape_and_round_trips_each_frame_variant() {
     use serde_json::json;
     let frames = [
         Frame::builder(id()).data([0xaa; 8]).build().unwrap(),
-        Frame::builder(Identifier::Extended(0x123))
+        Frame::builder(Identifier::extended(0x123).unwrap())
             .fd(true)
             .brs(true)
             .esi(true)
@@ -158,7 +145,10 @@ fn serialization_preserves_shape_and_round_trips_each_frame_variant() {
 #[cfg(feature = "serde")]
 #[test]
 fn deserialization_cannot_bypass_frame_invariants() {
+    use automotive::can::{ExtendedId, StandardId};
     use serde_json::json;
+    assert!(serde_json::from_value::<StandardId>(json!(0x800)).is_err());
+    assert!(serde_json::from_value::<ExtendedId>(json!(0x2000_0000)).is_err());
     for content in [
         json!({"Classic": {"id": {"Standard": 0x800}, "data": []}}),
         json!({"Classic": {"id": {"Extended": 0x2000_0000}, "data": []}}),

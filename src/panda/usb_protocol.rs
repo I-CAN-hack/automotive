@@ -144,7 +144,7 @@ mod tests {
         assert_eq!(buffer.len(), 0);
 
         assert_eq!(frames.len(), 1);
-        assert_eq!(frames[0].id(), Some(Identifier::Standard(48)));
+        assert_eq!(frames[0].id(), Some(Identifier::standard(48).unwrap()));
         assert_eq!(frames[0].bus, 0);
         assert_eq!(
             frames[0].data(),
@@ -169,8 +169,8 @@ mod tests {
 
     #[test]
     fn test_round_trip() {
-        let id = Identifier::Standard(0x123);
-        let extended = Identifier::Extended(0x123);
+        let id = Identifier::standard(0x123).unwrap();
+        let extended = Identifier::extended(0x123).unwrap();
         let frames = vec![
             Frame::builder(id)
                 .data([1, 2, 3, 4, 5, 6, 7, 8])
@@ -209,7 +209,7 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_frames() {
-        let id = Identifier::Standard(0x123);
+        let id = Identifier::standard(0x123).unwrap();
         for frame in [
             Frame::remote(0, id, 8).unwrap(),
             Frame::error(0, crate::can::ErrorFlag::Active),

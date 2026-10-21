@@ -1,30 +1,70 @@
 use std::fmt;
 
-/// A CAN arbitration identifier with an explicit wire format.
+/// An 11-bit value constructed through [`Identifier::standard`].
 ///
-/// Frames validate the range on construction, so identifiers can be written
-/// directly as `Identifier::Standard(0x123)` or `Identifier::Extended(0x123)`.
+/// ```compile_fail
+/// use automotive::can::StandardId;
+/// let id = StandardId(0x800);
+/// ```
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct StandardId(
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "deserialize_standard"))] u32,
+);
+
+impl StandardId {
+    pub const fn as_raw(self) -> u32 {
+        self.0
+    }
+}
+
+/// A 29-bit value constructed through [`Identifier::extended`].
+///
+/// ```compile_fail
+/// use automotive::can::ExtendedId;
+/// let id = ExtendedId(0x2000_0000);
+/// ```
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct ExtendedId(
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "deserialize_extended"))] u32,
+);
+
+impl ExtendedId {
+    pub const fn as_raw(self) -> u32 {
+        self.0
+    }
+}
+
+/// A CAN arbitration identifier, checked on construction and deserialization.
+///
+/// Use [`Self::standard`] or [`Self::extended`] to choose the wire format.
 #[derive(Copy, Clone, PartialOrd, Ord, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Identifier {
-    Standard(#[cfg_attr(feature = "serde", serde(deserialize_with = "deserialize_standard"))] u32),
-    Extended(#[cfg_attr(feature = "serde", serde(deserialize_with = "deserialize_extended"))] u32),
+    Standard(StandardId),
+    Extended(ExtendedId),
 }
 
 impl Identifier {
+    /// Construct a standard identifier, rejecting values above 0x7ff.
     pub const fn standard(id: u32) -> crate::Result<Self> {
-        Self::Standard(id).validate()
+        if id <= 0x7ff {
+            Ok(Self::Standard(StandardId(id)))
+        } else {
+            Err(crate::Error::MalformedFrame)
+        }
     }
 
+    /// Construct an extended identifier, rejecting values above 0x1fff_ffff.
+    /// Values that also fit in 11 bits retain the extended wire format.
     pub const fn extended(id: u32) -> crate::Result<Self> {
-        Self::Extended(id).validate()
-    }
-
-    pub const fn validate(self) -> crate::Result<Self> {
-        match self {
-            Self::Standard(id) if id <= 0x7ff => Ok(self),
-            Self::Extended(id) if id <= 0x1fff_ffff => Ok(self),
-            _ => Err(crate::Error::MalformedFrame),
+        if id <= 0x1fff_ffff {
+            Ok(Self::Extended(ExtendedId(id)))
+        } else {
+            Err(crate::Error::MalformedFrame)
         }
     }
 
@@ -38,7 +78,8 @@ impl Identifier {
 
     pub const fn as_raw(self) -> u32 {
         match self {
-            Self::Standard(id) | Self::Extended(id) => id,
+            Self::Standard(id) => id.as_raw(),
+            Self::Extended(id) => id.as_raw(),
         }
     }
 }
@@ -65,8 +106,8 @@ impl From<Identifier> for u32 {
 impl fmt::Debug for Identifier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Standard(id) => write!(f, "0x{:03x}", id),
-            Self::Extended(id) => write!(f, "0x{:08x}", id),
+            Self::Standard(id) => write!(f, "0x{:03x}", id.as_raw()),
+            Self::Extended(id) => write!(f, "0x{:08x}", id.as_raw()),
         }
     }
 }

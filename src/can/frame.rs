@@ -50,7 +50,7 @@ pub enum FrameContent {
 /// ```
 /// use automotive::can::{Frame, Identifier};
 /// # fn example() -> automotive::Result<()> {
-/// let id = Identifier::Standard(0x123);
+/// let id = Identifier::standard(0x123)?;
 /// let classic = Frame::builder(id).bus(1).data([1, 2]).build()?;
 /// let fd = Frame::builder(id).fd(true).brs(true).data([0; 12]).build()?;
 /// let remote = Frame::remote(0, id, 8)?;
@@ -94,7 +94,6 @@ impl Frame {
 
     /// Create a remote request with a raw DLC (0–15) and no payload.
     pub fn remote(bus: u8, id: Identifier, dlc: u8) -> crate::Result<Self> {
-        id.validate()?;
         validate_dlc(dlc)?;
         Ok(Self {
             bus,
@@ -174,8 +173,8 @@ impl std::fmt::Display for Frame {
 
 /// Builder for Classical and FD data frames.
 ///
-/// `build()` rejects invalid identifiers, invalid lengths, and BRS/ESI on
-/// Classical frames with [`crate::Error::MalformedFrame`].
+/// `build()` rejects invalid lengths and BRS/ESI on Classical frames with
+/// [`crate::Error::MalformedFrame`]. Identifiers are checked when constructed.
 /// Data is never padded or truncated.
 #[derive(Debug, Clone)]
 #[must_use]
@@ -221,7 +220,6 @@ impl FrameBuilder {
     }
 
     pub fn build(self) -> crate::Result<Frame> {
-        self.id.validate()?;
         let content = if self.fd {
             validate_fd_data(&self.data)?;
             FrameContent::Fd {

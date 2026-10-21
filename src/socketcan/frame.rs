@@ -125,7 +125,10 @@ mod tests {
 
     #[test]
     fn data_round_trips_preserve_format_and_flags() {
-        for id in [Identifier::Standard(0x123), Identifier::Extended(0x123)] {
+        for id in [
+            Identifier::standard(0x123).unwrap(),
+            Identifier::extended(0x123).unwrap(),
+        ] {
             for &len in DLC_TO_LEN {
                 let data = vec![0xaa; len];
                 let fd = Frame::builder(id)
@@ -151,7 +154,7 @@ mod tests {
     #[test]
     fn remote_round_trip_retains_requested_dlc_without_payload() {
         for dlc in 0..=15 {
-            let frame = Frame::remote(0, Identifier::Extended(0x123), dlc).unwrap();
+            let frame = Frame::remote(0, Identifier::extended(0x123).unwrap(), dlc).unwrap();
             let raw = can_frame::try_from(&frame).unwrap();
             assert_ne!(raw.can_id & CAN_RTR_FLAG, 0);
             assert_eq!(Frame::try_from(raw).unwrap(), frame);
