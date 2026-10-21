@@ -23,11 +23,11 @@ async fn get_version(adapter: &AsyncCanAdapter, identifier: u32) -> Result<()> {
     uds.tester_present().await?;
 
     for did in DataIdentifier::iter() {
-        if let Ok(resp) = uds.read_data_by_identifier(did as u16).await {
+        if let Ok(resp) = uds.read_data_by_identifier(did).await {
             println!(
                 "{:x} 0x{:x} {:?}: {:?}",
                 identifier,
-                did as u16,
+                did,
                 did,
                 resp.as_bstr()
             );

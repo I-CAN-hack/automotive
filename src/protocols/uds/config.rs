@@ -28,7 +28,8 @@ pub struct UDSConfig {
     pub use_server_timing: bool,
     /// Whether responses are validated against ISO 14229-1:2013. Defaults to `true`.
     /// Failures include the full response in [`super::Error::ProtocolDeviation`].
-    /// Minimum parsing lengths and representable DTC formats apply in both modes.
+    /// Minimum parsing lengths apply in both modes. Unknown NRCs and DTC
+    /// formats are preserved in both modes.
     pub strict: bool,
 }
 

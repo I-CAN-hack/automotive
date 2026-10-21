@@ -319,12 +319,62 @@ The automotive crate also supplies interfaces for various diagnostic protocols s
     let uds = automotive::protocols::uds::UDSClient::new(&isotp);
 
     uds.tester_present().await?;
-    let response = uds.read_data_by_identifier(automotive::protocols::uds::DataIdentifier::ApplicationSoftwareIdentification as u16).await?;
+    let response = uds.read_data_by_identifier(automotive::protocols::uds::DataIdentifier::ApplicationSoftwareIdentification).await?;
 
     println!("Application Software Identification: {}", hex::encode(response));
     Ok(())
  }
 ```
+
+UDS service methods, including those on the suppressed client view, accept
+domain types or raw numbers directly, without casts or `.into()` calls:
+
+```rust
+use automotive::protocols::uds::{
+    CompressionMethod, DataIdentifier, EncryptionMethod, ResetType,
+    RoutineControlType, RoutineIdentifier, SecurityAccessType, UDSClient,
+};
+
+# async fn typed_uds_example<T: automotive::TransportLayer>(uds: &UDSClient<'_, T>) -> automotive::Result<()> {
+uds.ecu_reset(ResetType::HardReset).await?;
+uds.ecu_reset(0x1).await?;
+uds.security_access(SecurityAccessType::NonStandard(0x11), None).await?;
+uds.read_data_by_identifier(DataIdentifier::Vin).await?;
+uds.read_data_by_identifier(0xf190).await?;
+uds.routine_control(RoutineControlType::Start, RoutineIdentifier::EraseMemory, None).await?;
+uds.routine_control(0x1, 0xff00, None).await?;
+
+let address = [0x12, 0x34];
+let size = [0x10];
+uds.request_download(CompressionMethod::NONE, EncryptionMethod::NONE, &address, &size).await?;
+uds.request_upload(0, 0, &address, &size).await?;
+uds.request_download(CompressionMethod::new(0xa)?, 0x3, &address, &size).await?;
+# Ok(())
+# }
+```
+
+Code enums use named variants for known values and `NonStandard(u8)` or
+`NonStandard(u16)` for other values. `from_raw()` and `From` decode numbers
+without losing unknown values; `as_raw()` and conversion back to the wire
+integer preserve all bits. Iteration visits only named variants. Enum equality
+compares variants; compare `as_raw()` values when comparing wire encodings.
+Counts, masks, counters, addresses, sizes, and byte buffers retain their existing
+numeric or byte-slice representations.
+
+Compression and encryption use separate validated types with `NONE` constants.
+Each holds an unshifted value in `0..=0xf`; compression occupies the high nibble
+and encryption the low nibble of the data format identifier (`0xa`, `0x3`
+encode as `0xa3`). Both transfer methods accept any mix of typed methods and raw
+numbers. Out-of-range inputs return `uds::Error::InvalidCompressionMethod` or
+`InvalidEncryptionMethod` before sending. Checked construction also applies to
+Serde deserialization.
+
+When migrating code, replace enum casts such as `ResetType::HardReset as u8`
+with the enum itself in service calls, or `.as_raw()` when a wire integer is
+needed. Service-ID, data-identifier, and routine-identifier error fields now use
+their domain types, so downstream matches must use typed values. The low-level
+`request()` accepts a typed or numeric SID; its optional sub-function remains
+`Option<u8>` because its domain depends on the service.
 
 `UDSClient::new` uses strict response validation and default timing settings.
 Use `UDSConfig::builder()` and `UDSClient::with_config` to customize the settings:
@@ -357,7 +407,7 @@ client's behavior:
 
 ```rust
 # async fn suppressed_uds_example<T: automotive::TransportLayer>(transport: &T) -> automotive::Result<()> {
-use automotive::protocols::uds::{RequestOutcome, UDSClient};
+use automotive::protocols::uds::{RequestOutcome, ResetType, UDSClient};
 
 let uds = UDSClient::new(transport);
 let report = uds
@@ -367,6 +417,8 @@ println!("DTC count: {}", report.dtc_count);
 {
     let suppressed = uds.suppress_positive_responses();
     suppressed.tester_present().await?; // Sends [0x3e, 0x80].
+    suppressed.ecu_reset(ResetType::HardReset).await?;
+    suppressed.ecu_reset(0x1).await?; // Both send [0x11, 0x81].
 
     // All typed helpers are available on the view.
     let report = suppressed
@@ -431,7 +483,7 @@ receive timeout expiring first. Session keepalive remains caller-managed through
 
 Strict mode follows ISO 14229-1:2013. It validates service IDs, sub-function
 echoes, identifiers, block counters, and response formats. Negative responses
-contain exactly three bytes, echo the requested SID, and use a permitted NRC.
+contain exactly three bytes and echo the requested SID.
 Service methods validate mandatory records, fixed response lengths, memory-read
 byte counts, memory-write echoes, and download/upload length formats.
 
@@ -439,9 +491,11 @@ Validation failures return
 `uds::Error::ProtocolDeviation { deviation, response }` inside
 `automotive::Error::UDSError`. The deviation describes the expectation, and
 `response` contains the complete received UDS payload, including its service
-header. `.strict(false)` disables these checks. Minimum parsing lengths and
-representable DTC formats are required in both modes. Vehicle-specific record
-contents and lengths are defined by the ECU.
+header. `.strict(false)` disables these checks. Minimum parsing lengths apply
+in both modes. Unknown NRCs and DTC formats are preserved as `NonStandard` in
+both modes; they no longer produce `InvalidNegativeResponseCode` or
+`InvalidDTCFormatIdentifier` errors. NRC `0x78` still invokes pending-response
+handling. Vehicle-specific record contents and lengths are defined by the ECU.
 
 ## CAN Adapters
 The following CAN adapters are supported.

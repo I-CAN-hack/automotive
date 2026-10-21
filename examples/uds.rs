@@ -10,11 +10,11 @@ async fn main() -> automotive::Result<()> {
     let uds = automotive::protocols::uds::UDSClient::new(&isotp);
 
     uds.tester_present().await?;
-    uds.diagnostic_session_control(SessionType::ExtendedDiagnostic as u8)
+    uds.diagnostic_session_control(SessionType::ExtendedDiagnostic)
         .await?;
 
     let did = DataIdentifier::ApplicationSoftwareIdentification;
-    let resp = uds.read_data_by_identifier(did as u16).await?;
+    let resp = uds.read_data_by_identifier(did).await?;
 
     // ApplicationSoftwareIdentification: "\x018965B4209000\0\0\0\0"
     println!("{:?}: {:?}", did, resp.as_bstr());
