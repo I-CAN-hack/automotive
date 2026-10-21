@@ -3,6 +3,20 @@ use strum_macros::FromRepr;
 
 use std::time::Duration;
 
+/// Outcome of a custom UDS request.
+///
+/// Negative responses remain [`super::Error::NegativeResponse`] errors. Response
+/// Pending (NRC 0x78) is handled internally until a final response or timeout.
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum RequestOutcome<T> {
+    /// Data from a received positive response, excluding the response headers.
+    PositiveResponse(T),
+    /// The initial response window elapsed without a response when suppression
+    /// was requested. This does not confirm that the ECU executed the request.
+    Suppressed,
+}
+
 /// Struct returned by DiagnosticSessionControl (0x10)
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

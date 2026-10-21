@@ -349,7 +349,72 @@ timeouts are used directly. P2 starts after sending the request. Each Response
 Pending (NRC 0x78) restarts P2*. By default there is no overall request limit;
 `.request_timeout(...)` caps the entire exchange,
 including sending and pending responses. `.without_request_timeout()` removes
-that cap. Expired deadlines return `automotive::Error::Timeout`.
+that cap. Expired deadlines return `automotive::Error::Timeout`, except for
+expected silence when a positive response is suppressed.
+
+Use a scoped view to suppress positive responses without changing the original
+client's behavior:
+
+```rust
+# async fn suppressed_uds_example<T: automotive::TransportLayer>(transport: &T) -> automotive::Result<()> {
+use automotive::protocols::uds::{RequestOutcome, UDSClient};
+
+let uds = UDSClient::new(transport);
+let report = uds
+    .read_dtc_information_number_of_dtc_by_status_mask(0xff)
+    .await?;
+println!("DTC count: {}", report.dtc_count);
+{
+    let suppressed = uds.suppress_positive_responses();
+    suppressed.tester_present().await?; // Sends [0x3e, 0x80].
+
+    // All typed helpers are available on the view.
+    let report = suppressed
+        .read_dtc_information_number_of_dtc_by_status_mask(0xff)
+        .await?; // Sends [0x19, 0x81, 0xff]; silence returns None.
+    let data = suppressed.read_data_by_identifier(0xf181).await?;
+    // ReadDataByIdentifier has no sub-function and still requires a response.
+
+    // Custom requests distinguish silence from an empty positive response.
+    match suppressed.request(0x3e, Some(0), None).await? {
+        RequestOutcome::Suppressed => println!("No response received"),
+        RequestOutcome::PositiveResponse(data) => println!("Response: {data:02x?}"),
+    }
+}
+// The raw API also honors the suppression bit directly, without a scoped view.
+uds.request(0x3e, Some(0x80), None).await?;
+uds.tester_present().await?; // Sends [0x3e, 0x00] and requires a response.
+# Ok(())
+# }
+```
+
+`SuppressedUDSClient` borrows the original client and sets bit 7 of the
+sub-function byte. It provides suppression-aware helpers for every implemented
+service with a sub-function. Services without a sub-function are available
+through the wrapper and still require a response. Both views share session
+timings. Keep one request outstanding per ECU.
+
+Suppression still waits through the initial response window to catch negative
+responses and space sequential requests (ISO 14229-2:2013, §8.3). Initial silence
+returns `RequestOutcome::Suppressed` from `request()`; a received positive
+response returns `RequestOutcome::PositiveResponse(data)`. Typed helpers
+represent silence as `None`, or `()` for TesterPresent. `security_access()`
+returns `Some(seed)` for a received seed and `None` for SendKey or suppressed
+silence. Normal `read_dtc_information_number_of_dtc_by_status_mask()` calls
+return a report directly. On the suppressed view, this helper returns `None`
+for silence and `Some(report)` for a received report. Silence does not confirm
+that the ECU executed the request.
+Strict mode rejects a positive reply to a suppressed request unless NRC 0x78
+preceded it (`ProtocolDeviation::UnexpectedPositiveResponse`, ISO 14229-1:2013,
+§8.2.2). `.strict(false)` accepts such replies. Expected silence is valid in
+both modes; mandatory records are validated only when a response is received.
+
+Negative responses remain `uds::Error::NegativeResponse` errors, including on
+the suppressed view. After Response Pending (NRC 0x78), a final response is
+mandatory regardless of suppression; missing it returns `Error::Timeout`
+(ISO 14229-1:2013, Annex A.1). Transport errors and overall request deadlines
+remain errors. Bit 7 can also be set directly in the sub-function passed to
+`request()`, `diagnostic_session_control()`, `ecu_reset()`, or `security_access()`.
 
 DiagnosticSessionControl adopts server-reported P2/P2* timings by default;
 `.use_server_timing(false)` keeps the configured values. P2 uses 1 ms units

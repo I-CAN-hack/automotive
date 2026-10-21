@@ -13,7 +13,8 @@ use std::time::Duration;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(default))]
 pub struct UDSConfig {
-    /// Initial response wait. Defaults to 50 ms.
+    /// Initial response wait. Defaults to 50 ms. When suppression is requested,
+    /// silence through this window is successful unless NRC 0x78 was received.
     pub p2_timeout: Duration,
     /// Response wait after each NRC 0x78.
     /// Defaults to five seconds; each pending response restarts this wait.

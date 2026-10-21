@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import time
 
 from scapy.all import Raw, conf
 
@@ -144,6 +145,11 @@ if __name__ == "__main__":
     parser.add_argument("--tx", type=int, default=0x7a9)
     parser.add_argument("--timeout", type=int, default=10)
     parser.add_argument("--kernel-isotp", type=bool, default=True)
+    parser.add_argument("--suppression-case", choices=[
+        "silent", "positive", "pending-positive", "pending-negative",
+        "pending-only", "repeated-pending", "malformed-final", "bad-echo",
+        "wrong-pending-sid", "extra-pending-data", "reserved-nrc",
+    ])
 
     args = parser.parse_args()
 
@@ -151,9 +157,61 @@ if __name__ == "__main__":
     from scapy.contrib.isotp import ISOTPSocket
     from scapy.contrib.automotive.ecu import EcuAnsweringMachine
     from scapy.contrib.automotive.uds import UDS
+    from scapy.plist import PacketList
+
+    class SuppressionAwareECU(EcuAnsweringMachine):
+        def make_reply(self, request):
+            data = bytes(request)
+            case = args.suppression_case
+            if case == "silent":
+                return PacketList()
+            suppress = (len(data) >= 2 and data[0] in
+                        {0x10, 0x11, 0x19, 0x27, 0x31, 0x3e} and data[1] & 0x80)
+            if not suppress:
+                return super().make_reply(request)
+
+            # Match the actual sub-function and echo only its lower seven bits.
+            normalized = UDS(data[:1] + bytes([data[1] & 0x7f]) + data[2:])
+            replies = super().make_reply(normalized)
+            pending = b"\x7f" + data[:1] + b"\x78"
+            if case == "positive":
+                return replies  # Deliberately noncompliant: ignore suppression.
+            if case == "pending-positive":
+                return PacketList([UDS(pending), *replies])
+            if case == "pending-negative":
+                return PacketList([UDS(pending), UDS(b"\x7f" + data[:1] + b"\x33")])
+            if case == "pending-only":
+                return PacketList([UDS(pending)])
+            if case == "repeated-pending":
+                return PacketList([UDS(pending) for _ in range(3)] + list(replies))
+            if case == "wrong-pending-sid":
+                return PacketList([UDS(bytes([0x7f, data[0] ^ 1, 0x78]))])
+            if case == "extra-pending-data":
+                return PacketList([UDS(pending + b"\xaa")])
+            if case == "reserved-nrc":
+                return PacketList([UDS(b"\x7f" + data[:1] + b"\x15")])
+            if case in {"malformed-final", "bad-echo"}:
+                final = bytes([data[0] | 0x40, data[1] & 0x7f])
+                if case == "bad-echo":
+                    final = bytes([data[0] | 0x40, data[1]])
+                elif data[0] == 0x3e:
+                    final += b"\xaa"  # TesterPresent has no response data.
+                return PacketList([UDS(pending), UDS(final)])
+
+            # NRC 0x78 requires a final reply even with suppression requested.
+            if any(bytes(reply) == pending for reply in replies):
+                return replies
+            return PacketList([reply for reply in replies if bytes(reply)[0] == 0x7f])
+
+        def send_reply(self, replies, send_function=None):
+            # Deterministic spacing lets tests exercise repeated P2* reloads.
+            for index, reply in enumerate(replies):
+                if index:
+                    time.sleep(0.075)
+                self._main_socket.send(reply)
 
     with ISOTPSocket(args.iface, tx_id=args.tx, rx_id=args.rx, basecls=UDS) as isotp:
-        ecu = EcuAnsweringMachine(supported_responses=ecu_responses(),
+        ecu = SuppressionAwareECU(supported_responses=ecu_responses(),
             main_socket=isotp, basecls=UDS, verbose=False, timeout=args.timeout)
         isotp.send(b'\xAA')  # The response definitions and socket are ready.
         ecu()
