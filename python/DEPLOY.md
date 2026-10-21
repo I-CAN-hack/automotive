@@ -1,5 +1,7 @@
 # Python deployment
 
+Build and publish from the repository's Nix development shell.
+
 ## Publishing to PyPI
 
 Set the Python release version in `pyproject.toml`. Both `build.sh` and `deploy.sh`
@@ -19,7 +21,7 @@ The supported release targets are:
 | `macos-arm64` | `aarch64-apple-darwin` | Apple Silicon, macOS 11+ |
 | `windows-x64` | `x86_64-pc-windows-msvc` | 64-bit Windows x86 |
 
-On Nix, run the following from the repository root to build all five targets:
+Run the following from the repository root to build all five targets:
 
 ```sh
 nix develop
@@ -29,20 +31,12 @@ cd python
 
 The development shell supplies a pinned Rust toolchain with all five target standard
 libraries, LLVM/Clang and its cross-linkers, uv, and an Apple SDK fetched using
-nixpkgs' pinned Apple URLs and checksum. It sets `SDKROOT` automatically, so no
-rustup installation or manual SDK extraction is needed. The lockfile's release dependency
-group supplies Maturin, Zig, and Linux wheel repair tooling.
+nixpkgs' pinned Apple URLs and checksum. It sets `SDKROOT` automatically. The
+lockfile's release dependency group supplies Maturin, Zig, and Linux wheel repair
+tooling.
 
 Select individual targets with `--target linux-aarch64`, or several with
 `--target linux-x86_64 linux-armv7 windows-x64`. Add `--dry-run` to preview commands.
-
-Outside Nix, install Rust with the target standard libraries, LLVM/Clang
-(including libclang and llvm-dlltool), and uv. For a rustup toolchain:
-
-```sh
-rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu \
-    armv7-unknown-linux-gnueabihf aarch64-apple-darwin x86_64-pc-windows-msvc
-```
 
 Maturin uses Zig for Linux cross builds and xwin for Windows MSVC builds.
 xwin downloads the Windows SDK/CRT and is subject to the
@@ -51,20 +45,12 @@ Linux wheels enforce `manylinux_2_17` (glibc 2.17+). The build uses bundled libu
 and avoids host pkg-config libraries, retaining all platform-supported adapters.
 Driver/DLL and USB permission requirements still apply at runtime.
 
-Outside the Nix shell, macOS ARM64 can be built on an Apple Silicon Mac or
-cross-compiled from Linux with an extracted Apple SDK. For the latter, set `SDKROOT`:
-
-```sh
-SDKROOT=/path/to/MacOSX.sdk ./build.sh --target macos-arm64
-```
-
 Use alpha releases to test imports and hardware behavior on the target platforms
 before a stable release. See [Maturin's cross-compilation guide](https://www.maturin.rs/distribution.html#cross-compiling)
 and [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild).
 
-Builds collect wheels and a source distribution in `python/dist/<version>/`. The
-source distribution allows installation on other supported systems with Rust
-and native build prerequisites. Inspect the files and validate an upload:
+Builds collect wheels and a source distribution in `python/dist/<version>/`.
+Inspect the files and validate an upload:
 
 ```sh
 ./deploy.sh --dry-run

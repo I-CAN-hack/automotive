@@ -1,6 +1,11 @@
 # Rust deployment
 
-Run these commands from the repository root.
+From the repository root, enter the Nix development shell before running the
+release commands:
+
+```sh
+nix develop
+```
 
 Keep the Rust versions in `Cargo.toml` and `python/Cargo.toml` aligned when
 preparing releases. The Python package version is set in `python/pyproject.toml`.

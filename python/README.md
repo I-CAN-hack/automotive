@@ -19,22 +19,18 @@ To test the alpha release from PyPI in another uv project:
 uv add --prerelease allow automotive
 ```
 
-To test the library in another uv project, with Rust and the adapter
-build dependencies available:
+To test the library from Git in another uv project, run this inside the Nix
+development shell:
 
 ```sh
 uv add "automotive @ git+https://github.com/I-CAN-hack/automotive.git#subdirectory=python"
 ```
 
-From the repository root, with Rust and the adapter build dependencies available,
-use the latest
-[uv](https://docs.astral.sh/uv/getting-started/installation/).
-
-With Nix, first run `nix develop` from the repository root. The flake provides
-the required uv version and native build dependencies, taking precedence over an older uv
-on your normal PATH.
+For development, run the following from the repository root. The Nix shell
+provides the required uv version, Rust toolchain, and native build dependencies:
 
 ```sh
+nix develop
 cd python
 uv sync
 uv run python examples/uds.py
@@ -156,22 +152,21 @@ await uds.tester_present()  # Requires a positive response again.
 ## Examples and API documentation
 
 The Python examples mirror every Rust example, including CAN transmission,
-advanced bitrate configuration, concurrent firmware queries, and
-native J2534 device reuse. Read installed API documentation using
+advanced bitrate configuration, and concurrent firmware queries.
+Read installed API documentation using
 `uv run python -m pydoc automotive.protocols.uds`, or Python's `help()`.
 
 Run `uv run python examples/can_sender.py` to send one Classic CAN frame.
 
 ## End-to-end regression tests
 
-On Linux, prepare the kernel modules and `vcan0` from the repository root:
+On Linux, create `vcan0` from the repository root:
 
 ```sh
-scripts/build_can_isotp.sh
 scripts/set_up_vcan.sh
 ```
 
-These scripts require sudo. Then run:
+The setup script requires sudo. Then run:
 
 ```sh
 cd python

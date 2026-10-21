@@ -51,11 +51,3 @@ Use independent ECU transports for concurrent diagnostic requests.
 ```{literalinclude} ../examples/query_fw_versions.py
 :language: python
 ```
-
-## Reuse a native J2534 device
-
-On Windows, retain a J2534 device while opening successive native ISO-TP channels.
-
-```{literalinclude} ../examples/query_fw_versions_j2534.py
-:language: python
-```
