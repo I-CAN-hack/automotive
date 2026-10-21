@@ -148,17 +148,21 @@ async fn uds_test_sids() {
     );
     assert_eq!(dtcs.dtc_count, 2);
 
-    let address = [0x12, 0x34, 0x56];
-    let size = [0, 8];
+    let address = 0x123456;
+    let size = 8;
     assert_eq!(
-        uds.read_memory_by_address(&address, &size).await.unwrap(),
+        uds.read_memory_by_address_alfid(address, size, 3, 2)
+            .await
+            .unwrap(),
         b"abcdefgh"
     );
-    uds.write_memory_by_address(&address, &size, b"written!")
+    uds.write_memory_by_address_alfid(address, size, 3, 2, b"written!")
         .await
         .unwrap();
     assert_eq!(
-        uds.read_memory_by_address(&address, &size).await.unwrap(),
+        uds.read_memory_by_address_alfid(address, size, 3, 2)
+            .await
+            .unwrap(),
         b"written!"
     );
 
@@ -182,17 +186,26 @@ async fn uds_test_sids() {
     );
 
     assert_eq!(
-        uds.request_download(0, 0, &address, &size).await.unwrap(),
+        uds.request_download_alfid(0, 0, address, size, 3, 2)
+            .await
+            .unwrap(),
         10
     );
     assert_eq!(uds.transfer_data(1, Some(b"download")).await.unwrap(), None);
     assert_eq!(uds.request_transfer_exit(None).await.unwrap(), None);
     assert_eq!(
-        uds.read_memory_by_address(&address, &size).await.unwrap(),
+        uds.read_memory_by_address_alfid(address, size, 3, 2)
+            .await
+            .unwrap(),
         b"download"
     );
 
-    assert_eq!(uds.request_upload(0, 0, &address, &size).await.unwrap(), 10);
+    assert_eq!(
+        uds.request_upload_alfid(0, 0, address, size, 3, 2)
+            .await
+            .unwrap(),
+        10
+    );
     assert_eq!(
         uds.transfer_data(1, None).await.unwrap(),
         Some(b"download".to_vec())

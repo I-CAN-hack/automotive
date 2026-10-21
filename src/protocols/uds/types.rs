@@ -1,4 +1,5 @@
 //! Types used in the UDS protocol.
+use super::Error;
 use std::time::Duration;
 
 /// Outcome of a custom UDS request.
@@ -57,16 +58,84 @@ pub struct DTCReportNumberByStatusMask {
     pub dtc_count: u16,
 }
 
-uds_nibble! {
-    /// Download/upload compression method, occupying the high nibble of the
-    /// data format identifier. Zero means no compression; other values are
-    /// manufacturer-specific. Values must fit in `0..=0xf`.
-    pub struct CompressionMethod, InvalidCompressionMethod;
+/// Download/upload compression method, occupying the high nibble of the
+/// data format identifier. Zero means no compression; other values are
+/// manufacturer-specific. Values must fit in `0..=0xf`.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "u8", into = "u8"))]
+pub struct CompressionMethod(u8);
+
+impl CompressionMethod {
+    /// No compression applied (wire value zero).
+    pub const NONE: Self = Self(0);
+
+    /// Construct a method, rejecting values larger than one nibble.
+    pub const fn new(value: u8) -> Result<Self, Error> {
+        if value <= 0xf {
+            Ok(Self(value))
+        } else {
+            Err(Error::InvalidCompressionMethod(value))
+        }
+    }
+
+    /// Return the unshifted four-bit method value.
+    pub const fn as_raw(self) -> u8 {
+        self.0
+    }
 }
 
-uds_nibble! {
-    /// Download/upload encryption method, occupying the low nibble of the
-    /// data format identifier. Zero means no encryption; other values are
-    /// manufacturer-specific. Values must fit in `0..=0xf`.
-    pub struct EncryptionMethod, InvalidEncryptionMethod;
+impl TryFrom<u8> for CompressionMethod {
+    type Error = Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<CompressionMethod> for u8 {
+    fn from(value: CompressionMethod) -> Self {
+        value.as_raw()
+    }
+}
+
+/// Download/upload encryption method, occupying the low nibble of the
+/// data format identifier. Zero means no encryption; other values are
+/// manufacturer-specific. Values must fit in `0..=0xf`.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "u8", into = "u8"))]
+pub struct EncryptionMethod(u8);
+
+impl EncryptionMethod {
+    /// No encryption applied (wire value zero).
+    pub const NONE: Self = Self(0);
+
+    /// Construct a method, rejecting values larger than one nibble.
+    pub const fn new(value: u8) -> Result<Self, Error> {
+        if value <= 0xf {
+            Ok(Self(value))
+        } else {
+            Err(Error::InvalidEncryptionMethod(value))
+        }
+    }
+
+    /// Return the unshifted four-bit method value.
+    pub const fn as_raw(self) -> u8 {
+        self.0
+    }
+}
+
+impl TryFrom<u8> for EncryptionMethod {
+    type Error = Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<EncryptionMethod> for u8 {
+    fn from(value: EncryptionMethod) -> Self {
+        value.as_raw()
+    }
 }

@@ -344,11 +344,9 @@ uds.read_data_by_identifier(0xf190).await?;
 uds.routine_control(RoutineControlType::Start, RoutineIdentifier::EraseMemory, None).await?;
 uds.routine_control(0x1, 0xff00, None).await?;
 
-let address = [0x12, 0x34];
-let size = [0x10];
-uds.request_download(CompressionMethod::NONE, EncryptionMethod::NONE, &address, &size).await?;
-uds.request_upload(0, 0, &address, &size).await?;
-uds.request_download(CompressionMethod::new(0xa)?, 0x3, &address, &size).await?;
+uds.request_download_alfid(CompressionMethod::NONE, EncryptionMethod::NONE, 0x1234, 0x10, 2, 1).await?;
+uds.request_upload_alfid(0, 0, 0x1234, 0x10, 2, 1).await?;
+uds.request_download_alfid(CompressionMethod::new(0xa)?, 0x3, 0x1234, 0x10, 2, 1).await?;
 # Ok(())
 # }
 ```
@@ -358,8 +356,8 @@ Code enums use named variants for known values and `NonStandard(u8)` or
 without losing unknown values; `as_raw()` and conversion back to the wire
 integer preserve all bits. Iteration visits only named variants. Enum equality
 compares variants; compare `as_raw()` values when comparing wire encodings.
-Counts, masks, counters, addresses, sizes, and byte buffers retain their existing
-numeric or byte-slice representations.
+Counts, masks, counters, addresses, sizes, and byte buffers use numeric or
+byte-slice representations.
 
 Compression and encryption use separate validated types with `NONE` constants.
 Each holds an unshifted value in `0..=0xf`; compression occupies the high nibble
@@ -369,12 +367,29 @@ numbers. Out-of-range inputs return `uds::Error::InvalidCompressionMethod` or
 `InvalidEncryptionMethod` before sending. Checked construction also applies to
 Serde deserialization.
 
-When migrating code, replace enum casts such as `ResetType::HardReset as u8`
-with the enum itself in service calls, or `.as_raw()` when a wire integer is
-needed. Service-ID, data-identifier, and routine-identifier error fields now use
-their domain types, so downstream matches must use typed values. The low-level
-`request()` accepts a typed or numeric SID; its optional sub-function remains
-`Option<u8>` because its domain depends on the service.
+Memory reads, writes, downloads, and uploads have `_alfid` variants that accept
+`u64` addresses and sizes. The two width arguments are **address width first,
+size width second**, each in bytes from 1 to 8. The client encodes the ALFID and
+big-endian fields, preserving leading zeros. A value that does not fit returns
+`uds::Error::MemoryValueOverflow`; an invalid width returns
+`InvalidMemoryValueWidth` before sending.
+
+```rust
+use automotive::protocols::uds::UDSClient;
+
+# async fn memory_example<T: automotive::TransportLayer>(uds: &UDSClient<'_, T>) -> automotive::Result<()> {
+// A three-byte address and a two-byte size.
+let data = uds.read_memory_by_address_alfid(0x123456, 8, 3, 2).await?;
+uds.write_memory_by_address_alfid(0x123456, 8, 3, 2, &data).await?;
+uds.request_download_alfid(0, 0, 0x123456, 8, 3, 2).await?;
+# Ok(())
+# }
+```
+
+The methods without the `_alfid` suffix accept big-endian byte slices. For fixed
+integer widths, `0x0010_0000_u32.to_be_bytes()` produces a four-byte address and
+`0x2000_u16.to_be_bytes()` produces a two-byte size. These arrays can be passed
+by reference to all four byte-slice methods.
 
 `UDSClient::new` uses strict response validation and default timing settings.
 Use `UDSConfig::builder()` and `UDSClient::with_config` to customize the settings:
@@ -493,9 +508,8 @@ Validation failures return
 `response` contains the complete received UDS payload, including its service
 header. `.strict(false)` disables these checks. Minimum parsing lengths apply
 in both modes. Unknown NRCs and DTC formats are preserved as `NonStandard` in
-both modes; they no longer produce `InvalidNegativeResponseCode` or
-`InvalidDTCFormatIdentifier` errors. NRC `0x78` still invokes pending-response
-handling. Vehicle-specific record contents and lengths are defined by the ECU.
+both modes. NRC `0x78` invokes pending-response handling. Vehicle-specific record
+contents and lengths are defined by the ECU.
 
 ## CAN Adapters
 The following CAN adapters are supported.

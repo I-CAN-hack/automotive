@@ -106,6 +106,10 @@ pub enum Error {
     InvalidCompressionMethod(u8),
     #[error("Encryption method {0:#04x} does not fit in a nibble")]
     InvalidEncryptionMethod(u8),
+    #[error("Memory field width must be 1 to 8 bytes, received {0}")]
+    InvalidMemoryValueWidth(usize),
+    #[error("Memory value {value:#x} does not fit in {width} bytes")]
+    MemoryValueOverflow { value: u64, width: usize },
     #[error("Block length {value} cannot be represented as usize; response: {response:02x?}")]
     BlockLengthOverflow { value: u128, response: Vec<u8> },
     #[error("Negative Response: {0:?}")]

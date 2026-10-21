@@ -55,6 +55,21 @@ pub use types::*;
 use std::sync::RwLock;
 use tracing::info;
 
+// Encode numeric memory fields without truncating values or dropping leading zeros.
+fn memory_bytes(value: u64, width: usize) -> std::result::Result<Vec<u8>, Error> {
+    if !(1..=8).contains(&width) {
+        return Err(Error::InvalidMemoryValueWidth(width));
+    }
+
+    let bytes = value.to_be_bytes();
+    let start = bytes.len() - width;
+    if bytes[..start].iter().any(|&byte| byte != 0) {
+        return Err(Error::MemoryValueOverflow { value, width });
+    }
+
+    Ok(bytes[start..].to_vec())
+}
+
 struct Response {
     payload: Vec<u8>,
     data_start: usize,
@@ -576,6 +591,8 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     }
 
     /// 0x23 - Read Memory By Address. The `memory_address` parameter should be the address to read from, and the `memory_size` parameter should be the number of bytes to read.
+    /// Both fields are big-endian bytes. For numeric fields with separate byte
+    /// widths, use [`Self::read_memory_by_address_alfid`].
     pub async fn read_memory_by_address(
         &self,
         memory_address: &[u8],
@@ -588,6 +605,23 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
             None,
         )
         .await
+    }
+
+    /// 0x23 - Read Memory By Address with numeric address and size.
+    ///
+    /// `address_width` and `size_width` are byte counts from 1 to 8, in that
+    /// order. Invalid widths return [`Error::InvalidMemoryValueWidth`]; values
+    /// that do not fit return [`Error::MemoryValueOverflow`] before sending.
+    pub async fn read_memory_by_address_alfid(
+        &self,
+        memory_address: u64,
+        memory_size: u64,
+        address_width: usize,
+        size_width: usize,
+    ) -> Result<Vec<u8>> {
+        let address = memory_bytes(memory_address, address_width)?;
+        let size = memory_bytes(memory_size, size_width)?;
+        self.read_memory_by_address(&address, &size).await
     }
 
     /// 0x2E - Write Data By Identifier. Accepts a [`DataIdentifier`] or raw `u16`.
@@ -624,6 +658,8 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     }
 
     /// 0x3D - Write Memory By Address. The `memory_address` parameter should be the address to write to, and the `memory_size` parameter should be the number of bytes to write. The `data` parameter should be the data to write.
+    /// Both fields are big-endian bytes. For numeric fields with separate byte
+    /// widths, use [`Self::write_memory_by_address_alfid`].
     pub async fn write_memory_by_address(
         &self,
         memory_address: &[u8],
@@ -638,6 +674,24 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         )
         .await?;
         Ok(())
+    }
+
+    /// 0x3D - Write Memory By Address with numeric address and size.
+    ///
+    /// `address_width` and `size_width` are byte counts from 1 to 8, in that
+    /// order. Invalid widths return [`Error::InvalidMemoryValueWidth`]; values
+    /// that do not fit return [`Error::MemoryValueOverflow`] before sending.
+    pub async fn write_memory_by_address_alfid(
+        &self,
+        memory_address: u64,
+        memory_size: u64,
+        address_width: usize,
+        size_width: usize,
+        data: &[u8],
+    ) -> Result<()> {
+        let address = memory_bytes(memory_address, address_width)?;
+        let size = memory_bytes(memory_size, size_width)?;
+        self.write_memory_by_address(&address, &size, data).await
     }
 
     /// 0x19, sub-function 0x01 - Report the number of DTCs matching `mask`.
@@ -798,6 +852,8 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     }
 
     /// 0x34 - Request Download. Initiates a transfer from the client to the ECU.
+    /// Address and size are big-endian bytes. For numeric fields with separate
+    /// byte widths, use [`Self::request_download_alfid`].
     /// Compression and encryption accept validated types or raw values in
     /// `0..=0xf`, occupying the high and low nibble respectively. Invalid raw
     /// values return [`Error::InvalidCompressionMethod`] or
@@ -829,7 +885,37 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         .await
     }
 
+    /// 0x34 - Request Download with numeric address and size.
+    ///
+    /// `address_width` and `size_width` are byte counts from 1 to 8, in that
+    /// order. Invalid widths return [`Error::InvalidMemoryValueWidth`]; values
+    /// that do not fit return [`Error::MemoryValueOverflow`] before sending.
+    /// Compression, encryption, and the returned block length follow
+    /// [`Self::request_download`].
+    pub async fn request_download_alfid<C, E>(
+        &self,
+        compression_method: C,
+        encryption_method: E,
+        memory_address: u64,
+        memory_size: u64,
+        address_width: usize,
+        size_width: usize,
+    ) -> Result<usize>
+    where
+        C: TryInto<CompressionMethod>,
+        C::Error: Into<Error>,
+        E: TryInto<EncryptionMethod>,
+        E::Error: Into<Error>,
+    {
+        let address = memory_bytes(memory_address, address_width)?;
+        let size = memory_bytes(memory_size, size_width)?;
+        self.request_download(compression_method, encryption_method, &address, &size)
+            .await
+    }
+
     /// 0x35 - Request Upload. Initiates a transfer from the ECU to the client.
+    /// Address and size are big-endian bytes. For numeric fields with separate
+    /// byte widths, use [`Self::request_upload_alfid`].
     /// Compression and encryption follow the same rules as [`Self::request_download`].
     /// Returns the maximum complete TransferData response length, including SID
     /// and block counter. Values above `usize::MAX` return [`Error::BlockLengthOverflow`].
@@ -856,6 +942,34 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
             memory_size,
         )
         .await
+    }
+
+    /// 0x35 - Request Upload with numeric address and size.
+    ///
+    /// `address_width` and `size_width` are byte counts from 1 to 8, in that
+    /// order. Invalid widths return [`Error::InvalidMemoryValueWidth`]; values
+    /// that do not fit return [`Error::MemoryValueOverflow`] before sending.
+    /// Compression, encryption, and the returned block length follow
+    /// [`Self::request_upload`].
+    pub async fn request_upload_alfid<C, E>(
+        &self,
+        compression_method: C,
+        encryption_method: E,
+        memory_address: u64,
+        memory_size: u64,
+        address_width: usize,
+        size_width: usize,
+    ) -> Result<usize>
+    where
+        C: TryInto<CompressionMethod>,
+        C::Error: Into<Error>,
+        E: TryInto<EncryptionMethod>,
+        E::Error: Into<Error>,
+    {
+        let address = memory_bytes(memory_address, address_width)?;
+        let size = memory_bytes(memory_size, size_width)?;
+        self.request_upload(compression_method, encryption_method, &address, &size)
+            .await
     }
 
     /// 0x36 - Transfer Data. Used to transfer data to or from the ECU. The `data` parameter should be a slice of the data to transfer. The `transfer_request` parameter should be the sequence number of the transfer request, starting at 1. The `data` parameter should be `None` when an upload is requested, and the function will return the data received from the ECU. The `data` parameter should be `Some` when a download is requested, and the function will return `None`.
