@@ -333,7 +333,6 @@ use std::time::Duration;
 let config = UDSConfig::builder()
     .p2_timeout(Duration::from_millis(100))
     .p2_star_timeout(Duration::from_secs(5))
-    .timing_margin(Duration::from_millis(100))
     .request_timeout(Duration::from_secs(30))
     .use_server_timing(true)
     .strict(true)
@@ -344,10 +343,11 @@ uds.tester_present().await?;
 # }
 ```
 
-The defaults are P2 = 50 ms, P2* = 5 s, and a 50 ms network/driver allowance
-added to each wait (ISO 14229-2:2013, §7.2, Table 4). P2 starts after sending
-the request. Each Response Pending (NRC 0x78) restarts P2*. By default there
-is no overall request limit; `.request_timeout(...)` caps the entire exchange,
+The default response waits are P2 = 50 ms and P2* = 5 s, based on the recommended
+server timings in ISO 14229-2:2013, §7.2, Table 4. Configured and server-reported
+timeouts are used directly. P2 starts after sending the request. Each Response
+Pending (NRC 0x78) restarts P2*. By default there is no overall request limit;
+`.request_timeout(...)` caps the entire exchange,
 including sending and pending responses. `.without_request_timeout()` removes
 that cap. Expired deadlines return `automotive::Error::Timeout`.
 
@@ -357,9 +357,9 @@ and P2* uses 10 ms units (ISO 14229-1:2013, §9.2.3.2, Tables 28–29).
 A response without a timing record leaves the current timings in place.
 
 The transport returns complete messages, so the waits include response
-reception (P6/P6* in ISO 14229-2, §7.1–§7.2). Allow enough margin for long
-responses and gateways. Transport timeouts still apply: for example, raise
-`IsoTPConfig::timeout` above the longest UDS response wait to avoid its idle
+reception (P6/P6* in ISO 14229-2, §7.1–§7.2). Set timeouts to cover network
+delays and response transmission as needed. Transport timeouts still apply: for
+example, raise `IsoTPConfig::timeout` above the longest UDS response wait to avoid its idle
 receive timeout expiring first. Session keepalive remains caller-managed through
 `tester_present()`.
 

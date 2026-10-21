@@ -2,9 +2,9 @@ use std::time::Duration;
 
 /// Configuration for a [`super::UDSClient`].
 ///
-/// Defaults follow ISO 14229-2:2013, §7.2, Table 4: P2 is 50 ms and P2* is
-/// five seconds. A 50 ms allowance is added to each for network and driver
-/// latency. Adjust it for the network, especially when receiving long responses.
+/// P2 defaults to 50 ms and P2* to five seconds, based on the recommended server
+/// timings in ISO 14229-2:2013, §7.2, Table 4. Configured and server-reported
+/// timeouts are used directly.
 ///
 /// The transport exposes complete messages, so these deadlines include response
 /// reception (P6/P6* in ISO 14229-2 terminology), rather than just its start.
@@ -13,13 +13,11 @@ use std::time::Duration;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(default))]
 pub struct UDSConfig {
-    /// Initial response wait, before adding `timing_margin`. Defaults to 50 ms.
+    /// Initial response wait. Defaults to 50 ms.
     pub p2_timeout: Duration,
-    /// Response wait after each NRC 0x78, before adding `timing_margin`.
+    /// Response wait after each NRC 0x78.
     /// Defaults to five seconds; each pending response restarts this wait.
     pub p2_star_timeout: Duration,
-    /// Network, driver, and response reception allowance. Defaults to 50 ms.
-    pub timing_margin: Duration,
     /// Overall limit, including sending and all pending responses.
     /// `None` (the default) permits any number of pending responses.
     pub request_timeout: Option<Duration>,
@@ -37,7 +35,6 @@ impl Default for UDSConfig {
         Self {
             p2_timeout: Duration::from_millis(50),
             p2_star_timeout: Duration::from_secs(5),
-            timing_margin: Duration::from_millis(50),
             request_timeout: None,
             use_server_timing: true,
             strict: true,
@@ -61,7 +58,7 @@ pub struct UDSConfigBuilder {
 }
 
 impl UDSConfigBuilder {
-    /// Set the initial response wait, excluding the timing margin.
+    /// Set the initial response wait.
     pub fn p2_timeout(mut self, timeout: Duration) -> Self {
         self.config.p2_timeout = timeout;
         self
@@ -70,12 +67,6 @@ impl UDSConfigBuilder {
     /// Set the wait restarted by each Response Pending (NRC 0x78).
     pub fn p2_star_timeout(mut self, timeout: Duration) -> Self {
         self.config.p2_star_timeout = timeout;
-        self
-    }
-
-    /// Set the allowance added to both configured and server-reported timings.
-    pub fn timing_margin(mut self, margin: Duration) -> Self {
-        self.config.timing_margin = margin;
         self
     }
 

@@ -1,8 +1,8 @@
 //! Unified Diagnostic Services (UDS) Client, implements ISO 14229
 //!
 //! [`UDSClient::new`] uses [`UDSConfig::default`], including strict validation.
-//! Customize P2/P2*, network allowance, overall request timeout, and adoption of
-//! session timings with [`UDSConfig::builder`] and [`UDSClient::with_config`].
+//! Customize P2/P2*, overall request timeout, and adoption of session timings
+//! with [`UDSConfig::builder`] and [`UDSClient::with_config`].
 //! Strict validation failures include the complete response in
 //! [`Error::ProtocolDeviation`]. Minimum safe parsing lengths always apply.
 //!
@@ -133,9 +133,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
         self.adapter.send(&request).await?;
 
         let timing = *self.session_timing.read().unwrap();
-        let mut response_timeout = timing
-            .p2_server_max
-            .saturating_add(self.config.timing_margin);
+        let mut response_timeout = timing.p2_server_max;
         loop {
             let response = tokio::time::timeout(response_timeout, stream.next())
                 .await
@@ -159,9 +157,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
                 let code: NegativeResponseCode = response[2].into();
                 if code == NegativeResponseCode::RequestCorrectlyReceivedResponsePending {
                     info!("Received Response Pending");
-                    response_timeout = timing
-                        .p2_star_server_max
-                        .saturating_add(self.config.timing_margin);
+                    response_timeout = timing.p2_star_server_max;
                     continue;
                 }
 

@@ -60,8 +60,8 @@ fn assert_deviation(error: Error, expected: ProtocolDeviation, payload: &[u8]) {
 }
 
 #[tokio::test(start_paused = true)]
-async fn default_p2_includes_network_margin_and_starts_after_send() {
-    for (response_delay, succeeds) in [(75, true), (125, false)] {
+async fn default_p2_deadline_starts_after_send() {
+    for (response_delay, succeeds) in [(25, true), (75, false)] {
         let mut transport = ScriptedTransport::new(vec![vec![(response_delay, vec![0x7e, 0])]]);
         transport.send_delay = Duration::from_millis(200);
         let uds = UDSClient::new(&transport);
@@ -69,10 +69,10 @@ async fn default_p2_includes_network_margin_and_starts_after_send() {
         let result = uds.tester_present().await;
         if succeeds {
             result.unwrap();
-            assert_eq!(start.elapsed(), Duration::from_millis(275));
+            assert_eq!(start.elapsed(), Duration::from_millis(225));
         } else {
             assert!(matches!(result, Err(Error::Timeout)));
-            assert_eq!(start.elapsed(), Duration::from_millis(300));
+            assert_eq!(start.elapsed(), Duration::from_millis(250));
         }
         assert_eq!(*transport.sent.lock().unwrap(), vec![vec![0x3e, 0]]);
     }
@@ -83,15 +83,14 @@ async fn pending_responses_restart_p2_star_and_next_request_uses_p2() {
     let transport = ScriptedTransport::new(vec![
         vec![
             (20, vec![0x7f, 0x3e, 0x78]),
-            (200, vec![0x7f, 0x3e, 0x78]),
-            (200, vec![0x7e, 0]),
+            (175, vec![0x7f, 0x3e, 0x78]),
+            (175, vec![0x7e, 0]),
         ],
         vec![(100, vec![0x7e, 0])],
     ]);
     let config = UDSConfig::builder()
         .p2_timeout(Duration::from_millis(50))
         .p2_star_timeout(Duration::from_millis(200))
-        .timing_margin(Duration::from_millis(25))
         .build();
     let uds = UDSClient::with_config(&transport, config);
     uds.tester_present().await.unwrap();
@@ -100,7 +99,7 @@ async fn pending_responses_restart_p2_star_and_next_request_uses_p2() {
 
 #[tokio::test(start_paused = true)]
 async fn pending_response_uses_default_p2_star_deadline() {
-    for (delay, succeeds) in [(5025, true), (5075, false)] {
+    for (delay, succeeds) in [(4975, true), (5025, false)] {
         let transport = ScriptedTransport::new(vec![vec![
             (10, vec![0x7f, 0x3e, 0x78]),
             (delay, vec![0x7e, 0]),
@@ -145,12 +144,12 @@ async fn session_control_decodes_and_optionally_adopts_both_server_timings() {
             vec![(0, vec![0x50, 3, 0x00, 0xc8, 0x00, 0x1e])],
             vec![(100, vec![0x7e, 0])],
             vec![(10, vec![0x7f, 0x3e, 0x78]), (200, vec![0x7e, 0])],
-            vec![(10, vec![0x7f, 0x3e, 0x78]), (400, vec![0x7e, 0])],
+            vec![(10, vec![0x7f, 0x3e, 0x78]), (310, vec![0x7e, 0])],
+            vec![(210, vec![0x7e, 0])],
         ]);
         let config = UDSConfig::builder()
             .p2_timeout(Duration::from_millis(50))
             .p2_star_timeout(Duration::from_millis(100))
-            .timing_margin(Duration::from_millis(25))
             .use_server_timing(use_server_timing)
             .build();
         let uds = UDSClient::with_config(&transport, config);
@@ -165,7 +164,15 @@ async fn session_control_decodes_and_optionally_adopts_both_server_timings() {
                 assert!(matches!(result, Err(Error::Timeout)));
             }
         }
+        let start = tokio::time::Instant::now();
         assert!(matches!(uds.tester_present().await, Err(Error::Timeout)));
+        let p2_star = if use_server_timing { 300 } else { 100 };
+        assert_eq!(start.elapsed(), Duration::from_millis(10 + p2_star));
+
+        let start = tokio::time::Instant::now();
+        assert!(matches!(uds.tester_present().await, Err(Error::Timeout)));
+        let p2 = if use_server_timing { 200 } else { 50 };
+        assert_eq!(start.elapsed(), Duration::from_millis(p2));
     }
 }
 
