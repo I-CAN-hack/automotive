@@ -111,20 +111,26 @@ shared access. SocketCAN's builder selects an existing interface.
 Omitting `.bitrate(...)` on PEAK or panda uses 500 kbit/s nominal and 2 Mbit/s
 data, with an 80% sample point for both phases:
 
-```rust
+```rust,no_run
+# #[cfg(feature = "peak")]
+# fn example() -> automotive::Result<()> {
 let config = automotive::peak::PeakConfig::builder().build()?;
 let adapter = automotive::peak::Peak::new_async(config)?;
+# Ok(())
+# }
 ```
 
 An explicit `.bitrate(...)` callback starts without preset timing. Supplying only
-a nominal bitrate selects classic CAN; direct timing parameters are also
+a nominal bitrate produces no data-phase timing; direct timing parameters are also
 supported. `get_adapter()` uses the same defaults when configuring PEAK, panda,
 or Vector.
 
 For example, to configure a Vector channel without selecting a generic adapter
 type for the bitrate builder:
 
-```rust
+```rust,no_run
+# #[cfg(all(target_os = "windows", feature = "vector-xl"))]
+# fn example() -> automotive::Result<()> {
 use automotive::vector::{VectorCan, VectorConfig};
 
 let config = VectorConfig::builder(0)
@@ -135,6 +141,8 @@ let config = VectorConfig::builder(0)
     })
     .build()?;
 let adapter = VectorCan::new_async(config)?;
+# Ok(())
+# }
 ```
 
 Each adapter's configuration types live in its `config.rs` module and are
@@ -224,13 +232,18 @@ This library supports awaiting a sent frame and waiting for the ACK on the CAN b
    - This driver talks to the device directly over USB instead of through SocketCAN, so it does not need the `peak_usb` kernel module to be unloaded; the in-kernel driver is detached automatically when the device is opened.
    - To temporarily unload `peak_usb` or the out-of-tree `pcan` driver for testing, run `scripts/unload_peak_driver.sh`. Test raw USB in another terminal, then press Enter to restore the drivers. The script also restores them on Ctrl+C or ordinary errors, and only reloads drivers that were initially loaded.
    - On Linux the USB device node is owned by root by default. To use the adapter without running as root, install a udev rule granting access to your user, e.g. in `/etc/udev/rules.d/70-pcan-usb-fd.rules`:
-     ```
+     ```text
      # PEAK System PCAN-USB FD family
      SUBSYSTEM=="usb", ATTRS{idVendor}=="0c72", MODE="0666"
      ```
      Then reload the rules and replug the device: `sudo udevadm control --reload-rules && sudo udevadm trigger`.
  - J2534 PassThru Devices are supported through the `j2534` feature. The library provides `J2534CanAdapter` for raw CAN access, and `J2534NativeIsoTpTransport` to offload ISO-TP framing, flow-control, and timing to the adapter. It is recommended to use `J2534CanAdapter` unless you have specific speed or latency requirements.
  - Vector Devices are supported through the Vector XL Driver Library, and support can be enabled using the `vector-xl` feature. Make sure to distribute `vxlapi64.dll` alongside your application.
+   - Configuring bus timing requires a data bitrate (`.data_bitrate(...)`) alongside
+     nominal timing, even when sending only Classical CAN or FD frames without
+     BRS. Vector's CAN FD configuration API requires valid timing for both phases.
+     Shared access (`VectorConfig::new(channel)`) retains existing bus timing and
+     does not require supplying bitrates.
 
 
 ### Implementing a New Adapter
