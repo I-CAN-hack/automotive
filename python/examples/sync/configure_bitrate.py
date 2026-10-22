@@ -16,7 +16,9 @@ def main() -> None:
     )
     print("Resolved timing:", config.resolved_bitrate)
     adapter = PeakAdapter(config)
-    for frame in adapter.recv():
+    stream = adapter.recv()
+
+    for frame in stream:
         print(frame)
 
 

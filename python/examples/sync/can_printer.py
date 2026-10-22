@@ -1,12 +1,14 @@
-"""Print received CAN frames using an ordinary iterator."""
+"""Print frames from the first available adapter. Requires CAN hardware or vcan0."""
 
 from automotive.sync.adapters import Adapter
 
 
 def main() -> None:
-    """Discover an adapter and receive frames until interrupted with Ctrl+C."""
+    """Discover an adapter and print frames until interrupted."""
     adapter = Adapter()
-    for frame in adapter.recv():
+    stream = adapter.recv()
+
+    for frame in stream:
         print(frame)
 
 

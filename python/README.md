@@ -201,9 +201,10 @@ await uds.tester_present()  # Requires a positive response again.
 
 ## Examples and API documentation
 
-The async Python examples mirror every Rust example, including CAN transmission,
-PEAK bitrate configuration, and concurrent firmware queries. Blocking CAN
-send/receive, bitrate configuration, ISO-TP, and UDS examples are in `examples/sync/`.
+The async Python examples and their counterparts in `examples/sync/` mirror every
+Rust example, including CAN transmission, PEAK bitrate configuration, ISO-TP, UDS,
+and firmware queries. The synchronous firmware query visits ECUs sequentially;
+the async version queries them concurrently.
 Read installed API documentation using
 `uv run python -m pydoc automotive.protocols.uds`, or Python's `help()`.
 

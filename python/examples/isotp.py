@@ -7,13 +7,30 @@ from automotive.transports.isotp import IsoTPAdapter, IsoTPConfig
 
 
 async def main() -> None:
-    """Subscribe before sending so fast ECU replies are retained."""
+    """Send short and segmented requests, printing each response as hex."""
     adapter = Adapter()
-    transport = IsoTPAdapter(adapter, IsoTPConfig(tx_id=0x7A1))
-    messages = transport.recv()
-    for request in (b"\x3e\x00", b"\x22\xf1\x81", b"\x10" + bytes(31), b"\x22\xf1\x81"):
-        await transport.send(request)
-        print("RX:", (await anext(messages)).hex())
+    config = IsoTPConfig(tx_id=0x7A1)
+    isotp = IsoTPAdapter(adapter, config)
+
+    stream = isotp.recv()
+
+    await isotp.send(b"\x3e\x00")
+    response = await anext(stream)
+    print("RX:", response.hex())
+
+    await isotp.send(b"\x22\xf1\x81")
+    response = await anext(stream)
+    print("RX:", response.hex())
+
+    long_request = b"\x10" + b"\x00" * 32
+    await isotp.send(long_request)
+    response = await anext(stream)
+    print("RX:", response.hex())
+
+    long_response = b"\x22\xf1\x81"
+    await isotp.send(long_response)
+    response = await anext(stream)
+    print("RX:", response.hex())
 
 
 if __name__ == "__main__":

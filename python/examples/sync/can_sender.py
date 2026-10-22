@@ -1,4 +1,4 @@
-"""Send one Classic CAN frame without asyncio."""
+"""Send one Classic CAN frame through the first available adapter."""
 
 from automotive.sync.adapters import Adapter
 from automotive.sync.can import Frame

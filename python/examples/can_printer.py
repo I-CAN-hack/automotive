@@ -8,7 +8,9 @@ from automotive.adapters import Adapter
 async def main() -> None:
     """Discover an adapter and print frames until interrupted."""
     adapter = Adapter()
-    async for frame in adapter.recv():
+    stream = adapter.recv()
+
+    async for frame in stream:
         print(frame)
 
 

@@ -22,7 +22,8 @@ Discover an adapter and send one Classic CAN frame.
 
 ## Send ISO-TP messages
 
-Exchange complete messages through a software ISO-TP transport.
+Follow the Rust example's four explicit exchanges: two short requests, a
+33-byte segmented request, and another DID request that can produce a long reply.
 
 ```{literalinclude} ../examples/isotp.py
 :language: python
@@ -60,6 +61,7 @@ These programs use the matching modules under `automotive.sync`, including
 `automotive.sync.protocols.uds`, with the same configuration and value types.
 They use ordinary constructors, blocking calls, and receive iterators. Both the
 async and sync examples let ownership release resources when they go out of scope.
+Their setup, requests, output, and flow follow the corresponding Rust programs.
 
 ### Send a CAN frame
 
@@ -90,5 +92,15 @@ async and sync examples let ownership release resources when they go out of scop
 Configure the same PEAK timing through the synchronous API.
 
 ```{literalinclude} ../examples/sync/configure_bitrate.py
+:language: python
+```
+
+### Query firmware versions
+
+Query the same DIDs and ECU address ranges as the Rust and async Python examples.
+The synchronous version visits ECUs sequentially; the async version queries them
+concurrently.
+
+```{literalinclude} ../examples/sync/query_fw_versions.py
 :language: python
 ```
