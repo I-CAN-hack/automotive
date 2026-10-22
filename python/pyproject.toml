@@ -29,7 +29,6 @@ release = [
 ]
 
 [tool.uv]
-required-version = ">=0.13.4"
 required-environments = ["sys_platform == 'win32' and platform_machine == 'AMD64'"]
 cache-keys = [
     { file = "pyproject.toml" },

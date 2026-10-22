@@ -31,7 +31,7 @@ uv add "automotive @ git+https://github.com/I-CAN-hack/automotive.git#subdirecto
 ```
 
 For development, run the following from the repository root. The Nix shell
-provides the required uv version, Rust toolchain, and native build dependencies:
+provides uv, the Rust toolchain, and native build dependencies:
 
 ```sh
 nix develop
