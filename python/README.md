@@ -3,10 +3,11 @@
 [![PyPI](https://img.shields.io/pypi/v/automotive.svg)](https://pypi.org/project/automotive/)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://i-can-hack.github.io/automotive/)
 
-An asyncio library for CAN, ISO-TP, and UDS, powered by the `automotive` Rust
-crate. The distribution and import name are both `automotive`. Rust handles
-adapter I/O, protocol framing, validation, and timing; Python provides reusable
-configuration objects, typed values, context managers, and documented services.
+A library for synchronous and asynchronous CAN, ISO-TP, and UDS, powered by the
+`automotive` Rust crate. The distribution and import name are both `automotive`.
+Rust handles adapter I/O, protocol framing, validation, and timing; Python
+provides reusable configuration objects, typed values, context managers, and
+documented services.
 
 Requires CPython 3.11+ and builds locally with maturin. This directory contains
 the Python package, its Rust extension, examples, and Scapy ECU regression tests.
@@ -78,6 +79,39 @@ async def main():
 
 asyncio.run(main())
 ```
+
+### Synchronous usage
+
+Import blocking adapter, transport, and client classes from `automotive.sync`.
+Use ordinary `with` blocks, method calls, and receive iterators:
+
+```python
+from automotive.protocols.uds import DataIdentifier
+from automotive.sync import IsoTPAdapter, SocketCanAdapter, UDSClient
+
+with SocketCanAdapter("can0") as adapter, IsoTPAdapter.from_id(adapter, 0x7A1) as transport:
+    uds = UDSClient(transport)
+    print(uds.read_data_by_identifier(DataIdentifier.VIN))
+    with uds.suppress_positive_responses():
+        uds.tester_present()
+```
+
+`Adapter()`, `PeakAdapter(config)`, and the other named adapter classes are also
+available in `automotive.sync`. Both APIs share configuration classes, frames,
+enums, result types, and exceptions. Configs can be imported from their existing
+modules or from `automotive.sync`.
+
+For explicit cleanup, use `close()`; adapters also support `open()`. `recv()`
+subscribes immediately and returns an iterator for `for` or `next()`, supporting
+`with` and `close()`. Close raw ISO-TP receivers before making UDS requests on
+the same transport. Native J2534 transports and reusable device handles have
+synchronous counterparts too.
+
+One background event loop runs the existing async implementation and shuts down
+at process exit. Calls block the calling thread, so use the async API inside
+asyncio applications. Suppression scopes in the synchronous API are local to the
+calling thread and context. Ctrl+C interrupts a blocking wait; an active Rust UDS
+exchange still drains before the next request, matching async cancellation.
 
 ## Configuration
 
@@ -154,12 +188,14 @@ await uds.tester_present()  # Requires a positive response again.
 
 ## Examples and API documentation
 
-The Python examples mirror every Rust example, including CAN transmission,
-advanced bitrate configuration, and concurrent firmware queries.
+The async Python examples mirror every Rust example, including CAN transmission,
+advanced bitrate configuration, and concurrent firmware queries. Blocking CAN
+send/receive, ISO-TP, and UDS examples are in `examples/sync/`.
 Read installed API documentation using
 `uv run python -m pydoc automotive.protocols.uds`, or Python's `help()`.
 
 Run `uv run python examples/can_sender.py` to send one Classic CAN frame.
+Use `uv run python examples/sync/can_sender.py` for the synchronous version.
 
 ## End-to-end regression tests
 
@@ -178,8 +214,9 @@ uv run pytest --run-vcan -q
 
 The regression suite starts the existing Scapy ECU scripts, verifies readiness,
 and closes/reaps them after each scenario. It exercises all 14 implemented UDS
-service IDs, transfer round trips, suppression and pending responses, strict
-validation, cancellation, and ISO-TP Classic/FD framing and flow control.
+service IDs through both APIs, transfer round trips, suppression and pending
+responses, strict validation, cancellation, and ISO-TP Classic/FD framing and
+flow control.
 Tests run serially on `vcan0`; do not run the Rust and Python virtual-CAN suites
 concurrently. Without `--run-vcan`, the hardware-dependent tests are skipped;
 explicit runs fail if prerequisites are unavailable.

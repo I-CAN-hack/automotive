@@ -12,5 +12,6 @@ can
 isotp
 uds
 j2534
+sync
 errors
 ```

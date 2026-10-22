@@ -51,3 +51,32 @@ Use independent ECU transports for concurrent diagnostic requests.
 ```{literalinclude} ../examples/query_fw_versions.py
 :language: python
 ```
+
+## Synchronous examples
+
+These programs use the same configuration and values through `automotive.sync`.
+They use ordinary context managers, blocking calls, and receive iterators.
+
+### Send a CAN frame
+
+```{literalinclude} ../examples/sync/can_sender.py
+:language: python
+```
+
+### Print CAN frames
+
+```{literalinclude} ../examples/sync/can_printer.py
+:language: python
+```
+
+### Send ISO-TP messages
+
+```{literalinclude} ../examples/sync/isotp.py
+:language: python
+```
+
+### Query an ECU with UDS
+
+```{literalinclude} ../examples/sync/uds.py
+:language: python
+```

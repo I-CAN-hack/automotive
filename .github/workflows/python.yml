@@ -66,7 +66,11 @@ jobs:
       - name: Check Rust formatting
         run: cargo fmt --all --check
       - name: Verify imports and installed documentation
-        run: uv run --locked python -c "import automotive.adapters.j2534, automotive.protocols.uds, pydoc; print(pydoc.render_doc(automotive.protocols.uds.UDSClient))"
+        run: >
+          uv run --locked python -c
+          "import automotive.adapters.j2534, automotive.protocols.uds, automotive.sync, pydoc;
+          print(pydoc.render_doc(automotive.protocols.uds.UDSClient));
+          print(pydoc.render_doc(automotive.sync.UDSClient))"
       - name: Python Scapy ECU regression tests
         if: runner.os == 'Linux'
         run: uv run --locked pytest --run-vcan -q

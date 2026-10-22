@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "automotive"
 version = "0.5.0a1"
-description = "Async CAN, ISO-TP, and UDS powered by the automotive Rust crate"
+description = "Synchronous and asynchronous CAN, ISO-TP, and UDS powered by Rust"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

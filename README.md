@@ -16,9 +16,10 @@ Welcome to the `automotive` crate documentation. The purpose of this crate is to
 
 ## Python library
 
-An asyncio Python package is available in `python/`, with the import name
-`automotive`. See the [Python README](python/README.md) for installation,
-configuration, examples, API documentation, and Scapy ECU regression tests.
+A Python package with synchronous and asyncio APIs is available in `python/`,
+with the import name `automotive`. See the [Python README](python/README.md) for
+installation, configuration, examples, API documentation, and Scapy ECU
+regression tests.
 The [Python documentation](https://i-can-hack.github.io/automotive/) includes its
 user guide, examples, and API reference.
 

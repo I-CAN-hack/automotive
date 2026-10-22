@@ -1,7 +1,9 @@
 # Automotive for Python
 
-An asyncio library for CAN, ISO-TP, and UDS, powered by Rust. Start with sensible
-defaults, then use reusable configuration objects when you need more control.
+A library for synchronous and asynchronous CAN, ISO-TP, and UDS, powered by Rust.
+Start with sensible defaults, then use reusable configuration objects when you
+need more control. Import blocking classes from `automotive.sync` or use the
+existing asyncio API.
 
 Requires CPython 3.11 or newer. Install into a uv project:
 
