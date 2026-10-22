@@ -190,13 +190,16 @@ await uds.tester_present()  # Requires a positive response again.
 ## Examples and API documentation
 
 The async Python examples mirror every Rust example, including CAN transmission,
-advanced bitrate configuration, and concurrent firmware queries. Blocking CAN
-send/receive, ISO-TP, and UDS examples are in `examples/sync/`.
+PEAK bitrate configuration, and concurrent firmware queries. Blocking CAN
+send/receive, bitrate configuration, ISO-TP, and UDS examples are in `examples/sync/`.
 Read installed API documentation using
 `uv run python -m pydoc automotive.protocols.uds`, or Python's `help()`.
 
 Run `uv run python examples/can_sender.py` to send one Classic CAN frame.
 Use `uv run python examples/sync/can_sender.py` for the synchronous version.
+
+Run `uv run python examples/configure_bitrate.py` to configure a PEAK PCAN-USB FD
+adapter, or use `examples/sync/configure_bitrate.py` for the synchronous version.
 
 ## End-to-end regression tests
 

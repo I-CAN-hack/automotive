@@ -38,7 +38,8 @@ Read diagnostic data through a persistent UDS client.
 
 ## Configure bitrate and sample points
 
-Reuse adapter configuration with explicit nominal and data-phase timing.
+Configure a PEAK PCAN-USB FD adapter with 500 kbit/s nominal and 2 Mbit/s data
+timing, both with an 80% sample point.
 
 ```{literalinclude} ../examples/configure_bitrate.py
 :language: python
@@ -79,5 +80,13 @@ async and sync examples let ownership release resources when they go out of scop
 ### Query an ECU with UDS
 
 ```{literalinclude} ../examples/sync/uds.py
+:language: python
+```
+
+### Configure bitrate and sample points
+
+Configure the same PEAK timing through the synchronous API.
+
+```{literalinclude} ../examples/sync/configure_bitrate.py
 :language: python
 ```

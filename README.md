@@ -154,25 +154,30 @@ a nominal bitrate produces no data-phase timing; direct timing parameters are al
 supported. `get_adapter()` uses the same defaults when configuring PEAK, panda,
 or Vector.
 
-For example, to configure a Vector channel without selecting a generic adapter
+For example, to configure a PEAK adapter without selecting a generic adapter
 type for the bitrate builder:
 
 ```rust,no_run
-# #[cfg(all(target_os = "windows", feature = "vector-xl"))]
+# #[cfg(feature = "peak")]
 # fn example() -> automotive::Result<()> {
-use automotive::adapters::vector::{VectorCan, VectorConfig};
+use automotive::adapters::peak::{Peak, PeakConfig};
 
-let config = VectorConfig::builder(0)
+let config = PeakConfig::builder()
     .bitrate(|bitrate| {
         bitrate
             .bitrate(500_000)
+            .sample_point(0.8)
             .data_bitrate(2_000_000)
+            .data_sample_point(0.8)
     })
     .build()?;
-let adapter = VectorCan::new_async(config)?;
+let adapter = Peak::new_async(config)?;
 # Ok(())
 # }
 ```
+
+Run the complete PEAK bitrate example with
+`cargo run --example configure_bitrate --features peak`.
 
 Each adapter's configuration types live in its `config.rs` module and are
 re-exported from the adapter module.
