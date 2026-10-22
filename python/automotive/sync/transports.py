@@ -22,7 +22,7 @@ class IsoTPAdapter(Resource[_isotp.IsoTPAdapter]):
         config: Shared ISO-TP configuration; only tx_id is required.
 
     Closing this transport leaves the CAN adapter open. Closing the adapter
-    invalidates this transport and its clients. Close raw ISO-TP receivers
+    invalidates this transport and its clients. Drop or close raw ISO-TP receivers
     before issuing UDS requests on the same transport.
     """
 
@@ -70,7 +70,8 @@ class IsoTPAdapter(Resource[_isotp.IsoTPAdapter]):
 class J2534Device(Resource[_j2534.J2534Device]):
     """A reusable J2534 device obtained from into_device().
 
-    Use with or close() to release the device. Opening a new native channel
+    Dropping the last owner releases the device; with and close() support early
+    cleanup. Opening a new native channel
     consumes this handle, even if opening fails. Concurrent channels on the
     same device are unsupported.
     """

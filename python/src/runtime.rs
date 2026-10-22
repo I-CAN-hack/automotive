@@ -143,17 +143,12 @@ impl Adapter {
 }
 
 #[pyfunction]
-fn open_adapter<'py>(py: Python<'py>, config: &Bound<'_, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+fn open_adapter(py: Python<'_>, config: &Bound<'_, PyAny>) -> PyResult<Adapter> {
     let config = AdapterConfig::parse(config)?;
-    pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        let inner = tokio::task::spawn_blocking(move || config.open())
-            .await
-            .map_err(join_error)?
-            .map_err(convert)?;
-        Ok(Adapter {
-            inner: Arc::new(inner),
-            closed: watch::channel(false).0,
-        })
+    let inner = py.detach(move || config.open()).map_err(convert)?;
+    Ok(Adapter {
+        inner: Arc::new(inner),
+        closed: watch::channel(false).0,
     })
 }
 

@@ -17,9 +17,13 @@ pytestmark = pytest.mark.vcan
 
 async def test_can_frame_round_trip() -> None:
     frame = Frame(id=Identifier.extended(0x123), data=bytes(range(12)), fd=True, brs=True)
-    with SocketCanAdapter("vcan0") as sender, SocketCanAdapter("vcan0") as monitor, monitor.recv() as frames:
-        await asyncio.to_thread(sender.send, frame)
-        assert await asyncio.wait_for(asyncio.to_thread(next, frames), 2) == frame
+    sender = SocketCanAdapter("vcan0")
+    try:
+        with SocketCanAdapter("vcan0") as monitor, monitor.recv() as frames:
+            await asyncio.to_thread(sender.send, frame)
+            assert await asyncio.wait_for(asyncio.to_thread(next, frames), 2) == frame
+    finally:
+        sender.close()
 
 
 @pytest.mark.parametrize("fd", [False, True])
@@ -155,3 +159,17 @@ async def test_parent_close_interrupts_synchronous_uds(ecu_factory: EcuFactory) 
                 await asyncio.to_thread(adapter.close)
                 with pytest.raises(ConnectionError):
                     await asyncio.wait_for(pending, 1)
+
+
+async def test_client_retains_adapter_after_python_owners_are_released(ecu_factory: EcuFactory) -> None:
+    async with ecu_factory():
+
+        def exchange() -> None:
+            adapter = SocketCanAdapter("vcan0")
+            transport = IsoTPAdapter.from_id(adapter, 0x7A1)
+            uds = UDSClient(transport, UDSConfig(p2_timeout=1.0))
+            del adapter, transport
+            uds.tester_present()
+            assert uds.read_data_by_identifier(0x1234) == b"deadbeef"
+
+        await asyncio.to_thread(exchange)

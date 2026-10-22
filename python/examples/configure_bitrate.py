@@ -21,9 +21,9 @@ async def main() -> None:
         ),
     )
     print("Resolved timing:", config.resolved_bitrate)
-    async with VectorAdapter(config) as adapter, adapter.recv() as frames:
-        async for frame in frames:
-            print(frame)
+    adapter = VectorAdapter(config)
+    async for frame in adapter.recv():
+        print(frame)
 
 
 if __name__ == "__main__":

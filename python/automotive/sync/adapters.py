@@ -5,21 +5,34 @@ from __future__ import annotations
 from typing import Self
 
 from .. import adapters as _adapters
-from ..adapters import AdapterConfig, J2534Config, PandaConfig, PeakConfig, SocketCanConfig, VectorConfig
+from ..adapters import (
+    AdapterConfig,
+    J2534Config,
+    PandaConfig,
+    PeakConfig,
+    SocketCanConfig,
+    VectorConfig,
+    _adapter_config,
+)
 from ..can import Frame
 from ._runtime import Receiver, Resource, call, run
 
 
 class Adapter(Resource[_adapters.Adapter]):
-    """Discover a CAN adapter with Rust defaults when opened.
+    """Open a CAN adapter immediately, using discovery when no config is supplied.
 
-    Construction performs no I/O. Prefer ``with Adapter() as adapter`` or call
-    open() explicitly. close() releases hardware and invalidates dependent
-    transports and receivers. A closed adapter cannot be reopened.
+    Args:
+        config: Shared backend configuration; None discovers an adapter with
+            Rust defaults. Named classes such as PeakAdapter select a backend.
+
+    Hardware is released when its last owner is dropped. Transports, clients,
+    and receivers retain ownership. close() and with support deterministic
+    cleanup. Explicit closure invalidates dependent operations, and a closed
+    adapter cannot be reopened. Opening errors are raised by construction.
     """
 
-    def __init__(self) -> None:
-        super().__init__(_adapters.Adapter())
+    def __init__(self, config: AdapterConfig | None = None) -> None:
+        super().__init__(_adapters.Adapter(config))
 
     @property
     def config(self) -> AdapterConfig | None:
@@ -27,21 +40,9 @@ class Adapter(Resource[_adapters.Adapter]):
         return self._async.config
 
     def open(self) -> Self:
-        """Open this adapter and return self; repeated calls retain the connection.
-
-        Raises:
-            ValueError: Explicit configuration is invalid.
-            NotSupportedError: The backend is unavailable on this platform.
-            AdapterError: Opening failed or discovery found no usable adapter.
-            RuntimeError: This adapter has already been closed.
-        """
+        """Return this already-open adapter; raise RuntimeError after closure."""
         run(self._async.open)
         return self
-
-    def __enter__(self) -> Self:
-        """Open this adapter and return it."""
-        self.open()
-        return super().__enter__()
 
     def send(self, frame: Frame) -> None:
         """Send a frame and block for the backend's transmit confirmation.
@@ -65,63 +66,61 @@ class Adapter(Resource[_adapters.Adapter]):
 
         Returns:
             A blocking iterator of Frame objects supporting with and close().
-            Subscribe before sending, then close the receiver after use.
+            Subscribe before sending. Dropping the receiver releases its
+            subscription; close() releases it early.
         """
         return Receiver(call(self._async.recv))
 
 
 class SocketCanAdapter(Adapter):
-    """A Linux SocketCAN adapter; use ``with SocketCanAdapter('can0')``.
+    """Open a Linux SocketCAN adapter with ``SocketCanAdapter('can0')``.
 
     Args:
         interface: Interface name, default "can0", or a reusable SocketCanConfig.
 
-    Timing is configured through the OS. Construction performs no I/O.
+    Timing is configured through the OS. Construction opens synchronously.
     """
 
     def __init__(self, interface: str | SocketCanConfig = "can0") -> None:
-        super().__init__()
-        self._async = _adapters.SocketCanAdapter(interface)
+        config = SocketCanConfig(interface=interface) if isinstance(interface, str) else interface
+        super().__init__(_adapter_config(config, SocketCanConfig))
 
 
 class PandaAdapter(Adapter):
-    """A panda USB adapter; use a with block or call open().
+    """Open a panda USB adapter immediately.
 
     Args:
         config: Reusable PandaConfig; None uses Rust defaults.
     """
 
     def __init__(self, config: PandaConfig | None = None) -> None:
-        super().__init__()
-        self._async = _adapters.PandaAdapter(config)
+        super().__init__(_adapter_config(config, PandaConfig))
 
 
 class PeakAdapter(Adapter):
-    """A PEAK PCAN-USB FD adapter; use a with block or call open().
+    """Open a PEAK PCAN-USB FD adapter immediately.
 
     Args:
         config: Reusable PeakConfig; None uses Rust defaults.
     """
 
     def __init__(self, config: PeakConfig | None = None) -> None:
-        super().__init__()
-        self._async = _adapters.PeakAdapter(config)
+        super().__init__(_adapter_config(config, PeakConfig))
 
 
 class VectorAdapter(Adapter):
-    """A Windows Vector XL adapter; use a with block or call open().
+    """Open a Windows Vector XL adapter immediately.
 
     Args:
         config: Reusable VectorConfig; None retains shared channel access.
     """
 
     def __init__(self, config: VectorConfig | None = None) -> None:
-        super().__init__()
-        self._async = _adapters.VectorAdapter(config)
+        super().__init__(_adapter_config(config, VectorConfig))
 
 
 class J2534Adapter(Adapter):
-    """A Windows J2534 raw CAN adapter; use a with block or call open().
+    """Open a Windows J2534 raw CAN adapter immediately.
 
     Args:
         config: Reusable J2534Config; None discovers a DLL and uses Rust defaults.
@@ -130,8 +129,7 @@ class J2534Adapter(Adapter):
     """
 
     def __init__(self, config: J2534Config | None = None) -> None:
-        super().__init__()
-        self._async = _adapters.J2534Adapter(config)
+        super().__init__(_adapter_config(config, J2534Config))
 
 
 __all__ = ["Adapter", "J2534Adapter", "PandaAdapter", "PeakAdapter", "SocketCanAdapter", "VectorAdapter"]

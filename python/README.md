@@ -56,8 +56,7 @@ remain necessary. The Rust crate retains feature flags for Rust applications.
 
 Minimal setup retains the Rust defaults. Use `Adapter()` for automatic discovery,
 `PeakAdapter()` for default PEAK settings, or `SocketCanAdapter("can0")` to select
-a SocketCAN interface directly. Adapters open when entering `async with`;
-`await adapter.open()` supports explicit lifecycle management:
+a SocketCAN interface directly. Constructors open the device immediately:
 
 ```python
 import asyncio
@@ -68,13 +67,11 @@ from automotive.transports.isotp import IsoTPAdapter
 
 
 async def main():
-    async with (
-        Adapter() as adapter,
-        IsoTPAdapter.from_id(adapter, 0x7A1) as transport,
-    ):
-        uds = UDSClient(transport)
-        response = await uds.read_data_by_identifier(DataIdentifier.VIN)
-        print(response)
+    adapter = Adapter()
+    transport = IsoTPAdapter.from_id(adapter, 0x7A1)
+    uds = UDSClient(transport)
+    response = await uds.read_data_by_identifier(DataIdentifier.VIN)
+    print(response)
 
 
 asyncio.run(main())
@@ -83,17 +80,16 @@ asyncio.run(main())
 ### Synchronous usage
 
 Import blocking adapter, transport, and client classes from `automotive.sync`.
-Use ordinary `with` blocks, method calls, and receive iterators:
+Use ordinary constructors, method calls, and receive iterators:
 
 ```python
 from automotive.protocols.uds import DataIdentifier
 from automotive.sync import IsoTPAdapter, SocketCanAdapter, UDSClient
 
-with SocketCanAdapter("can0") as adapter, IsoTPAdapter.from_id(adapter, 0x7A1) as transport:
-    uds = UDSClient(transport)
-    print(uds.read_data_by_identifier(DataIdentifier.VIN))
-    with uds.suppress_positive_responses():
-        uds.tester_present()
+adapter = SocketCanAdapter("can0")
+transport = IsoTPAdapter.from_id(adapter, 0x7A1)
+uds = UDSClient(transport)
+print(uds.read_data_by_identifier(DataIdentifier.VIN))
 ```
 
 `Adapter()`, `PeakAdapter(config)`, and the other named adapter classes are also
@@ -101,15 +97,22 @@ available in `automotive.sync`. Both APIs share configuration classes, frames,
 enums, result types, and exceptions. Configs can be imported from their existing
 modules or from `automotive.sync`.
 
-For explicit cleanup, use `close()`; adapters also support `open()`. `recv()`
-subscribes immediately and returns an iterator for `for` or `next()`, supporting
-`with` and `close()`. Close raw ISO-TP receivers before making UDS requests on
-the same transport. Native J2534 transports and reusable device handles have
-synchronous counterparts too.
+Hardware and subscriptions are released when their last owner is dropped.
+Transports, clients, and receivers retain their underlying resources, so they
+can outlive the adapter variable. For deterministic cleanup, use `close()` on
+synchronous resources or `await aclose()` on asynchronous resources. `with` and
+`async with` remain supported as optional cleanup patterns.
+
+`recv()` subscribes immediately. Synchronous receivers support `for` and `next()`;
+async receivers support `async for` and `anext()`. Drop or close raw ISO-TP
+receivers before making UDS requests on the same transport. Native J2534
+transports and reusable device handles have synchronous counterparts too.
 
 One background event loop runs the existing async implementation and shuts down
-at process exit. Calls block the calling thread, so use the async API inside
-asyncio applications. Suppression scopes in the synchronous API are local to the
+at process exit. Adapter construction opens hardware synchronously in both APIs,
+including inside an async function; Rust releases the GIL during device opening.
+Use the async API for awaitable sends and receives in asyncio applications.
+Suppression scopes in the synchronous API are local to the
 calling thread and context. Ctrl+C interrupts a blocking wait; an active Rust UDS
 exchange still drains before the next request, matching async cancellation.
 
@@ -142,12 +145,10 @@ uds_config = UDSConfig(request_timeout=10.0, strict=True)
 
 
 async def main():
-    async with (
-        PeakAdapter(adapter_config) as adapter,
-        IsoTPAdapter(adapter, transport_config) as transport,
-    ):
-        uds = UDSClient(transport, uds_config)
-        print(await uds.read_data_by_identifier(DataIdentifier.VIN))
+    adapter = PeakAdapter(adapter_config)
+    transport = IsoTPAdapter(adapter, transport_config)
+    uds = UDSClient(transport, uds_config)
+    print(await uds.read_data_by_identifier(DataIdentifier.VIN))
 
 
 asyncio.run(main())
@@ -168,8 +169,8 @@ exceptions retain NRCs or full response bytes. See `automotive.errors`.
 
 Receive subscriptions are created by `recv()` immediately: create one before
 sending, then use `async for`, `anext()`, and `aclose()`. Hardware, transports,
-and receivers support `async with`. Close raw ISO-TP receivers before using UDS
-on the same transport; raw CAN monitoring can run alongside UDS.
+and receivers also support `async with`. Drop or close raw ISO-TP receivers before
+using UDS on the same transport; raw CAN monitoring can run alongside UDS.
 UDS exchanges on a transport are serialized. A cancelled queued call does not
 transmit; an active cancelled exchange drains under the lock before the next
 call starts. Closing the parent interrupts dependent operations. Set

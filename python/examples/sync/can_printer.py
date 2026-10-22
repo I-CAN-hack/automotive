@@ -5,9 +5,9 @@ from automotive.sync import Adapter
 
 def main() -> None:
     """Discover an adapter and receive frames until interrupted with Ctrl+C."""
-    with Adapter() as adapter, adapter.recv() as frames:
-        for frame in frames:
-            print(frame)
+    adapter = Adapter()
+    for frame in adapter.recv():
+        print(frame)
 
 
 if __name__ == "__main__":

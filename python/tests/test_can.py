@@ -22,7 +22,11 @@ pytestmark = pytest.mark.vcan
 )
 async def test_frame_round_trip(frame: Frame) -> None:
     config = SocketCanConfig(interface="vcan0")
-    async with SocketCanAdapter(config) as sender, SocketCanAdapter("vcan0") as monitor, monitor.recv() as frames:
-        await sender.send(frame)
-        received = await asyncio.wait_for(anext(frames), 1)
-        assert received == frame
+    sender = SocketCanAdapter(config)
+    try:
+        async with SocketCanAdapter("vcan0") as monitor, monitor.recv() as frames:
+            await sender.send(frame)
+            received = await asyncio.wait_for(anext(frames), 1)
+            assert received == frame
+    finally:
+        await sender.aclose()

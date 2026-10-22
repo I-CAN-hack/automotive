@@ -11,7 +11,9 @@ implementation.
 ## Adapters
 
 Named adapters inherit the blocking lifecycle, send, and receive methods from
-`Adapter`. Their constructors accept the same configuration as the async API.
+`Adapter`. Constructors open devices immediately and accept the same
+configuration as the async API. Resources are released when their last owner is
+dropped; explicit close() and context managers remain optional.
 
 ```{eval-rst}
 .. autoclass:: automotive.sync.Adapter

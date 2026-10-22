@@ -1,7 +1,9 @@
 # Adapters
 
-Use `Adapter()` for discovery, or choose a backend explicitly. Construction
-performs no I/O; entering `async with` or awaiting `open()` opens the adapter.
+Use `Adapter()` for discovery, or choose a backend explicitly. Constructors open
+hardware immediately and block until ready. Sending and receiving are async.
+Hardware is released when its last owner is dropped; `aclose()` and `async with`
+remain available for deterministic cleanup.
 
 ```{eval-rst}
 .. automodule:: automotive.adapters

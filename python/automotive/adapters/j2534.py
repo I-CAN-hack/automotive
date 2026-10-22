@@ -13,8 +13,9 @@ from . import Adapter, J2534Config
 class J2534Device(AsyncResource[_native._Device]):
     """A reusable device returned by a native transport's into_device method.
 
-    Opening a new channel consumes this handle. Close it when no further
-    channels are needed. Creating multiple channels concurrently is unsupported.
+    Opening a new channel consumes this handle. Dropping its last owner releases
+    the device; aclose() supports early cleanup. Creating multiple channels
+    concurrently is unsupported.
     """
 
     def __init__(self, native: _native._Device) -> None:

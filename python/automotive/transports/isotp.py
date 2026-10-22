@@ -83,7 +83,7 @@ class IsoTPAdapter(AsyncResource[_native._Transport]):
 
     Closing this transport ends its operations without closing the shared CAN
     adapter. Closing the adapter invalidates this transport and its UDS clients.
-    Raw receivers must be closed before issuing UDS requests on this transport,
+    Drop or close raw receivers before issuing UDS requests on this transport,
     because both consume PDUs and may send flow-control frames.
     """
 

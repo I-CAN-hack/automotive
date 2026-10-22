@@ -62,10 +62,10 @@ class AsyncResource(Generic[R]):
 
 
 class Receiver(AsyncIterator[T], Generic[T]):
-    """An eager receive subscription with explicit asynchronous cleanup.
+    """An eager receive subscription with optional asynchronous cleanup.
 
-    Create the receiver before sending a request. Use ``async with receiver``
-    or ``await receiver.aclose()`` when reception is no longer needed.
+    Create the receiver before sending a request. Dropping it releases the
+    subscription. ``async with`` and aclose() support deterministic cleanup.
     A transport timeout raises ``TimeoutError``; another ``anext(receiver)``
     may continue reception. Closing the receiver or its owner ends iteration.
     """

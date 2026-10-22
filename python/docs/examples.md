@@ -14,7 +14,7 @@ Discover an adapter and print received CAN frames.
 
 ## Send a CAN frame
 
-Discover an adapter, send one Classic CAN frame, and close the adapter.
+Discover an adapter and send one Classic CAN frame.
 
 ```{literalinclude} ../examples/can_sender.py
 :language: python
@@ -55,7 +55,8 @@ Use independent ECU transports for concurrent diagnostic requests.
 ## Synchronous examples
 
 These programs use the same configuration and values through `automotive.sync`.
-They use ordinary context managers, blocking calls, and receive iterators.
+They use ordinary constructors, blocking calls, and receive iterators. Both the
+async and sync examples let ownership release resources when they go out of scope.
 
 ### Send a CAN frame
 
