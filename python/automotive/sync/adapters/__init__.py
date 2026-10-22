@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Self
 
-from .. import adapters as _adapters
-from ..adapters import (
+from ... import adapters as _adapters
+from ...adapters import (
     AdapterConfig,
     J2534Config,
     PandaConfig,
@@ -13,9 +13,11 @@ from ..adapters import (
     SocketCanConfig,
     VectorConfig,
     _adapter_config,
+    available_adapters,
 )
+from .._base import Receiver, Resource
+from .._runtime import call, run
 from ..can import Frame
-from ._runtime import Receiver, Resource, call, run
 
 
 class Adapter(Resource[_adapters.Adapter]):
@@ -132,4 +134,18 @@ class J2534Adapter(Adapter):
         super().__init__(_adapter_config(config, J2534Config))
 
 
-__all__ = ["Adapter", "J2534Adapter", "PandaAdapter", "PeakAdapter", "SocketCanAdapter", "VectorAdapter"]
+__all__ = [
+    "Adapter",
+    "AdapterConfig",
+    "J2534Adapter",
+    "J2534Config",
+    "PandaAdapter",
+    "PandaConfig",
+    "PeakAdapter",
+    "PeakConfig",
+    "SocketCanAdapter",
+    "SocketCanConfig",
+    "VectorAdapter",
+    "VectorConfig",
+    "available_adapters",
+]

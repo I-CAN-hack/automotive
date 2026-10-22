@@ -1,7 +1,7 @@
 """Configure a PEAK PCAN-USB FD adapter for 500 kbit/s CAN and 2 Mbit/s CAN FD."""
 
-from automotive.can.bitrate import BitrateSettings
-from automotive.sync import PeakAdapter, PeakConfig
+from automotive.sync.adapters import PeakAdapter, PeakConfig
+from automotive.sync.can.bitrate import BitrateSettings
 
 
 def main() -> None:

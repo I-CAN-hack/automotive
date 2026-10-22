@@ -1,6 +1,6 @@
 """Print received CAN frames using an ordinary iterator."""
 
-from automotive.sync import Adapter
+from automotive.sync.adapters import Adapter
 
 
 def main() -> None:

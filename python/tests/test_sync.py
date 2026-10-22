@@ -5,10 +5,11 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from automotive.can import Frame, Identifier
-from automotive.errors import NegativeResponseError
-from automotive.protocols.uds import DTCFormatIdentifier, RoutineControlType, SessionType
-from automotive.sync import IsoTPAdapter, IsoTPConfig, SocketCanAdapter, UDSClient, UDSConfig
+from automotive.sync.adapters import SocketCanAdapter
+from automotive.sync.can import Frame, Identifier
+from automotive.sync.errors import NegativeResponseError
+from automotive.sync.protocols.uds import DTCFormatIdentifier, RoutineControlType, SessionType, UDSClient, UDSConfig
+from automotive.sync.transports.isotp import IsoTPAdapter, IsoTPConfig
 
 from .conftest import EcuFactory
 

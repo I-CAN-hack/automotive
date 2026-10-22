@@ -1,7 +1,7 @@
 """Send one Classic CAN frame without asyncio."""
 
-from automotive.can import Frame
-from automotive.sync import Adapter
+from automotive.sync.adapters import Adapter
+from automotive.sync.can import Frame
 
 
 def main() -> None:

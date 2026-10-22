@@ -6,11 +6,14 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Self
 
-from .._base import Buffer
-from ..protocols import uds as _uds
-from ..protocols.uds import (
+from ..._base import Buffer
+from ...protocols import uds as _uds
+from ...protocols.uds import (
     DataIdentifier,
+    DTCFormatIdentifier,
     DTCReportNumberByStatusMask,
+    NegativeResponseCode,
+    ReportType,
     ResetType,
     RoutineControlType,
     RoutineIdentifier,
@@ -20,8 +23,8 @@ from ..protocols.uds import (
     SessionType,
     UDSConfig,
 )
-from ._runtime import call, run
-from .transports import IsoTPAdapter
+from .._runtime import call, run
+from ..transports.isotp import IsoTPAdapter
 
 
 class UDSClient:
@@ -357,4 +360,19 @@ class UDSClient:
         return run(self._async.request_transfer_exit, data)
 
 
-__all__ = ["UDSClient"]
+__all__ = [
+    "DTCFormatIdentifier",
+    "DTCReportNumberByStatusMask",
+    "DataIdentifier",
+    "NegativeResponseCode",
+    "ReportType",
+    "ResetType",
+    "RoutineControlType",
+    "RoutineIdentifier",
+    "SecurityAccessType",
+    "ServiceIdentifier",
+    "SessionParameterRecord",
+    "SessionType",
+    "UDSClient",
+    "UDSConfig",
+]

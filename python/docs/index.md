@@ -2,8 +2,9 @@
 
 A library for synchronous and asynchronous CAN, ISO-TP, and UDS, powered by Rust.
 Start with sensible defaults, then use reusable configuration objects when you
-need more control. Import blocking classes from `automotive.sync` or use the
-existing asyncio API.
+need more control. The modules under `automotive.sync` mirror the asyncio API,
+including `automotive.sync.adapters`, `automotive.sync.transports.isotp`, and
+`automotive.sync.protocols.uds`.
 
 Requires CPython 3.11 or newer. Install into a uv project:
 

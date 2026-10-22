@@ -1,7 +1,8 @@
 """Read software identification from an ECU without asyncio."""
 
-from automotive.protocols.uds import DataIdentifier, SessionType
-from automotive.sync import Adapter, IsoTPAdapter, UDSClient
+from automotive.sync.adapters import Adapter
+from automotive.sync.protocols.uds import DataIdentifier, SessionType, UDSClient
+from automotive.sync.transports.isotp import IsoTPAdapter
 
 
 def main() -> None:

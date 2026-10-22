@@ -1,6 +1,7 @@
 """Exchange complete ISO-TP messages with an echo ECU at transmit ID 0x7A1."""
 
-from automotive.sync import Adapter, IsoTPAdapter
+from automotive.sync.adapters import Adapter
+from automotive.sync.transports.isotp import IsoTPAdapter
 
 
 def main() -> None:

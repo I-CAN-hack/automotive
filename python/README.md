@@ -79,12 +79,13 @@ asyncio.run(main())
 
 ### Synchronous usage
 
-Import blocking adapter, transport, and client classes from `automotive.sync`.
+The synchronous API mirrors the async module layout under `automotive.sync`.
 Use ordinary constructors, method calls, and receive iterators:
 
 ```python
-from automotive.protocols.uds import DataIdentifier
-from automotive.sync import IsoTPAdapter, SocketCanAdapter, UDSClient
+from automotive.sync.adapters import SocketCanAdapter
+from automotive.sync.protocols.uds import DataIdentifier, UDSClient
+from automotive.sync.transports.isotp import IsoTPAdapter
 
 adapter = SocketCanAdapter("can0")
 transport = IsoTPAdapter.from_id(adapter, 0x7A1)
@@ -92,10 +93,21 @@ uds = UDSClient(transport)
 print(uds.read_data_by_identifier(DataIdentifier.VIN))
 ```
 
-`Adapter()`, `PeakAdapter(config)`, and the other named adapter classes are also
-available in `automotive.sync`. Both APIs share configuration classes, frames,
-enums, result types, and exceptions. Configs can be imported from their existing
-modules or from `automotive.sync`.
+`Adapter()`, `PeakAdapter(config)`, and the other named adapter classes live in
+`automotive.sync.adapters`. The import paths match their async counterparts:
+
+| Async module | Sync module |
+| --- | --- |
+| `automotive.adapters` | `automotive.sync.adapters` |
+| `automotive.adapters.j2534` | `automotive.sync.adapters.j2534` |
+| `automotive.transports.isotp` | `automotive.sync.transports.isotp` |
+| `automotive.protocols.uds` | `automotive.sync.protocols.uds` |
+| `automotive.can` | `automotive.sync.can` |
+| `automotive.can.bitrate` | `automotive.sync.can.bitrate` |
+| `automotive.errors` | `automotive.sync.errors` |
+
+Both APIs share the same configuration classes, frames, enums, result types, and
+exceptions. These can be imported through either module hierarchy.
 
 Hardware and subscriptions are released when their last owner is dropped.
 Transports, clients, and receivers retain their underlying resources, so they

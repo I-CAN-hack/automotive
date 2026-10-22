@@ -55,7 +55,9 @@ Use independent ECU transports for concurrent diagnostic requests.
 
 ## Synchronous examples
 
-These programs use the same configuration and values through `automotive.sync`.
+These programs use the matching modules under `automotive.sync`, including
+`automotive.sync.adapters`, `automotive.sync.transports.isotp`, and
+`automotive.sync.protocols.uds`, with the same configuration and value types.
 They use ordinary constructors, blocking calls, and receive iterators. Both the
 async and sync examples let ownership release resources when they go out of scope.
 
