@@ -192,6 +192,9 @@ UDS exchanges on a transport are serialized. A cancelled queued call does not
 transmit; an active cancelled exchange drains under the lock before the next
 call starts. Closing the parent interrupts dependent operations. Set
 `request_timeout` when an overall bound is needed, including repeated NRC 0x78.
+UDS retries idle transport receive timeouts on the same stream without resending
+the request or extending P2/P2*. `IsoTPConfig.timeout` need not exceed the UDS
+response waits; transmission and frame-reassembly timeouts still fail the request.
 
 Use an ordinary context manager to suppress positive responses. Suppression
 supports nested scopes, restores its previous setting on exit, and is local to

@@ -47,7 +47,8 @@ class UDSConfig:
         strict: Enable Rust's strict response validation, default True. Minimum
             parsing lengths still apply when False; unknown codes are preserved.
 
-    Transport timeouts apply independently and must accommodate UDS waits.
+    Idle transport receive timeouts are retried within the UDS response window.
+    Transport transmission and frame-reassembly timeouts still fail the request.
     Configured/server timing includes complete response reception. Durations
     must be finite and nonnegative; values are otherwise passed directly to Rust.
     """
@@ -103,6 +104,8 @@ class UDSClient:
     exchange under the transaction lock. Closing the transport interrupts it.
     Cancellation cannot undo ECU actions. Requests with unlimited NRC 0x78
     responses may hold the lock indefinitely unless request_timeout is set.
+    Idle receive expiry resumes waiting on the same stream without resending the
+    request or extending P2/P2*. Transport transfer failures still raise errors.
 
     Raises:
         NegativeResponseError: An ECU rejects the request; code is its raw NRC.

@@ -9,7 +9,7 @@ from automotive.adapters import SocketCanAdapter
 from automotive.can import Identifier
 from automotive.errors import NegativeResponseError, ProtocolDeviationError
 from automotive.protocols.uds import DTCFormatIdentifier, RoutineControlType, SessionType, UDSClient, UDSConfig
-from automotive.transports.isotp import IsoTP
+from automotive.transports.isotp import IsoTP, IsoTPConfig
 
 from .conftest import EcuFactory
 
@@ -77,6 +77,19 @@ async def test_raw_memory_fields_in_download_and_upload(ecu_factory: EcuFactory)
         assert await uds.request_upload(0, 0, b"\x12\x34\x56", b"\x00\x08") == 10
         assert await uds.transfer_data(1) == b"rawbytes"
         await uds.request_transfer_exit()
+
+
+async def test_session_timing_survives_transport_idle_timeouts(ecu_factory: EcuFactory) -> None:
+    async with (
+        ecu_factory(case="repeated-pending") as ecu,
+        IsoTP(ecu.adapter, IsoTPConfig(tx_id=0x7A1, timeout=0.04)) as transport,
+    ):
+        uds = UDSClient(transport, UDSConfig(p2_timeout=0.1, request_timeout=2.0))
+        timing = await uds.diagnostic_session_control(SessionType.EXTENDED_DIAGNOSTIC)
+        assert timing is not None and timing.p2_star_server_max == 5.0
+        # Each pending-response gap is 75 ms, exceeding the transport's 40 ms.
+        with uds.suppress_positive_responses():
+            await uds.tester_present()
 
 
 @pytest.mark.parametrize("strict", [True, False])

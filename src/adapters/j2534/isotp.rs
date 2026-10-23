@@ -309,6 +309,7 @@ impl Transport for J2534NativeIsoTP {
 
 impl J2534NativeIsoTP {
     /// Subscribe immediately without borrowing the transport in the returned stream.
+    /// Idle expiry yields [`crate::Error::IdleTimeout`]; polling again resumes waiting.
     pub fn recv_owned(
         &self,
     ) -> impl crate::Stream<Item = crate::Result<Vec<u8>>> + Unpin + Send + 'static {
@@ -322,7 +323,7 @@ impl J2534NativeIsoTP {
             }
             loop {
                 match tokio::time::timeout(timeout, rx.recv()).await {
-                    Err(_) => yield Err(crate::Error::Timeout),
+                    Err(_) => yield Err(crate::Error::IdleTimeout),
                     Ok(Ok(J2534IsoTpEvt::Pdu(pdu))) => yield Ok(pdu),
                     Ok(Ok(J2534IsoTpEvt::Disconnected)) => {
                         yield Err(crate::Error::Disconnected);

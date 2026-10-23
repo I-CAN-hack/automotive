@@ -123,6 +123,24 @@ async def test_suppression_is_nested_and_thread_local_on_the_wire(ecu_factory: E
         await asyncio.to_thread(exchange)
 
 
+async def test_session_timing_survives_transport_idle_timeouts(ecu_factory: EcuFactory) -> None:
+    async with ecu_factory(case="repeated-pending"):
+
+        def exchange() -> None:
+            with (
+                SocketCanAdapter("vcan0") as adapter,
+                IsoTP(adapter, IsoTPConfig(tx_id=0x7A1, timeout=0.04)) as transport,
+            ):
+                uds = UDSClient(transport, UDSConfig(p2_timeout=0.1, request_timeout=2.0))
+                timing = uds.diagnostic_session_control(SessionType.EXTENDED_DIAGNOSTIC)
+                assert timing is not None and timing.p2_star_server_max == 5.0
+                # Each pending-response gap is 75 ms, exceeding the transport's 40 ms.
+                with uds.suppress_positive_responses():
+                    uds.tester_present()
+
+        await asyncio.to_thread(exchange)
+
+
 @pytest.mark.parametrize("case", ["pending-positive", "pending-negative", "pending-only"])
 async def test_suppressed_response_pending(ecu_factory: EcuFactory, case: str) -> None:
     async with ecu_factory(case=case):

@@ -8,7 +8,8 @@ use std::time::Duration;
 ///
 /// The transport exposes complete messages, so these deadlines include response
 /// reception (P6/P6* in ISO 14229-2 terminology), rather than just its start.
-/// Transport timeouts still apply and should accommodate the configured waits.
+/// Idle receive timeouts are retried within these deadlines. Transport
+/// transmission and frame-reassembly timeouts still apply independently.
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(default))]

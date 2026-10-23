@@ -17,5 +17,9 @@ pub trait Transport {
     ) -> impl std::future::Future<Output = crate::Result<()>> + 'a;
 
     /// Infinite stream of received UDS PDUs. Each item is one complete PDU.
+    ///
+    /// An idle wait may yield [`crate::Error::IdleTimeout`]; polling the same
+    /// stream again safely resumes waiting. Timeouts during an active transport
+    /// transfer use [`crate::Error::Timeout`] and must not be treated as idle.
     fn recv(&self) -> impl crate::Stream<Item = crate::Result<Vec<u8>>> + Unpin + '_;
 }
