@@ -14,57 +14,19 @@ from automotive.sync.protocols.uds import DataIdentifier, UDSClient
 from automotive.sync.transports.isotp import IsoTP
 ```
 
-## Adapters
+The synchronous reference appears alongside the async API in each package
+section:
 
-Named adapters inherit the blocking lifecycle, send, and receive methods from
-`CanAdapter`. Constructors open devices immediately and accept the same
-configuration as the async API. Resources are released when their last owner is
-dropped; explicit close() and context managers remain optional.
-
-```{eval-rst}
-.. autoclass:: automotive.sync.adapters.CanAdapter
-   :members:
-   :inherited-members:
-
-.. autoclass:: automotive.sync.adapters.SocketCanAdapter
-
-.. autoclass:: automotive.sync.adapters.PandaAdapter
-
-.. autoclass:: automotive.sync.adapters.PeakAdapter
-
-.. autoclass:: automotive.sync.adapters.VectorAdapter
-
-.. autoclass:: automotive.sync.adapters.J2534Adapter
-```
-
-## Transports
-
-`UDSClient` accepts the shared `Transport` base independently of the underlying
-protocol. Software ISO-TP and native J2534 are concrete implementations.
-
-```{eval-rst}
-.. autoclass:: automotive.sync.transports.Transport
-   :members:
-   :inherited-members:
-
-.. autoclass:: automotive.sync.transports.isotp.IsoTP
-   :members:
-   :inherited-members:
-
-.. autoclass:: automotive.sync.adapters.j2534.J2534NativeIsoTP
-   :members: open, new_on_device, into_device, adapter_config
-
-.. autoclass:: automotive.sync.adapters.j2534.J2534Device
-   :members:
-   :inherited-members:
-```
-
-## UDS client
-
-```{eval-rst}
-.. autoclass:: automotive.sync.protocols.uds.UDSClient
-   :members:
-```
+| Package | Reference |
+| --- | --- |
+| `automotive.sync.can` | [CAN frames and identifiers](can/index.md) |
+| `automotive.sync.can.bitrate` | [Bitrate configuration](can/bitrate.md) |
+| `automotive.sync.adapters` | {ref}`Adapters <sync-adapters>` |
+| `automotive.sync.adapters.j2534` | {ref}`Native J2534 ISO-TP <sync-j2534>` |
+| `automotive.sync.transports` | {ref}`Transport interface <sync-transports>` |
+| `automotive.sync.transports.isotp` | {ref}`ISO-TP <sync-isotp>` |
+| `automotive.sync.protocols.uds` | {ref}`UDS <sync-uds>` |
+| `automotive.sync.errors` | [Exceptions](errors.md) |
 
 ## Receive subscriptions
 

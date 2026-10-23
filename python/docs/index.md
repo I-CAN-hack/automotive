@@ -19,9 +19,11 @@ permissions are still needed for the hardware you use.
 The [user guide](guide.md) covers setup, configuration, and resource management.
 The [examples](examples.md) show complete programs, and the
 [API reference](api/index.md) documents the public Python classes and methods.
+Its CAN, adapters, transports, and protocols sections follow the package layout,
+with synchronous and asynchronous APIs documented together in each section.
 
 ```{toctree}
-:maxdepth: 2
+:maxdepth: 3
 
 guide
 examples
