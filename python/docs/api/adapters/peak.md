@@ -4,9 +4,6 @@ Open a PEAK PCAN-USB FD adapter directly over USB on Linux, macOS, or Windows.
 `PeakAdapter()` uses the default bus timing; pass a `PeakConfig` to customize
 timing and the transmit timeout. USB access permissions are required.
 
-Both APIs use a 1 ms USB receive timeout to limit how long idle reads can delay
-outgoing frames. Sending still waits for CAN transmit confirmation.
-
 ## Configuration
 
 The configuration is shared by the async and sync APIs. Omitted bitrate settings
