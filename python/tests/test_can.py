@@ -33,6 +33,24 @@ async def test_frame_round_trip(frame: Frame, rx_addr: int) -> None:
         await sender.aclose()
 
 
+@pytest.mark.parametrize("extended", [False, True])
+async def test_receive_identifier_range_filter(extended: bool) -> None:
+    matched = []
+    async with (
+        SocketCanAdapter("vcan0") as sender,
+        SocketCanAdapter("vcan0") as monitor,
+        monitor.recv() as frames,
+    ):
+        for value in (0x5FF, 0x600, 0x7FF, 0x800):
+            sent = Frame(id=Identifier.extended(value) if extended else value)
+            await sender.send(sent)
+            frame = await asyncio.wait_for(anext(frames), 1)
+            assert frame == sent
+            if frame.id is not None and 0x600 <= frame.id < 0x800:
+                matched.append(frame.id)
+    assert matched == [0x600, 0x7FF]
+
+
 async def test_recv_for() -> None:
     expected = [
         Frame(id=0x123, data=b"classic"),

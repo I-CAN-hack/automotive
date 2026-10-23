@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import IntEnum
 from numbers import Number
-from typing import Any, Self
+from typing import Any, Self, cast
 
 from .. import _native
 from .._base import Buffer, buffer_bytes
@@ -23,8 +23,9 @@ class ErrorFlag(IntEnum):
 class Identifier:
     """A validated CAN arbitration ID, preserving its wire format.
 
-    Equality with a number compares the raw value, so ``frame.id == 0x123``
-    works directly. Equality between identifiers also compares the wire format.
+    Comparisons with numbers use the raw value, so ``frame.id == 0x123`` and
+    ``0x600 <= frame.id < 0x800`` work directly. Equality between identifiers
+    also compares the wire format.
 
     Args:
         value: Unsigned arbitration ID. Standard IDs fit in 11 bits;
@@ -64,6 +65,26 @@ class Identifier:
             return self.value == other.value and self.is_extended == other.is_extended
         if isinstance(other, Number):
             return self.value == other
+        return NotImplemented
+
+    def __lt__(self, other: object) -> bool:
+        if isinstance(other, Number):
+            return self.value < cast(Any, other)
+        return NotImplemented
+
+    def __le__(self, other: object) -> bool:
+        if isinstance(other, Number):
+            return self.value <= cast(Any, other)
+        return NotImplemented
+
+    def __gt__(self, other: object) -> bool:
+        if isinstance(other, Number):
+            return self.value > cast(Any, other)
+        return NotImplemented
+
+    def __ge__(self, other: object) -> bool:
+        if isinstance(other, Number):
+            return self.value >= cast(Any, other)
         return NotImplemented
 
     def __hash__(self) -> int:

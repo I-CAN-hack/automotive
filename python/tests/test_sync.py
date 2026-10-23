@@ -24,6 +24,7 @@ async def test_can_frame_round_trip() -> None:
             await asyncio.to_thread(sender.send, frame)
             received = await asyncio.wait_for(asyncio.to_thread(lambda: next(frames)), 2)
             assert received.id == 0x123
+            assert received.id is not None and 0x100 <= received.id < 0x200
             assert received == frame
     finally:
         sender.close()
