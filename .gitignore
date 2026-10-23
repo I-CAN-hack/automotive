@@ -8,3 +8,4 @@ python/dist/
 python/docs/_build/
 python/automotive/*.so
 python/automotive/*.pyd
+.direnv

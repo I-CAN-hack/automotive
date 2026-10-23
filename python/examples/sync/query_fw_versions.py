@@ -2,16 +2,16 @@
 
 from automotive.sync.adapters import Adapter
 from automotive.sync.errors import AutomotiveError
-from automotive.sync.protocols.uds import DataIdentifier, UDSClient
+from automotive.sync.protocols.uds import DataIdentifier, UDSClient, UDSConfig
 from automotive.sync.transports.isotp import IsoTPAdapter, IsoTPConfig
 
 
 def get_version(adapter: Adapter, identifier: int) -> None:
     """Query each named DID for one ECU, retaining its configured transport."""
-    # Increased timeout for adapters not supporting real ACKs.
-    config = IsoTPConfig(tx_id=identifier, timeout=1.0)
+    # Lower timeout for the sync version since we scan each ECU individually and bus load is low
+    config = IsoTPConfig(tx_id=identifier, timeout=0.05)
     isotp = IsoTPAdapter(adapter, config)
-    uds = UDSClient(isotp)
+    uds = UDSClient(isotp, UDSConfig(p2_timeout=0.05))
 
     uds.tester_present()
 

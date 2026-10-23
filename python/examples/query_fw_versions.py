@@ -4,7 +4,7 @@ import asyncio
 
 from automotive.adapters import Adapter
 from automotive.errors import AutomotiveError
-from automotive.protocols.uds import DataIdentifier, UDSClient
+from automotive.protocols.uds import DataIdentifier, UDSClient, UDSConfig
 from automotive.transports.isotp import IsoTPAdapter, IsoTPConfig
 
 
@@ -13,7 +13,7 @@ async def get_version(adapter: Adapter, identifier: int) -> None:
     # Increased timeout for adapters not supporting real ACKs.
     config = IsoTPConfig(tx_id=identifier, timeout=1.0)
     isotp = IsoTPAdapter(adapter, config)
-    uds = UDSClient(isotp)
+    uds = UDSClient(isotp, UDSConfig(p2_timeout=1.0))
 
     await uds.tester_present()
 
