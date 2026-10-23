@@ -92,9 +92,8 @@ guide, and the example files, and generates the API reference from the installed
 docstrings. Its release version comes from `pyproject.toml` automatically.
 
 The documentation workflow builds on pushes and deploys pushes to the repository's
-default branch or `feat/python` to GitHub Pages, allowing testing before merging.
-Both branches publish to the same Pages URL. In GitHub, select **Settings → Pages
+default branch to GitHub Pages. In GitHub, select **Settings → Pages
 → Build and deployment → Source → GitHub Actions**. Deployment uses the built-in
 GitHub token; no custom secret is needed. Under **Settings → Environments →
-github-pages → Deployment branches and tags**, allow the default branch and
-`feat/python` if deployment branches are restricted.
+github-pages → Deployment branches and tags**, allow the default branch if
+deployment branches are restricted.
