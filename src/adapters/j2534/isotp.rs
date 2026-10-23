@@ -35,7 +35,7 @@ use tokio::sync::{broadcast, oneshot};
 use crate::can::bitrate::BitrateConfig;
 use crate::can::Identifier;
 use crate::transports::isotp::{duration_to_stmin_byte, IsoTPConfig};
-use crate::transports::TransportLayer;
+use crate::transports::Transport;
 use crate::Result;
 
 use super::common::{
@@ -63,11 +63,11 @@ enum J2534IsoTpEvt {
     Disconnected,
 }
 
-/// J2534 ISO 15765 (native ISO-TP) transport.
+/// J2534 ISO 15765 (native ISO-TP) message transport.
 ///
-/// Implements [`TransportLayer`] so it plugs directly into `UDSClient`
+/// Implements [`Transport`] so it plugs directly into `UDSClient`
 /// without going through the software ISO-TP layer.
-pub struct J2534NativeIsoTpTransport {
+pub struct J2534NativeIsoTP {
     rx_bcast: broadcast::Sender<J2534IsoTpEvt>,
     timeout: Duration,
     stop_rx: Arc<AtomicBool>,
@@ -82,7 +82,7 @@ struct Worker {
     device: Option<J2534Device>,
 }
 
-impl J2534NativeIsoTpTransport {
+impl J2534NativeIsoTP {
     /// Create a J2534 ISO 15765 channel and start the TX/RX background threads.
     ///
     /// Opens a new device via `PassThruOpen`.  To reuse an already-open
@@ -273,13 +273,13 @@ impl J2534NativeIsoTpTransport {
     }
 }
 
-impl Drop for J2534NativeIsoTpTransport {
+impl Drop for J2534NativeIsoTP {
     fn drop(&mut self) {
         self.close();
     }
 }
 
-impl TransportLayer for J2534NativeIsoTpTransport {
+impl Transport for J2534NativeIsoTP {
     fn send<'a>(
         &'a self,
         data: &'a [u8],
@@ -307,7 +307,7 @@ impl TransportLayer for J2534NativeIsoTpTransport {
     }
 }
 
-impl J2534NativeIsoTpTransport {
+impl J2534NativeIsoTP {
     /// Subscribe immediately without borrowing the transport in the returned stream.
     pub fn recv_owned(
         &self,

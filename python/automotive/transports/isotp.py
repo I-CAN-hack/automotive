@@ -10,9 +10,9 @@ from dataclasses import dataclass
 from typing import Self
 
 from .. import _native
-from .._base import AsyncResource, Buffer, Receiver, buffer_bytes
-from ..adapters import Adapter
+from ..adapters import CanAdapter
 from ..can import Identifier
+from . import Transport
 
 _DEFAULTS = _native.defaults()
 
@@ -74,27 +74,30 @@ class IsoTPConfig:
         return Identifier(value, extended)
 
 
-class IsoTPAdapter(AsyncResource[_native._Transport]):
+class IsoTP(Transport):
     """A complete-message ISO-TP transport retaining its CAN adapter.
 
     Args:
-        adapter: Open CAN Adapter.
+        adapter: Open CAN adapter.
         config: Explicit ISO-TP configuration; only its tx_id is required.
 
     Closing this transport ends its operations without closing the shared CAN
     adapter. Closing the adapter invalidates this transport and its UDS clients.
     Drop or close raw receivers before issuing UDS requests on this transport,
     because both consume PDUs and may send flow-control frames.
+    Sending an empty or oversized payload raises ValueError. Framing and peer
+    rejection failures raise IsoTPError; receive and transmit deadlines raise
+    TimeoutError.
     """
 
-    def __init__(self, adapter: Adapter, config: IsoTPConfig) -> None:
+    def __init__(self, adapter: CanAdapter, config: IsoTPConfig) -> None:
         if not isinstance(config, IsoTPConfig):
             raise TypeError("config must be an IsoTPConfig")
         self.config = config
         super().__init__(_native._Transport(adapter._native, config))
 
     @classmethod
-    def from_id(cls, adapter: Adapter, tx_id: int | Identifier) -> Self:
+    def from_id(cls, adapter: CanAdapter, tx_id: int | Identifier) -> Self:
         """Create a transport using default configuration and a derived RX ID.
 
         Args:
@@ -106,33 +109,5 @@ class IsoTPAdapter(AsyncResource[_native._Transport]):
         """
         return cls(adapter, IsoTPConfig(tx_id=tx_id))
 
-    async def send(self, data: Buffer) -> None:
-        """Transmit one nonempty PDU, letting Rust segment it as needed.
 
-        Args:
-            data: Bytes, bytearray, or contiguous byte-oriented memoryview.
-
-        Raises:
-            ValueError: Payload is empty or exceeds the protocol limit.
-            TimeoutError: Transmit confirmation or required flow control timed out.
-            IsoTPError: The peer rejected the transfer or framing failed.
-        """
-        await self._native.send(buffer_bytes(data))
-
-    def recv(self) -> Receiver[bytes]:
-        """Subscribe immediately to reassembled PDUs, returned as bytes.
-
-        Returns:
-            An async iterator with aclose and async context management.
-
-        Raises:
-            TimeoutError: Raised while iterating if an ISO-TP receive stage expires.
-            IsoTPError: Raised while iterating for receive protocol failures.
-
-        Subscribe before send. Closing this receiver releases the subscription;
-        a timeout does not destroy it, so another anext may continue reception.
-        """
-        return Receiver(self._native.recv(), lambda value: value)
-
-
-__all__ = ["IsoTPAdapter", "IsoTPConfig"]
+__all__ = ["IsoTP", "IsoTPConfig"]

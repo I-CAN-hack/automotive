@@ -13,8 +13,8 @@
 //! - otherwise: sample point 0.875
 //!
 //! The resulting [`BitrateConfig`] contains:
-//! - nominal/arbitration phase settings as one [`AdapterBitTiming`]
-//! - optional CAN-FD data phase settings as one [`AdapterBitTiming`]
+//! - nominal/arbitration phase settings as one [`BitTiming`]
+//! - optional CAN-FD data phase settings as one [`BitTiming`]
 //!
 //! ## Example
 //!
@@ -117,7 +117,7 @@ pub struct AdapterTimingConst {
 /// Resolved timing and bitrate values for one CAN phase.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct AdapterBitTiming {
+pub struct BitTiming {
     /// Bitrate prescaler.
     pub brp: u32,
     /// Time segment 1 (`prop_seg + phase_seg1`).
@@ -132,7 +132,7 @@ pub struct AdapterBitTiming {
     pub sample_point: f64,
 }
 
-impl AdapterBitTiming {
+impl BitTiming {
     /// Duration of one phase bit in time quanta.
     pub fn bit_time_tq(&self) -> u32 {
         CAN_SYNC_SEG + self.tseg1 + self.tseg2
@@ -144,9 +144,9 @@ impl AdapterBitTiming {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BitrateConfig {
     /// Nominal/arbitration phase settings (also used for classic CAN).
-    pub nominal: AdapterBitTiming,
+    pub nominal: BitTiming,
     /// Optional CAN-FD data phase settings.
-    pub data: Option<AdapterBitTiming>,
+    pub data: Option<BitTiming>,
 }
 
 impl BitrateConfig {
@@ -577,7 +577,7 @@ impl BitrateBuilder {
         Ok(BitrateConfig { nominal, data })
     }
 
-    fn build_from_bitrate_mode(self) -> Result<AdapterBitTiming, BitrateError> {
+    fn build_from_bitrate_mode(self) -> Result<BitTiming, BitrateError> {
         let bitrate = self.bitrate.ok_or(BitrateError::MissingConfiguration)?;
 
         solve_bitrate_mode(
@@ -589,7 +589,7 @@ impl BitrateBuilder {
         )
     }
 
-    fn build_from_direct_mode(self) -> Result<AdapterBitTiming, BitrateError> {
+    fn build_from_direct_mode(self) -> Result<BitTiming, BitrateError> {
         if self.sample_point.is_some() {
             return Err(BitrateError::SamplePointRequiresBitrate);
         }
@@ -651,7 +651,7 @@ fn solve_bitrate_mode(
     sample_point: Option<f64>,
     sjw: Option<u32>,
     max_bitrate_error: u32,
-) -> Result<AdapterBitTiming, BitrateError> {
+) -> Result<BitTiming, BitrateError> {
     if bitrate == 0 {
         return Err(BitrateError::InvalidBitrate);
     }
@@ -733,7 +733,7 @@ fn solve_bitrate_mode(
 
     let bit_time_tq = CAN_SYNC_SEG + candidate.tseg1 + candidate.tseg2;
     let actual_bitrate = btc.clock_hz / (best_brp * bit_time_tq);
-    Ok(AdapterBitTiming {
+    Ok(BitTiming {
         brp: best_brp,
         tseg1: candidate.tseg1,
         tseg2: candidate.tseg2,
@@ -749,7 +749,7 @@ fn solve_direct_mode(
     tseg1: u32,
     tseg2: u32,
     sjw: Option<u32>,
-) -> Result<AdapterBitTiming, BitrateError> {
+) -> Result<BitTiming, BitrateError> {
     check_ranges(btc, brp, tseg1, tseg2)?;
 
     let sjw = sjw.unwrap_or_else(|| calc_default_sjw(tseg1, tseg2));
@@ -758,7 +758,7 @@ fn solve_direct_mode(
     let bit_time_tq = CAN_SYNC_SEG + tseg1 + tseg2;
     let bitrate = btc.clock_hz / (brp * bit_time_tq);
     let sample_point = sample_point_to_float(1000 * (CAN_SYNC_SEG + tseg1) / bit_time_tq);
-    Ok(AdapterBitTiming {
+    Ok(BitTiming {
         brp,
         tseg1,
         tseg2,

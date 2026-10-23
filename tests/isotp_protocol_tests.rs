@@ -2,7 +2,7 @@
 //! conforming Scapy peer would not normally transmit.
 
 use automotive::can::{AsyncCanAdapter, CanAdapter, Frame, Identifier};
-use automotive::transports::isotp::{Error as IsoTPError, IsoTPAdapter, IsoTPConfig};
+use automotive::transports::isotp::{Error as IsoTPError, IsoTP, IsoTPConfig};
 use automotive::StreamExt;
 use std::collections::VecDeque;
 use std::future::Future;
@@ -113,7 +113,7 @@ async fn within<T>(future: impl Future<Output = T>) -> T {
 async fn sender_applies_each_blocks_size_and_stmin() {
     let (adapter, mut peer) = channel();
     let config = config();
-    let isotp = IsoTPAdapter::new(&adapter, config);
+    let isotp = IsoTP::new(&adapter, config);
     let exchange = async {
         assert_eq!(peer.next().await.frame.data()[0] & 0xf0, 0x10);
         peer.inject(received(&config, &[0x30, 1, 0]));
@@ -144,7 +144,7 @@ async fn sender_applies_each_blocks_size_and_stmin() {
 async fn receive_ignores_other_buses_during_start_and_reassembly() {
     let (adapter, mut peer) = channel();
     let config = config();
-    let isotp = IsoTPAdapter::new(&adapter, config);
+    let isotp = IsoTP::new(&adapter, config);
     let mut stream = isotp.recv();
     let exchange = async {
         let mut wrong_bus = received(&config, &[1, 0xee]);
@@ -168,7 +168,7 @@ async fn receive_ignores_other_buses_during_start_and_reassembly() {
 async fn flow_control_on_another_bus_cannot_authorize_transmission() {
     let (adapter, mut peer) = channel();
     let config = config();
-    let isotp = IsoTPAdapter::new(&adapter, config);
+    let isotp = IsoTP::new(&adapter, config);
     let exchange = async {
         assert_eq!(peer.next().await.frame.data()[0] & 0xf0, 0x10);
         let mut wrong_bus = received(&config, &[0x30, 0, 0]);
@@ -197,7 +197,7 @@ async fn invalid_start_frames_are_ignored_without_flow_control() {
         let mut config = config();
         config.fd = fd;
         config.ext_address = address;
-        let isotp = IsoTPAdapter::new(&adapter, config);
+        let isotp = IsoTP::new(&adapter, config);
         let mut stream = isotp.recv();
         for invalid in [
             vec![],
@@ -226,7 +226,7 @@ async fn fd_single_frames_enforce_escape_encoding_and_dlc_length_ranges() {
         let (adapter, peer) = channel();
         let mut config = config();
         config.fd = true;
-        let isotp = IsoTPAdapter::new(&adapter, config);
+        let isotp = IsoTP::new(&adapter, config);
         let mut stream = isotp.recv();
         let mut invalid = vec![0xaa; can_dl];
         invalid[0] = 1; // Non-escape encoding in a frame larger than eight bytes.
@@ -257,7 +257,7 @@ async fn reassembly_learns_peer_rx_dl_and_ignores_wrong_cf_lengths() {
         let mut config = config();
         config.fd = true;
         config.max_dlen = Some(tx_dl);
-        let isotp = IsoTPAdapter::new(&adapter, config);
+        let isotp = IsoTP::new(&adapter, config);
         let mut stream = isotp.recv();
         let message: Vec<u8> = (1..=length).collect();
         let exchange = async {
@@ -292,7 +292,7 @@ async fn reassembly_learns_peer_rx_dl_and_ignores_wrong_cf_lengths() {
 async fn idle_consecutive_and_unknown_frames_do_not_interrupt_the_next_message() {
     let (adapter, mut peer) = channel();
     let config = config();
-    let isotp = IsoTPAdapter::new(&adapter, config);
+    let isotp = IsoTP::new(&adapter, config);
     let mut stream = isotp.recv();
     for data in [&[0x21, 0xee][..], &[0xf0], &[0x30, 0, 0], &[1, 0xab]] {
         peer.inject(received(&config, data));
@@ -305,7 +305,7 @@ async fn idle_consecutive_and_unknown_frames_do_not_interrupt_the_next_message()
 async fn replacement_first_frame_reports_interruption_and_restarts_reassembly() {
     let (adapter, mut peer) = channel();
     let config = config();
-    let isotp = IsoTPAdapter::new(&adapter, config);
+    let isotp = IsoTP::new(&adapter, config);
     let mut stream = isotp.recv();
     let exchange = async {
         peer.inject(received(&config, &[0x10, 27, 1, 2, 3, 4, 5, 6]));
@@ -332,7 +332,7 @@ async fn replacement_first_frame_reports_interruption_and_restarts_reassembly() 
 async fn replacement_single_frame_preserves_the_interruption_indication_and_message() {
     let (adapter, mut peer) = channel();
     let config = config();
-    let isotp = IsoTPAdapter::new(&adapter, config);
+    let isotp = IsoTP::new(&adapter, config);
     let mut stream = isotp.recv();
     let exchange = async {
         peer.inject(received(&config, &[0x10, 20, 1, 2, 3, 4, 5, 6]));
@@ -356,7 +356,7 @@ async fn waits_restart_flow_control_deadline_without_a_sender_side_limit() {
     let (adapter, mut peer) = channel();
     let mut config = config();
     config.timeout = Duration::from_millis(100);
-    let isotp = IsoTPAdapter::new(&adapter, config);
+    let isotp = IsoTP::new(&adapter, config);
     let exchange = async {
         peer.next().await;
         // Total WAIT time exceeds N_Bs, and more than ten WAITs are valid.
@@ -378,7 +378,7 @@ async fn waits_restart_flow_control_deadline_without_a_sender_side_limit() {
 async fn reserved_stmin_uses_127ms_for_the_rest_of_the_transfer() {
     let (adapter, mut peer) = channel();
     let config = config();
-    let isotp = IsoTPAdapter::new(&adapter, config);
+    let isotp = IsoTP::new(&adapter, config);
     let exchange = async {
         peer.next().await;
         peer.inject(received(&config, &[0x30, 1, 0x80]));
@@ -401,7 +401,7 @@ async fn missing_data_frame_confirmation_times_out() {
     let (adapter, mut peer) = channel();
     let mut config = config();
     config.timeout = Duration::from_millis(50);
-    let isotp = IsoTPAdapter::new(&adapter, config);
+    let isotp = IsoTP::new(&adapter, config);
     let exchange = async {
         // Observe the outgoing SF without confirming its CAN transmission.
         let sent = peer.outgoing.recv().await.unwrap();
@@ -416,7 +416,7 @@ async fn missing_flow_control_confirmation_times_out() {
     let (adapter, mut peer) = channel();
     let mut config = config();
     config.timeout = Duration::from_millis(50);
-    let isotp = IsoTPAdapter::new(&adapter, config);
+    let isotp = IsoTP::new(&adapter, config);
     let mut stream = isotp.recv();
     let exchange = async {
         peer.inject(received(&config, &[0x10, 20, 1, 2, 3, 4, 5, 6]));
@@ -433,7 +433,7 @@ async fn flow_control_deadline_begins_after_transmit_confirmation() {
     let (adapter, mut peer) = channel();
     let mut config = config();
     config.timeout = Duration::from_millis(100);
-    let isotp = IsoTPAdapter::new(&adapter, config);
+    let isotp = IsoTP::new(&adapter, config);
     let exchange = async {
         let sent = peer.outgoing.recv().await.unwrap();
         assert_eq!(sent.frame.data()[0], 0x10);
@@ -456,7 +456,7 @@ async fn consecutive_frame_deadline_begins_after_flow_control_confirmation() {
     let (adapter, mut peer) = channel();
     let mut config = config();
     config.timeout = Duration::from_millis(100);
-    let isotp = IsoTPAdapter::new(&adapter, config);
+    let isotp = IsoTP::new(&adapter, config);
     let mut stream = isotp.recv();
     let exchange = async {
         peer.inject(received(&config, &[0x10, 13, 1, 2, 3, 4, 5, 6]));
@@ -476,7 +476,7 @@ async fn ignored_pdus_do_not_extend_consecutive_frame_deadline() {
     let (adapter, mut peer) = channel();
     let mut config = config();
     config.timeout = Duration::from_millis(40);
-    let isotp = IsoTPAdapter::new(&adapter, config);
+    let isotp = IsoTP::new(&adapter, config);
     let mut stream = isotp.recv();
     let recovery = peer.incoming.clone();
     let exchange = async {

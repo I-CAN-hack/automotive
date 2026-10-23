@@ -1,5 +1,5 @@
 """Reusable bitrate settings and resolved timing values shared with the async API."""
 
-from ...can.bitrate import AdapterBitTiming, BitrateConfig, BitrateSettings
+from ...can.bitrate import BitrateConfig, BitrateSettings, BitTiming
 
-__all__ = ["AdapterBitTiming", "BitrateConfig", "BitrateSettings"]
+__all__ = ["BitTiming", "BitrateConfig", "BitrateSettings"]

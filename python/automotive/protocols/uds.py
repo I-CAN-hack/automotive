@@ -29,7 +29,7 @@ from .._enums import (
     ServiceIdentifier,
     SessionType,
 )
-from ..transports.isotp import IsoTPAdapter
+from ..transports import Transport
 
 _DEFAULTS = _native.defaults()
 
@@ -94,7 +94,7 @@ class UDSClient:
     """A persistent diagnostic client retaining its transport and session timing.
 
     Args:
-        transport: Open software or native J2534 ISO-TP transport.
+        transport: Open message transport, such as software or native J2534 ISO-TP.
         config: Reusable timing/validation settings. None uses Rust defaults.
 
     Calls on the same transport are serialized. Suppression scopes retain this
@@ -119,7 +119,7 @@ class UDSClient:
             vin = await uds.read_data_by_identifier(DataIdentifier.VIN)
     """
 
-    def __init__(self, transport: IsoTPAdapter, config: UDSConfig | None = None) -> None:
+    def __init__(self, transport: Transport, config: UDSConfig | None = None) -> None:
         self.transport = transport
         self.config = config if config is not None else UDSConfig()
         self._native = transport._native.uds(self.config)

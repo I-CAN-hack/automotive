@@ -1,6 +1,6 @@
 """Hardware discovery, explicit adapter selection, and reusable configuration.
 
-Use ``Adapter()`` for discovery, or select a backend with ``PeakAdapter(config)``.
+Use ``CanAdapter()`` for discovery, or select a backend with ``PeakAdapter(config)``.
 Constructors open synchronously, releasing the GIL while Rust accesses hardware.
 Sending, receiving, and explicit closure are asynchronous. SocketCanAdapter also
 accepts an interface name directly. Context managers remain optional.
@@ -113,7 +113,7 @@ class J2534Config(_TimingConfig):
         dll_path: Vendor DLL path; None discovers it from the Windows registry.
         bitrate: Timing inputs; None selects 500 kbit/s Classic CAN.
 
-    Use with J2534Adapter for raw CAN, or J2534NativeIsoTpTransport.open for
+    Use with J2534Adapter for raw CAN, or J2534NativeIsoTP.open for
     firmware-managed ISO-TP. The vendor DLL must support the Python process's
     architecture and concurrent native ISO-TP read/write calls.
     """
@@ -134,7 +134,7 @@ def _adapter_config(config: ConfigT | None, config_type: type[ConfigT]) -> Confi
     return config
 
 
-class Adapter:
+class CanAdapter:
     """Open a CAN adapter immediately, using discovery when no config is supplied.
 
     Args:
@@ -165,7 +165,7 @@ class Adapter:
         return self._config
 
     @property
-    def _native(self) -> _rust._Adapter:
+    def _native(self) -> _rust._CanAdapter:
         return self._handle
 
     async def open(self) -> Self:
@@ -224,7 +224,7 @@ class Adapter:
         return Receiver(self._native.recv(), Frame._from_native)
 
 
-class SocketCanAdapter(Adapter):
+class SocketCanAdapter(CanAdapter):
     """Open a Linux SocketCAN adapter with ``SocketCanAdapter('can0')``.
 
     Args:
@@ -238,7 +238,7 @@ class SocketCanAdapter(Adapter):
         super().__init__(_adapter_config(config, SocketCanConfig))
 
 
-class PandaAdapter(Adapter):
+class PandaAdapter(CanAdapter):
     """Open a panda USB adapter immediately.
 
     Args:
@@ -249,7 +249,7 @@ class PandaAdapter(Adapter):
         super().__init__(_adapter_config(config, PandaConfig))
 
 
-class PeakAdapter(Adapter):
+class PeakAdapter(CanAdapter):
     """Open a PEAK PCAN-USB FD adapter immediately.
 
     Args:
@@ -260,7 +260,7 @@ class PeakAdapter(Adapter):
         super().__init__(_adapter_config(config, PeakConfig))
 
 
-class VectorAdapter(Adapter):
+class VectorAdapter(CanAdapter):
     """Open a Windows Vector XL adapter immediately.
 
     Args:
@@ -271,13 +271,13 @@ class VectorAdapter(Adapter):
         super().__init__(_adapter_config(config, VectorConfig))
 
 
-class J2534Adapter(Adapter):
+class J2534Adapter(CanAdapter):
     """Open a Windows J2534 raw CAN adapter immediately.
 
     Args:
         config: Reusable J2534Config; None discovers a DLL and uses Rust defaults.
 
-    For firmware-managed ISO-TP, use J2534NativeIsoTpTransport instead.
+    For firmware-managed ISO-TP, use J2534NativeIsoTP instead.
     """
 
     def __init__(self, config: J2534Config | None = None) -> None:
@@ -290,8 +290,8 @@ def available_adapters() -> tuple[str, ...]:
 
 
 __all__ = [
-    "Adapter",
     "AdapterConfig",
+    "CanAdapter",
     "J2534Adapter",
     "J2534Config",
     "PandaAdapter",

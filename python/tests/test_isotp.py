@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from automotive.adapters import Adapter, SocketCanAdapter
+from automotive.adapters import CanAdapter, SocketCanAdapter
 from automotive.can import Frame, Identifier
 from automotive.transports.isotp import IsoTPConfig
 
@@ -65,7 +65,7 @@ async def test_echo_and_flow_control(
 
 
 async def _echo_and_capture(
-    ecu: ECU, monitor: Adapter, fd: bool, bs: int, receive_bs: int, address: int | None
+    ecu: ECU, monitor: CanAdapter, fd: bool, bs: int, receive_bs: int, address: int | None
 ) -> None:
     # A separate socket sees wire order; the transmitting socket's emulated
     # confirmation echoes may be processed after an incoming flow control.

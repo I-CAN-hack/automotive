@@ -24,7 +24,7 @@
 //! ```rust
 //! async fn uds_example() -> automotive::Result<()> {
 //!     let adapter = automotive::adapters::get_adapter()?;
-//!     let isotp = automotive::transports::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
+//!     let isotp = automotive::transports::isotp::IsoTP::from_id(&adapter, 0x7a1);
 //!     let uds = automotive::protocols::uds::UDSClient::new(&isotp);
 //!
 //!     uds.tester_present().await?;
@@ -43,7 +43,7 @@ mod error;
 mod suppressed;
 mod types;
 
-use crate::transports::TransportLayer;
+use crate::transports::Transport;
 use crate::Result;
 use crate::StreamExt;
 pub use config::{UDSConfig, UDSConfigBuilder};
@@ -89,16 +89,16 @@ impl Response {
     }
 }
 
-/// UDS Client. Generic over any [`TransportLayer`] implementation so that it
-/// works equally with software ISO-TP ([`crate::transports::isotp::IsoTPAdapter`]) and
-/// hardware ISO 15765 (e.g. `J2534NativeIsoTpTransport`).
-pub struct UDSClient<'a, T: TransportLayer> {
+/// UDS Client. Generic over any [`Transport`] implementation so that it
+/// works equally with software ISO-TP ([`crate::transports::isotp::IsoTP`]) and
+/// hardware ISO 15765 (e.g. `J2534NativeIsoTP`).
+pub struct UDSClient<'a, T: Transport> {
     adapter: crate::shared::Shared<'a, T>,
     config: UDSConfig,
     session_timing: RwLock<SessionParameterRecord>,
 }
 
-impl<'a, T: TransportLayer> UDSClient<'a, T> {
+impl<'a, T: Transport> UDSClient<'a, T> {
     pub fn new(adapter: &'a T) -> Self {
         Self::with_config(adapter, UDSConfig::default())
     }
@@ -141,7 +141,7 @@ impl<'a, T: TransportLayer> UDSClient<'a, T> {
     /// a mandatory final response.
     ///
     /// ```rust
-    /// # async fn example<T: automotive::TransportLayer>(transport: &T) -> automotive::Result<()> {
+    /// # async fn example<T: automotive::Transport>(transport: &T) -> automotive::Result<()> {
     /// let uds = automotive::protocols::uds::UDSClient::new(transport);
     /// {
     ///     let suppressed = uds.suppress_positive_responses();

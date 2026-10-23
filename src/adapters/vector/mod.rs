@@ -46,23 +46,23 @@ pub const VECTOR_TIMING_CONST: AdapterTimingConst = AdapterTimingConst {
 };
 
 #[derive(Clone)]
-pub struct VectorCan {
+pub struct VectorAdapter {
     port_handle: PortHandle,
     channel_mask: XLaccess,
     tx_timeout: Option<std::time::Duration>,
     replace_pending: bool,
 }
 
-impl VectorCan {
+impl VectorAdapter {
     /// Convenience function to create a new adapter and wrap in an [`AsyncCanAdapter`]
     pub fn new_async(config: VectorConfig) -> Result<AsyncCanAdapter> {
-        let vector = VectorCan::new(config)?;
+        let vector = VectorAdapter::new(config)?;
         Ok(AsyncCanAdapter::new(vector))
     }
 
     /// Open a shared Vector channel or request initialization access and
     /// configure its bus timing. Shared channels retain their existing timing.
-    pub fn new(config: VectorConfig) -> Result<VectorCan> {
+    pub fn new(config: VectorConfig) -> Result<VectorAdapter> {
         validate_tx_timeout(config.tx_timeout)?;
         let tx_timeout = config.tx_timeout;
         let conf = match config.access {
@@ -98,7 +98,7 @@ impl VectorCan {
         xl_activate_channel(&port_handle, channel_mask)?;
         info!("Connected to Vector Device. HW: {:?}", config.hw_type);
 
-        Ok(VectorCan {
+        Ok(VectorAdapter {
             port_handle,
             channel_mask,
             tx_timeout,
@@ -109,7 +109,7 @@ impl VectorCan {
     }
 }
 
-impl Drop for VectorCan {
+impl Drop for VectorAdapter {
     fn drop(&mut self) {
         info!("Closing Vector Device");
         xl_deactivate_channel(&self.port_handle, self.channel_mask).unwrap();
@@ -118,7 +118,7 @@ impl Drop for VectorCan {
     }
 }
 
-impl CanAdapter for VectorCan {
+impl CanAdapter for VectorAdapter {
     fn supports_tx_timeout() -> bool {
         true
     }
@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn bitrate_builder_matches_predefined_config() {
-        let bitrate_cfg = BitrateBuilder::new::<VectorCan>()
+        let bitrate_cfg = BitrateBuilder::new::<VectorAdapter>()
             .bitrate(500_000)
             .sample_point(0.8)
             .sjw(1)
@@ -231,7 +231,7 @@ mod tests {
             .build()
             .unwrap();
 
-        match VectorCan::new(config) {
+        match VectorAdapter::new(config) {
             Err(crate::Error::InvalidBitrate(msg)) => {
                 assert_eq!(
                     msg,

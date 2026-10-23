@@ -7,8 +7,9 @@ from typing import Self
 from ...adapters import j2534 as _j2534
 from .._base import Resource
 from .._runtime import run
-from ..transports.isotp import IsoTPAdapter, IsoTPConfig
-from . import Adapter, J2534Config
+from ..transports import Transport
+from ..transports.isotp import IsoTPConfig
+from . import J2534Config
 
 
 class J2534Device(Resource[_j2534.J2534Device]):
@@ -21,17 +22,22 @@ class J2534Device(Resource[_j2534.J2534Device]):
     """
 
 
-class J2534NativeIsoTpTransport(IsoTPAdapter):
+class J2534NativeIsoTP(Transport):
     """Firmware-managed Windows ISO-TP; create it with open().
 
     The vendor DLL must support concurrent reads and writes. Configuration
     follows the async native transport, including its ISO15765 limitations.
     """
 
-    _async: _j2534.J2534NativeIsoTpTransport
+    _async: _j2534.J2534NativeIsoTP
 
-    def __new__(cls, adapter: Adapter, config: IsoTPConfig) -> Self:
-        raise TypeError("use J2534NativeIsoTpTransport.open(config)")
+    def __new__(cls, config: IsoTPConfig, adapter_config: J2534Config | None = None) -> Self:
+        raise TypeError("use J2534NativeIsoTP.open(config)")
+
+    @property
+    def config(self) -> IsoTPConfig:
+        """The shared ISO-TP configuration used by this native channel."""
+        return self._async.config
 
     @property
     def adapter_config(self) -> J2534Config:
@@ -54,7 +60,7 @@ class J2534NativeIsoTpTransport(IsoTPAdapter):
             AdapterError: The vendor device or channel could not be opened.
         """
         result = object.__new__(cls)
-        result._async = run(_j2534.J2534NativeIsoTpTransport.open, config, adapter_config)
+        result._async = run(_j2534.J2534NativeIsoTP.open, config, adapter_config)
         return result
 
     @classmethod
@@ -65,7 +71,7 @@ class J2534NativeIsoTpTransport(IsoTPAdapter):
         device handle is consumed even if opening fails, matching Rust.
         """
         result = object.__new__(cls)
-        result._async = run(_j2534.J2534NativeIsoTpTransport.new_on_device, device._async, config, adapter_config)
+        result._async = run(_j2534.J2534NativeIsoTP.new_on_device, device._async, config, adapter_config)
         return result
 
     def into_device(self) -> J2534Device:
@@ -77,4 +83,4 @@ class J2534NativeIsoTpTransport(IsoTPAdapter):
         return J2534Device(run(self._async.into_device))
 
 
-__all__ = ["J2534Config", "J2534Device", "J2534NativeIsoTpTransport"]
+__all__ = ["J2534Config", "J2534Device", "J2534NativeIsoTP"]

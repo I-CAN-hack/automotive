@@ -6,7 +6,7 @@
 //!    let adapter = automotive::adapters::get_adapter()?;
 //!    let config = automotive::transports::isotp::IsoTPConfig::builder(automotive::can::Identifier::standard(0x7a1)?)
 //!        .build()?;
-//!    let isotp = automotive::transports::isotp::IsoTPAdapter::new(&adapter, config);
+//!    let isotp = automotive::transports::isotp::IsoTP::new(&adapter, config);
 //!
 //!    let mut stream = isotp.recv(); // Create receiver before sending request
 //!    isotp.send(&[0x3e, 0x00]).await?;
@@ -26,7 +26,7 @@ pub use error::Error;
 
 use crate::can::AsyncCanAdapter;
 use crate::can::{Frame, DLC_TO_LEN};
-use crate::transports::TransportLayer;
+use crate::transports::Transport;
 use crate::Result;
 use crate::{Stream, StreamExt};
 use arrayvec::ArrayVec;
@@ -37,16 +37,16 @@ use self::types::FlowControlConfig;
 
 const DEFAULT_TIMEOUT_MS: u64 = 1000;
 
-impl TransportLayer for IsoTPAdapter<'_> {
+impl Transport for IsoTP<'_> {
     fn send<'a>(
         &'a self,
         data: &'a [u8],
     ) -> impl std::future::Future<Output = crate::Result<()>> + 'a {
-        IsoTPAdapter::send(self, data)
+        IsoTP::send(self, data)
     }
 
     fn recv(&self) -> impl crate::Stream<Item = crate::Result<Vec<u8>>> + Unpin + '_ {
-        IsoTPAdapter::recv(self)
+        IsoTP::recv(self)
     }
 }
 
@@ -98,13 +98,13 @@ struct Reception {
 
 /// Wraps a CAN adapter to send and receive ISO-TP messages over Classical CAN or CAN FD.
 #[derive(Clone)]
-pub struct IsoTPAdapter<'a> {
+pub struct IsoTP<'a> {
     adapter: crate::shared::Shared<'a, AsyncCanAdapter>,
     config: IsoTPConfig,
 }
 
-impl<'a> IsoTPAdapter<'a> {
-    /// Convenience method for creating a new IsoTPAdapter from a CAN adapter and an Arbitration ID.
+impl<'a> IsoTP<'a> {
+    /// Create an ISO-TP transport from a CAN adapter and an arbitration ID.
     ///
     /// # Panics
     /// Panics if the transmit ID exceeds 29 bits or the standard receive ID
@@ -116,7 +116,7 @@ impl<'a> IsoTPAdapter<'a> {
         Self::new(adapter, config)
     }
 
-    /// Create a new IsoTPAdapter from a CAN adapter and a configuration.
+    /// Create an ISO-TP transport from a CAN adapter and a configuration.
     pub fn new(adapter: &'a AsyncCanAdapter, config: IsoTPConfig) -> Self {
         Self {
             adapter: crate::shared::Shared::Borrowed(adapter),
@@ -128,8 +128,8 @@ impl<'a> IsoTPAdapter<'a> {
     pub fn new_owned(
         adapter: std::sync::Arc<AsyncCanAdapter>,
         config: IsoTPConfig,
-    ) -> IsoTPAdapter<'static> {
-        IsoTPAdapter {
+    ) -> IsoTP<'static> {
+        IsoTP {
             adapter: crate::shared::Shared::Owned(adapter),
             config,
         }

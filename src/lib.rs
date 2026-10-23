@@ -12,5 +12,5 @@ pub mod transports;
 pub use tokio_stream::{Stream, StreamExt, Timeout};
 
 pub use error::Error;
-pub use transports::TransportLayer;
+pub use transports::Transport;
 pub type Result<T> = std::result::Result<T, Error>;

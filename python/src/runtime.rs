@@ -1,8 +1,6 @@
 use automotive::{
-    can::AsyncCanAdapter,
-    protocols::uds::UDSConfig,
-    transports::{isotp::IsoTPAdapter, TransportLayer},
-    StreamExt,
+    can::AsyncCanAdapter, protocols::uds::UDSConfig, transports::isotp::IsoTP, StreamExt,
+    Transport as _,
 };
 use futures::Stream;
 use pyo3::{exceptions::PyRuntimeError, prelude::*, types::PyBytes};
@@ -29,9 +27,9 @@ enum WireValue {
 }
 
 pub enum Transport {
-    Software(IsoTPAdapter<'static>),
+    Software(IsoTP<'static>),
     #[cfg(target_os = "windows")]
-    Native(Arc<automotive::adapters::j2534::J2534NativeIsoTpTransport>),
+    Native(Arc<automotive::adapters::j2534::J2534NativeIsoTP>),
 }
 
 impl Transport {
@@ -44,7 +42,7 @@ impl Transport {
     }
 }
 
-impl TransportLayer for Transport {
+impl automotive::Transport for Transport {
     async fn send<'a>(&'a self, data: &'a [u8]) -> automotive::Result<()> {
         match self {
             Self::Software(transport) => transport.send(data).await,
@@ -100,14 +98,14 @@ pub fn join_error(error: tokio::task::JoinError) -> PyErr {
 }
 
 /// A hardware adapter owned by the Python façade.
-#[pyclass(name = "_Adapter", module = "automotive._native")]
-pub struct Adapter {
+#[pyclass(name = "_CanAdapter", module = "automotive._native")]
+pub struct CanAdapter {
     pub inner: Arc<AsyncCanAdapter>,
     closed: watch::Sender<bool>,
 }
 
 #[pymethods]
-impl Adapter {
+impl CanAdapter {
     fn send<'py>(&self, py: Python<'py>, frame: &Bound<'_, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         let frame = config::frame(frame)?;
         let adapter = self.inner.clone();
@@ -143,10 +141,10 @@ impl Adapter {
 }
 
 #[pyfunction]
-fn open_adapter(py: Python<'_>, config: &Bound<'_, PyAny>) -> PyResult<Adapter> {
+fn open_adapter(py: Python<'_>, config: &Bound<'_, PyAny>) -> PyResult<CanAdapter> {
     let config = AdapterConfig::parse(config)?;
     let inner = py.detach(move || config.open()).map_err(convert)?;
-    Ok(Adapter {
+    Ok(CanAdapter {
         inner: Arc::new(inner),
         closed: watch::channel(false).0,
     })
@@ -161,14 +159,14 @@ pub struct PyTransport {
 #[pymethods]
 impl PyTransport {
     #[new]
-    fn new(adapter: &Adapter, config: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn new(adapter: &CanAdapter, config: &Bound<'_, PyAny>) -> PyResult<Self> {
         if adapter.closed() {
             return Err(PyRuntimeError::new_err("adapter is closed"));
         }
         let config = config::isotp(config)?;
         Ok(Self {
             state: State::new(
-                Transport::Software(IsoTPAdapter::new_owned(adapter.inner.clone(), config)),
+                Transport::Software(IsoTP::new_owned(adapter.inner.clone(), config)),
                 Some(adapter.closed.clone()),
             ),
         })
@@ -265,7 +263,7 @@ struct ReceiveState {
     parent: Option<watch::Sender<bool>>,
     transport: Option<Arc<State>>,
     lease: StdMutex<Option<Arc<AtomicUsize>>>,
-    // A receiver can outlive its Python Adapter object without closing hardware.
+    // A receiver can outlive its Python CanAdapter object without closing hardware.
     _adapter: Option<Arc<AsyncCanAdapter>>,
 }
 
@@ -428,7 +426,7 @@ fn open_native_isotp<'py>(
 ) -> PyResult<Bound<'py, PyAny>> {
     #[cfg(target_os = "windows")]
     {
-        use automotive::adapters::j2534::J2534NativeIsoTpTransport;
+        use automotive::adapters::j2534::J2534NativeIsoTP;
         use config::field;
         let bitrate = config::bitrate("j2534", &adapter_config.getattr("bitrate")?)?;
         let path = field!(adapter_config, dll_path, Option<String>);
@@ -445,8 +443,8 @@ fn open_native_isotp<'py>(
             .transpose()?;
         return pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let native = tokio::task::spawn_blocking(move || match device {
-                Some(device) => J2534NativeIsoTpTransport::new_on_device(device, bitrate, config),
-                None => J2534NativeIsoTpTransport::new(path.as_deref(), bitrate, config),
+                Some(device) => J2534NativeIsoTP::new_on_device(device, bitrate, config),
+                None => J2534NativeIsoTP::new(path.as_deref(), bitrate, config),
             })
             .await
             .map_err(join_error)?
@@ -466,7 +464,7 @@ fn open_native_isotp<'py>(
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<Adapter>()?;
+    m.add_class::<CanAdapter>()?;
     m.add_class::<PyTransport>()?;
     m.add_class::<Receiver>()?;
     m.add_class::<Device>()?;

@@ -14,8 +14,8 @@ from typing import Protocol
 
 import pytest
 
-from automotive.adapters import Adapter, SocketCanAdapter
-from automotive.transports.isotp import IsoTPAdapter, IsoTPConfig
+from automotive.adapters import CanAdapter, SocketCanAdapter
+from automotive.transports.isotp import IsoTP, IsoTPConfig
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -48,8 +48,8 @@ def require_vcan(request: pytest.FixtureRequest) -> None:
 
 @dataclass
 class ECU:
-    adapter: Adapter
-    transport: IsoTPAdapter
+    adapter: CanAdapter
+    transport: IsoTP
 
 
 class EcuFactory(Protocol):
@@ -100,7 +100,7 @@ def ecu_factory() -> EcuFactory:
                 args += ["--ext-address", str(config.ext_address)]
         async with (
             SocketCanAdapter("vcan0") as adapter,
-            IsoTPAdapter(adapter, config) as transport,
+            IsoTP(adapter, config) as transport,
         ):
             with tempfile.TemporaryFile() as stderr:
                 process: asyncio.subprocess.Process | None = None

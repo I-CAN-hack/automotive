@@ -9,7 +9,7 @@ from automotive.adapters import SocketCanAdapter
 from automotive.can import Identifier
 from automotive.errors import NegativeResponseError, ProtocolDeviationError
 from automotive.protocols.uds import DTCFormatIdentifier, RoutineControlType, SessionType, UDSClient, UDSConfig
-from automotive.transports.isotp import IsoTPAdapter
+from automotive.transports.isotp import IsoTP
 
 from .conftest import EcuFactory
 
@@ -222,7 +222,7 @@ async def test_closing_adapter_interrupts_pending_exchange(ecu_factory: EcuFacto
 async def test_client_retains_adapter_after_python_owner_is_released(ecu_factory: EcuFactory) -> None:
     async with ecu_factory():
         adapter = SocketCanAdapter("vcan0")
-        async with IsoTPAdapter.from_id(adapter, 0x7A1) as transport:
+        async with IsoTP.from_id(adapter, 0x7A1) as transport:
             client = UDSClient(transport, UDSConfig(p2_timeout=1.0))
             del adapter
             await client.tester_present()

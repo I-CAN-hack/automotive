@@ -5,7 +5,7 @@ use super::{
     RoutineIdentifier, SecurityAccessType, ServiceIdentifier, SessionParameterRecord, SessionType,
     UDSClient,
 };
-use crate::{Result, TransportLayer};
+use crate::{Result, Transport};
 use std::ops::Deref;
 
 /// A borrowed view of a [`UDSClient`] that suppresses positive responses.
@@ -13,11 +13,11 @@ use std::ops::Deref;
 /// Create it with [`UDSClient::suppress_positive_responses`]. The view shares
 /// transport and session timings with the original client. Helpers for services
 /// without a sub-function are available through [`Deref`] and require a response.
-pub struct SuppressedUDSClient<'client, 'adapter, T: TransportLayer> {
+pub struct SuppressedUDSClient<'client, 'adapter, T: Transport> {
     pub(super) client: &'client UDSClient<'adapter, T>,
 }
 
-impl<'adapter, T: TransportLayer> Deref for SuppressedUDSClient<'_, 'adapter, T> {
+impl<'adapter, T: Transport> Deref for SuppressedUDSClient<'_, 'adapter, T> {
     type Target = UDSClient<'adapter, T>;
 
     fn deref(&self) -> &Self::Target {
@@ -25,7 +25,7 @@ impl<'adapter, T: TransportLayer> Deref for SuppressedUDSClient<'_, 'adapter, T>
     }
 }
 
-impl<T: TransportLayer> SuppressedUDSClient<'_, '_, T> {
+impl<T: Transport> SuppressedUDSClient<'_, '_, T> {
     /// Make a custom request with bit 7 set in its sub-function byte.
     /// Requests without a sub-function still require a response.
     pub async fn request(

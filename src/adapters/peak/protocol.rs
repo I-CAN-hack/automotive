@@ -6,7 +6,7 @@
 
 use crate::adapters::peak::constants::*;
 use crate::adapters::peak::error::Error;
-use crate::can::bitrate::AdapterBitTiming;
+use crate::can::bitrate::BitTiming;
 use crate::can::{Frame, FrameContent, Identifier, DLC_TO_LEN};
 
 /// Round `n` up to the next multiple of 4.
@@ -108,7 +108,7 @@ pub fn cmd_filter_accept_all(channel: u8) -> Vec<Command> {
 }
 
 /// Build the slow (nominal/arbitration) bit-timing command.
-pub fn cmd_timing_slow(channel: u8, t: &AdapterBitTiming) -> Command {
+pub fn cmd_timing_slow(channel: u8, t: &BitTiming) -> Command {
     let mut cmd = command(channel, CMD_TIMING_SLOW);
     cmd[2] = DEFAULT_ERROR_WARNING_LIMIT;
     cmd[3] = ((t.sjw - 1) & 0x7f) as u8; // sjw_t, triple-sampling bit left clear
@@ -119,7 +119,7 @@ pub fn cmd_timing_slow(channel: u8, t: &AdapterBitTiming) -> Command {
 }
 
 /// Build the fast (CAN-FD data phase) bit-timing command.
-pub fn cmd_timing_fast(channel: u8, t: &AdapterBitTiming) -> Command {
+pub fn cmd_timing_fast(channel: u8, t: &BitTiming) -> Command {
     let mut cmd = command(channel, CMD_TIMING_FAST);
     // byte 2 unused
     cmd[3] = ((t.sjw - 1) & 0xf) as u8;
@@ -256,8 +256,8 @@ pub fn parse_rx_buffer(data: &[u8]) -> (Vec<Frame>, u32) {
 mod tests {
     use super::*;
 
-    fn timing(brp: u32, tseg1: u32, tseg2: u32, sjw: u32) -> AdapterBitTiming {
-        AdapterBitTiming {
+    fn timing(brp: u32, tseg1: u32, tseg2: u32, sjw: u32) -> BitTiming {
+        BitTiming {
             brp,
             tseg1,
             tseg2,

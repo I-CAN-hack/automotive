@@ -1,15 +1,15 @@
 //! SAE J2534 04.04 PassThru adapter support.
 //!
-//! Provides two adapters:
+//! Provides raw CAN access and a native ISO-TP transport:
 //!
-//! * [`J2534CanAdapter`] — raw CAN channel implementing [`CanAdapter`](crate::can::CanAdapter).
-//!   Paired with the software ISO-TP layer ([`IsoTPAdapter`](crate::transports::isotp::IsoTPAdapter)) for
+//! * [`J2534Adapter`] — raw CAN channel implementing [`CanAdapter`](crate::can::CanAdapter).
+//!   Paired with the software ISO-TP layer ([`IsoTP`](crate::transports::isotp::IsoTP)) for
 //!   UDS communication.
-//! * [`J2534NativeIsoTpTransport`] — ISO 15765 channel implementing [`TransportLayer`](crate::transports::TransportLayer).
+//! * [`J2534NativeIsoTP`] — ISO 15765 channel implementing [`Transport`](crate::transports::Transport).
 //!   The adapter firmware handles all ISO-TP framing in hardware; the host exchanges complete
 //!   UDS PDUs.
 //!
-//! Both adapters auto-discover the PassThru DLL from the Windows registry, or accept an
+//! Both backends auto-discover the PassThru DLL from the Windows registry, or accept an
 //! explicit DLL path.
 //!
 //! # Feature gate
@@ -21,9 +21,9 @@ mod common;
 mod constants;
 mod dll;
 mod error;
-mod isotp_adapter;
+mod isotp;
 
-pub use can_adapter::J2534CanAdapter;
+pub use can_adapter::J2534Adapter;
 pub use common::J2534Device;
 pub use error::Error;
-pub use isotp_adapter::J2534NativeIsoTpTransport;
+pub use isotp::J2534NativeIsoTP;

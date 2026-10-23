@@ -75,7 +75,7 @@ const PEAK_TIMING_CONST: AdapterTimingConst = AdapterTimingConst {
 };
 
 /// Blocking implementation of the PEAK PCAN-USB FD adapter.
-pub struct Peak {
+pub struct PeakAdapter {
     tx_timeout: Option<Duration>,
     /// Hardware TX may contain frames until the next successful queue clear.
     tx_queue_dirty: bool,
@@ -94,20 +94,20 @@ pub struct Peak {
 }
 
 // rusb's GlobalContext handle is safe to move between threads.
-unsafe impl Send for Peak {}
+unsafe impl Send for PeakAdapter {}
 
-impl Peak {
+impl PeakAdapter {
     /// Connect to the first available PCAN-USB FD family adapter and wrap it in
     /// an [`AsyncCanAdapter`].
     pub fn new_async(config: PeakConfig) -> Result<AsyncCanAdapter> {
-        let peak = Peak::new(config)?;
+        let peak = PeakAdapter::new(config)?;
         Ok(AsyncCanAdapter::new(peak))
     }
 
     /// Connect to the first available PCAN-USB FD family adapter.
     ///
     /// The in-kernel `peak_usb` driver, if bound, is detached automatically.
-    pub fn new(config: PeakConfig) -> Result<Peak> {
+    pub fn new(config: PeakConfig) -> Result<PeakAdapter> {
         let bitrate_cfg = config.bitrate;
         validate_tx_timeout(config.tx_timeout)?;
         for device in rusb::devices()?.iter() {
@@ -148,7 +148,7 @@ impl Peak {
                     (DEFAULT_EP_CMD_OUT, DEFAULT_EP_MSG_OUT, DEFAULT_EP_MSG_IN)
                 };
 
-            let mut peak = Peak {
+            let mut peak = PeakAdapter {
                 tx_timeout: config.tx_timeout,
                 // A previous process may have left transmissions in hardware.
                 tx_queue_dirty: true,
@@ -268,7 +268,7 @@ impl Peak {
     }
 }
 
-impl CanAdapter for Peak {
+impl CanAdapter for PeakAdapter {
     fn supports_tx_timeout() -> bool {
         true
     }
@@ -399,7 +399,7 @@ impl CanAdapter for Peak {
     }
 }
 
-impl Drop for Peak {
+impl Drop for PeakAdapter {
     fn drop(&mut self) {
         // Best-effort: take the bus down and tell the device the driver is gone.
         let _ = self.set_bus_off();

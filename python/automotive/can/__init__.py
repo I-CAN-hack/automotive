@@ -8,7 +8,7 @@ from typing import Any, Self
 
 from .. import _native
 from .._base import Buffer, buffer_bytes
-from .bitrate import AdapterBitTiming, BitrateConfig, BitrateSettings
+from .bitrate import BitrateConfig, BitrateSettings, BitTiming
 
 
 class ErrorFlag(IntEnum):
@@ -150,4 +150,4 @@ class Frame:
         return cls(**values)
 
 
-__all__ = ["AdapterBitTiming", "BitrateConfig", "BitrateSettings", "ErrorFlag", "Frame", "Identifier"]
+__all__ = ["BitTiming", "BitrateConfig", "BitrateSettings", "ErrorFlag", "Frame", "Identifier"]

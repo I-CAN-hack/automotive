@@ -2,15 +2,15 @@
 
 import asyncio
 
-from automotive.adapters import Adapter
+from automotive.adapters import CanAdapter
 from automotive.protocols.uds import DataIdentifier, SessionType, UDSClient
-from automotive.transports.isotp import IsoTPAdapter
+from automotive.transports.isotp import IsoTP
 
 
 async def main() -> None:
     """Use defaults, select a session, and read an ECU data identifier."""
-    adapter = Adapter()
-    isotp = IsoTPAdapter.from_id(adapter, 0x7A1)
+    adapter = CanAdapter()
+    isotp = IsoTP.from_id(adapter, 0x7A1)
     uds = UDSClient(isotp)
     await uds.tester_present()
     await uds.diagnostic_session_control(SessionType.EXTENDED_DIAGNOSTIC)
