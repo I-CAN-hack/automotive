@@ -118,6 +118,13 @@ async receivers support `async for` and `anext()`. Drop or close raw ISO-TP
 receivers before making UDS requests on the same transport. Native J2534
 transports and reusable device handles have synchronous counterparts too.
 
+`await adapter.recv_for(duration)` collects CAN frames for the given number of
+seconds and returns a `list[Frame]` in receive order, including transmit echoes.
+Use `adapter.recv_for(duration)` in the synchronous API. Each call uses an
+independent subscription that closes when collection ends; existing `recv()`
+subscriptions are unaffected. Reception starts when awaited (or called in the
+sync API) and finishes early if the adapter closes.
+
 One background event loop runs the existing async implementation and shuts down
 at process exit. Adapter construction opens hardware synchronously in both APIs,
 including inside an async function; Rust releases the GIL during device opening.

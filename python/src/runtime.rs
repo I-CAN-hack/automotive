@@ -124,6 +124,20 @@ impl CanAdapter {
         )
     }
 
+    fn recv_for<'py>(&self, py: Python<'py>, duration: f64) -> PyResult<Bound<'py, PyAny>> {
+        let duration = config::duration(duration)?;
+        let adapter = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let frames = adapter.recv_for(duration).await;
+            Python::attach(|py| {
+                frames
+                    .iter()
+                    .map(|frame| config::frame_value(py, frame))
+                    .collect::<PyResult<Vec<_>>>()
+            })
+        })
+    }
+
     fn aclose<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         self.closed.send_replace(true);
         let adapter = self.inner.clone();

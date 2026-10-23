@@ -4,6 +4,7 @@ mod async_can;
 pub mod bitrate;
 
 use std::collections::VecDeque;
+use std::time::{Duration, Instant};
 
 pub use async_can::AsyncCanAdapter;
 
@@ -19,6 +20,23 @@ pub use identifier::{ExtendedId, Identifier, StandardId};
 pub trait CanAdapter {
     fn send(&mut self, frames: &mut VecDeque<crate::can::Frame>) -> crate::Result<()>;
     fn recv(&mut self) -> crate::Result<Vec<Frame>>;
+
+    /// Collect frames, including transmit echoes, for the given duration.
+    ///
+    /// Returns frames in receive order. The backend's receive timeout can
+    /// extend the collection past the requested duration.
+    fn recv_for(&mut self, duration: Duration) -> crate::Result<Vec<Frame>> {
+        let start = Instant::now();
+        let mut frames = Vec::new();
+        while start.elapsed() < duration {
+            let batch = self.recv()?;
+            if batch.is_empty() {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            frames.extend(batch);
+        }
+        Ok(frames)
+    }
 
     /// Whether this backend can cancel all pending TX before accepting new TX.
     /// Only backends with this capability expose a TX timeout in their config.

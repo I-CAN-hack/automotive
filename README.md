@@ -86,6 +86,14 @@ async fn can_example() -> automotive::Result<()> {
 }
 ```
 
+`AsyncCanAdapter::recv_for(duration).await` collects frames for a `Duration`
+and returns a `Vec<Frame>` in receive order, including transmit echoes. Its
+independent subscription closes on return or cancellation; existing receive
+streams are unaffected. Reception starts when the future is polled and ends
+early if the adapter closes. Raw adapters expose the blocking
+`CanAdapter::recv_for(duration) -> Result<Vec<Frame>>`; their normal receive
+timeout can extend the collection past the requested duration.
+
 ## Building CAN frames
 
 Use the data-frame builder or the remote/error constructors below. The builder

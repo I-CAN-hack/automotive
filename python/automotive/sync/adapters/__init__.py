@@ -73,6 +73,15 @@ class CanAdapter(Resource[_adapters.CanAdapter]):
         """
         return Receiver(call(self._async.recv))
 
+    def recv_for(self, duration: float) -> list[Frame]:
+        """Collect CAN frames, including transmit echoes, for duration seconds.
+
+        Returns frames in receive order, or finishes early if the adapter closes.
+        Uses an independent subscription that closes on return; existing recv()
+        subscriptions are unaffected. duration must be finite and nonnegative.
+        """
+        return run(self._async.recv_for, duration)
+
 
 class SocketCanAdapter(CanAdapter):
     """Open a Linux SocketCAN adapter with ``SocketCanAdapter('can0')``.
