@@ -9,7 +9,7 @@ from automotive.sync.adapters import SocketCanAdapter
 from automotive.sync.can import Frame, Identifier
 from automotive.sync.errors import NegativeResponseError
 from automotive.sync.protocols.uds import DTCFormatIdentifier, RoutineControlType, SessionType, UDSClient, UDSConfig
-from automotive.sync.transports.isotp import IsoTPAdapter, IsoTPConfig
+from automotive.sync.transports.isotp import IsoTP, IsoTPConfig
 
 from .conftest import EcuFactory
 
@@ -35,7 +35,7 @@ async def test_isotp_segmented_echo_and_receive_timeout(ecu_factory: EcuFactory,
         def exchange() -> None:
             with (
                 SocketCanAdapter("vcan0") as adapter,
-                IsoTPAdapter(adapter, config) as transport,
+                IsoTP(adapter, config) as transport,
                 transport.recv() as messages,
             ):
                 with pytest.raises(TimeoutError):
@@ -51,7 +51,7 @@ async def test_all_implemented_uds_service_ids(ecu_factory: EcuFactory) -> None:
     async with ecu_factory():
 
         def exchange() -> None:
-            with SocketCanAdapter("vcan0") as adapter, IsoTPAdapter.from_id(adapter, 0x7A1) as transport:
+            with SocketCanAdapter("vcan0") as adapter, IsoTP.from_id(adapter, 0x7A1) as transport:
                 uds = UDSClient(transport, UDSConfig(p2_timeout=1.0, request_timeout=5.0))
                 uds.tester_present()
                 with pytest.raises(NegativeResponseError) as rejected:
@@ -99,7 +99,7 @@ async def test_suppression_is_nested_and_thread_local_on_the_wire(ecu_factory: E
         def exchange() -> None:
             with (
                 SocketCanAdapter("vcan0") as adapter,
-                IsoTPAdapter.from_id(adapter, 0x7A1) as transport,
+                IsoTP.from_id(adapter, 0x7A1) as transport,
                 adapter.recv() as frames,
             ):
                 uds = UDSClient(transport, UDSConfig(p2_timeout=0.1, use_server_timing=False))
@@ -128,7 +128,7 @@ async def test_suppressed_response_pending(ecu_factory: EcuFactory, case: str) -
     async with ecu_factory(case=case):
 
         def exchange() -> None:
-            with SocketCanAdapter("vcan0") as adapter, IsoTPAdapter.from_id(adapter, 0x7A1) as transport:
+            with SocketCanAdapter("vcan0") as adapter, IsoTP.from_id(adapter, 0x7A1) as transport:
                 uds = UDSClient(
                     transport,
                     UDSConfig(p2_timeout=0.1, p2_star_timeout=0.2, request_timeout=2.0, use_server_timing=False),
@@ -149,7 +149,7 @@ async def test_suppressed_response_pending(ecu_factory: EcuFactory, case: str) -
 
 async def test_parent_close_interrupts_synchronous_uds(ecu_factory: EcuFactory) -> None:
     async with ecu_factory(case="silent") as ecu, ecu.adapter.recv() as frames:
-        with SocketCanAdapter("vcan0") as adapter, IsoTPAdapter.from_id(adapter, 0x7A1) as transport:
+        with SocketCanAdapter("vcan0") as adapter, IsoTP.from_id(adapter, 0x7A1) as transport:
             uds = UDSClient(transport, UDSConfig(p2_timeout=5.0))
             pending = asyncio.create_task(asyncio.to_thread(uds.tester_present))
             try:
@@ -167,7 +167,7 @@ async def test_client_retains_adapter_after_python_owners_are_released(ecu_facto
 
         def exchange() -> None:
             adapter = SocketCanAdapter("vcan0")
-            transport = IsoTPAdapter.from_id(adapter, 0x7A1)
+            transport = IsoTP.from_id(adapter, 0x7A1)
             uds = UDSClient(transport, UDSConfig(p2_timeout=1.0))
             del adapter, transport
             uds.tester_present()

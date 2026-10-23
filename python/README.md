@@ -54,21 +54,21 @@ remain necessary. The Rust crate retains feature flags for Rust applications.
 
 ## Basic usage
 
-Minimal setup retains the Rust defaults. Use `Adapter()` for automatic discovery,
+Minimal setup retains the Rust defaults. Use `CanAdapter()` for automatic discovery,
 `PeakAdapter()` for default PEAK settings, or `SocketCanAdapter("can0")` to select
 a SocketCAN interface directly. Constructors open the device immediately:
 
 ```python
 import asyncio
 
-from automotive.adapters import Adapter
+from automotive.adapters import CanAdapter
 from automotive.protocols.uds import DataIdentifier, UDSClient
-from automotive.transports.isotp import IsoTPAdapter
+from automotive.transports.isotp import IsoTP
 
 
 async def main():
-    adapter = Adapter()
-    transport = IsoTPAdapter.from_id(adapter, 0x7A1)
+    adapter = CanAdapter()
+    transport = IsoTP.from_id(adapter, 0x7A1)
     uds = UDSClient(transport)
     response = await uds.read_data_by_identifier(DataIdentifier.VIN)
     print(response)
@@ -85,21 +85,22 @@ Use ordinary constructors, method calls, and receive iterators:
 ```python
 from automotive.sync.adapters import SocketCanAdapter
 from automotive.sync.protocols.uds import DataIdentifier, UDSClient
-from automotive.sync.transports.isotp import IsoTPAdapter
+from automotive.sync.transports.isotp import IsoTP
 
 adapter = SocketCanAdapter("can0")
-transport = IsoTPAdapter.from_id(adapter, 0x7A1)
+transport = IsoTP.from_id(adapter, 0x7A1)
 uds = UDSClient(transport)
 print(uds.read_data_by_identifier(DataIdentifier.VIN))
 ```
 
-`Adapter()`, `PeakAdapter(config)`, and the other named adapter classes live in
+`CanAdapter()`, `PeakAdapter(config)`, and the other named adapter classes live in
 `automotive.sync.adapters`. The import paths match their async counterparts:
 
 | Async module | Sync module |
 | --- | --- |
 | `automotive.adapters` | `automotive.sync.adapters` |
 | `automotive.adapters.j2534` | `automotive.sync.adapters.j2534` |
+| `automotive.transports` | `automotive.sync.transports` |
 | `automotive.transports.isotp` | `automotive.sync.transports.isotp` |
 | `automotive.protocols.uds` | `automotive.sync.protocols.uds` |
 | `automotive.can` | `automotive.sync.can` |
@@ -110,6 +111,10 @@ Both APIs share the same configuration classes, frames, enums, result types, and
 exceptions. These can be imported through either module hierarchy.
 
 Hardware and subscriptions are released when their last owner is dropped.
+Both APIs expose a shared `Transport` base class accepted by `UDSClient`.
+`IsoTP` and `J2534NativeIsoTP` implement this interface. Future transports such
+as DoIP and HSFZ can use the same interface without depending on CAN or ISO-TP.
+
 Transports, clients, and receivers retain their underlying resources, so they
 can outlive the adapter variable. For deterministic cleanup, use `close()` on
 synchronous resources or `await aclose()` on asynchronous resources. `with` and
@@ -139,7 +144,7 @@ from automotive.adapters import PeakAdapter, PeakConfig
 from automotive.can import Identifier
 from automotive.can.bitrate import BitrateSettings
 from automotive.protocols.uds import DataIdentifier, UDSClient, UDSConfig
-from automotive.transports.isotp import IsoTPAdapter, IsoTPConfig
+from automotive.transports.isotp import IsoTP, IsoTPConfig
 
 adapter_config = PeakConfig(
     bitrate=BitrateSettings(
@@ -158,7 +163,7 @@ uds_config = UDSConfig(request_timeout=10.0, strict=True)
 
 async def main():
     adapter = PeakAdapter(adapter_config)
-    transport = IsoTPAdapter(adapter, transport_config)
+    transport = IsoTP(adapter, transport_config)
     uds = UDSClient(transport, uds_config)
     print(await uds.read_data_by_identifier(DataIdentifier.VIN))
 

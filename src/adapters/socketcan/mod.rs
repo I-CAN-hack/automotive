@@ -14,7 +14,7 @@ pub use config::{SocketCanConfig, SocketCanConfigBuilder};
 const IFF_ECHO: u64 = 1 << 18; // include/uapi/linux/if.h
 
 /// SocketCAN Adapter
-pub struct SocketCan {
+pub struct SocketCanAdapter {
     socket: CanFdSocket,
     /// If the IFF_ECHO flag is set on the interface, it will implement proper ACK logic.
     iff_echo: bool,
@@ -35,15 +35,15 @@ fn read_iff_echo(if_name: &str) -> Option<bool> {
     Some(flags & IFF_ECHO != 0)
 }
 
-impl SocketCan {
+impl SocketCanAdapter {
     /// Creates an [`AsyncCanAdapter`] for the configured SocketCAN interface.
     pub fn new_async(config: SocketCanConfig) -> Result<AsyncCanAdapter> {
-        let socket = SocketCan::new(config)?;
+        let socket = SocketCanAdapter::new(config)?;
         Ok(AsyncCanAdapter::new(socket))
     }
 
-    /// Creates a blocking [`SocketCan`] for the configured interface.
-    pub fn new(config: SocketCanConfig) -> Result<SocketCan> {
+    /// Creates a blocking [`SocketCanAdapter`] for the configured interface.
+    pub fn new(config: SocketCanConfig) -> Result<SocketCanAdapter> {
         let socket = match CanFdSocket::open(&config.interface) {
             Ok(socket) => socket,
             Err(_) => return Err(crate::error::Error::NotFound),
@@ -75,7 +75,7 @@ impl SocketCan {
             tracing::warn!("IFF_ECHO is not set on the interface. ACK support is emulated.");
         }
 
-        Ok(SocketCan {
+        Ok(SocketCanAdapter {
             socket,
             iff_echo,
             loopback_queue: VecDeque::new(),
@@ -83,7 +83,7 @@ impl SocketCan {
     }
 }
 
-impl CanAdapter for SocketCan {
+impl CanAdapter for SocketCanAdapter {
     fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
         while let Some(frame) = frames.pop_front() {
             if let Err(error) = self.socket.write_frame(&frame) {

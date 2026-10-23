@@ -227,12 +227,12 @@ pub fn bitrate(backend: &str, settings: &Bound<'_, PyAny>) -> PyResult<BitrateCo
             .build()
             .map(|config| config.bitrate)
             .map_err(|error| convert(error.into())),
-        "panda" => timing::<automotive::adapters::panda::Panda>(settings),
-        "peak" => timing::<automotive::adapters::peak::Peak>(settings),
+        "panda" => timing::<automotive::adapters::panda::PandaAdapter>(settings),
+        "peak" => timing::<automotive::adapters::peak::PeakAdapter>(settings),
         #[cfg(target_os = "windows")]
-        "vector" => timing::<automotive::adapters::vector::VectorCan>(settings),
+        "vector" => timing::<automotive::adapters::vector::VectorAdapter>(settings),
         #[cfg(target_os = "windows")]
-        "j2534" => timing::<automotive::adapters::j2534::J2534CanAdapter>(settings),
+        "j2534" => timing::<automotive::adapters::j2534::J2534Adapter>(settings),
         _ => Err(NotSupportedError::new_err(format!(
             "{backend} bitrate calculation is unavailable on this build"
         ))),
@@ -345,14 +345,16 @@ impl AdapterConfig {
         match self {
             Self::Auto => automotive::adapters::get_adapter(),
             #[cfg(target_os = "linux")]
-            Self::Socket(config) => automotive::adapters::socketcan::SocketCan::new_async(config),
-            Self::Panda(config) => automotive::adapters::panda::Panda::new_async(config),
-            Self::Peak(config) => automotive::adapters::peak::Peak::new_async(config),
+            Self::Socket(config) => {
+                automotive::adapters::socketcan::SocketCanAdapter::new_async(config)
+            }
+            Self::Panda(config) => automotive::adapters::panda::PandaAdapter::new_async(config),
+            Self::Peak(config) => automotive::adapters::peak::PeakAdapter::new_async(config),
             #[cfg(target_os = "windows")]
-            Self::Vector(config) => automotive::adapters::vector::VectorCan::new_async(config),
+            Self::Vector(config) => automotive::adapters::vector::VectorAdapter::new_async(config),
             #[cfg(target_os = "windows")]
             Self::J2534(path, bitrate) => {
-                automotive::adapters::j2534::J2534CanAdapter::new_async(path.as_deref(), bitrate)
+                automotive::adapters::j2534::J2534Adapter::new_async(path.as_deref(), bitrate)
             }
         }
     }

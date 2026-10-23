@@ -2,15 +2,15 @@
 
 import asyncio
 
-from automotive.adapters import Adapter
-from automotive.transports.isotp import IsoTPAdapter, IsoTPConfig
+from automotive.adapters import CanAdapter
+from automotive.transports.isotp import IsoTP, IsoTPConfig
 
 
 async def main() -> None:
     """Send short and segmented requests, printing each response as hex."""
-    adapter = Adapter()
+    adapter = CanAdapter()
     config = IsoTPConfig(tx_id=0x7A1)
-    isotp = IsoTPAdapter(adapter, config)
+    isotp = IsoTP(adapter, config)
 
     stream = isotp.recv()
 

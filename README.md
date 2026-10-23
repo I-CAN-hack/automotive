@@ -10,9 +10,15 @@ Welcome to the `automotive` crate documentation. The purpose of this crate is to
 - `automotive::adapters` contains the feature-gated hardware adapters: `j2534`,
   `panda`, `peak`, `socketcan`, and `vector`, plus the `get_adapter()` discovery
   helper.
-- `automotive::transports` contains `isotp` and the shared `TransportLayer` trait.
-- `automotive::protocols` contains `uds`, which uses a `TransportLayer`.
+- `automotive::transports` contains `isotp` and the shared `Transport` trait.
+- `automotive::protocols` contains `uds`, which uses a `Transport`.
 - `automotive::can` provides shared CAN types and traits.
+
+Hardware adapter types use the `Adapter` suffix: `PandaAdapter`, `PeakAdapter`,
+`SocketCanAdapter`, `VectorAdapter`, and `J2534Adapter`. Message transports
+implement `Transport`; the current implementations are `IsoTP` and
+`J2534NativeIsoTP`. UDS depends on this shared interface so additional transports,
+such as DoIP and HSFZ, can implement it independently of CAN.
 
 ## Python library
 
@@ -144,7 +150,7 @@ data, with an 80% sample point for both phases:
 # #[cfg(feature = "peak")]
 # fn example() -> automotive::Result<()> {
 let config = automotive::adapters::peak::PeakConfig::builder().build()?;
-let adapter = automotive::adapters::peak::Peak::new_async(config)?;
+let adapter = automotive::adapters::peak::PeakAdapter::new_async(config)?;
 # Ok(())
 # }
 ```
@@ -160,7 +166,7 @@ type for the bitrate builder:
 ```rust,no_run
 # #[cfg(feature = "peak")]
 # fn example() -> automotive::Result<()> {
-use automotive::adapters::peak::{Peak, PeakConfig};
+use automotive::adapters::peak::{PeakAdapter, PeakConfig};
 
 let config = PeakConfig::builder()
     .bitrate(|bitrate| {
@@ -171,7 +177,7 @@ let config = PeakConfig::builder()
             .data_sample_point(0.8)
     })
     .build()?;
-let adapter = Peak::new_async(config)?;
+let adapter = PeakAdapter::new_async(config)?;
 # Ok(())
 # }
 ```
@@ -330,7 +336,7 @@ The automotive crate also supplies interfaces for various diagnostic protocols s
 ```rust
  async fn uds_example() -> automotive::Result<()> {
     let adapter = automotive::adapters::get_adapter()?;
-    let isotp = automotive::transports::isotp::IsoTPAdapter::from_id(&adapter, 0x7a1);
+    let isotp = automotive::transports::isotp::IsoTP::from_id(&adapter, 0x7a1);
     let uds = automotive::protocols::uds::UDSClient::new(&isotp);
 
     uds.tester_present().await?;
@@ -350,7 +356,7 @@ use automotive::protocols::uds::{
     RoutineControlType, RoutineIdentifier, SecurityAccessType, UDSClient,
 };
 
-# async fn typed_uds_example<T: automotive::TransportLayer>(uds: &UDSClient<'_, T>) -> automotive::Result<()> {
+# async fn typed_uds_example<T: automotive::Transport>(uds: &UDSClient<'_, T>) -> automotive::Result<()> {
 uds.ecu_reset(ResetType::HardReset).await?;
 uds.ecu_reset(0x1).await?;
 uds.security_access(SecurityAccessType::NonStandard(0x11), None).await?;
@@ -392,7 +398,7 @@ big-endian fields, preserving leading zeros. A value that does not fit returns
 ```rust
 use automotive::protocols::uds::UDSClient;
 
-# async fn memory_example<T: automotive::TransportLayer>(uds: &UDSClient<'_, T>) -> automotive::Result<()> {
+# async fn memory_example<T: automotive::Transport>(uds: &UDSClient<'_, T>) -> automotive::Result<()> {
 // A three-byte address and a two-byte size.
 let data = uds.read_memory_by_address_alfid(0x123456, 8, 3, 2).await?;
 uds.write_memory_by_address_alfid(0x123456, 8, 3, 2, &data).await?;
@@ -413,7 +419,7 @@ Use `UDSConfig::builder()` and `UDSClient::with_config` to customize the setting
 use automotive::protocols::uds::{UDSClient, UDSConfig};
 use std::time::Duration;
 
-# async fn configured_uds_example<T: automotive::TransportLayer>(transport: &T) -> automotive::Result<()> {
+# async fn configured_uds_example<T: automotive::Transport>(transport: &T) -> automotive::Result<()> {
 let config = UDSConfig::builder()
     .p2_timeout(Duration::from_millis(100)) // Default: 50 ms.
     .build();
@@ -436,7 +442,7 @@ Use a scoped view to suppress positive responses without changing the original
 client's behavior:
 
 ```rust
-# async fn suppressed_uds_example<T: automotive::TransportLayer>(transport: &T) -> automotive::Result<()> {
+# async fn suppressed_uds_example<T: automotive::Transport>(transport: &T) -> automotive::Result<()> {
 use automotive::protocols::uds::{RequestOutcome, ResetType, UDSClient};
 
 let uds = UDSClient::new(transport);
@@ -560,7 +566,7 @@ This library supports awaiting a sent frame and waiting for the ACK on the CAN b
      SUBSYSTEM=="usb", ATTRS{idVendor}=="0c72", MODE="0666"
      ```
      Then reload the rules and replug the device: `sudo udevadm control --reload-rules && sudo udevadm trigger`.
- - J2534 PassThru Devices are supported through the `j2534` feature. The library provides `J2534CanAdapter` for raw CAN access, and `J2534NativeIsoTpTransport` to offload ISO-TP framing, flow-control, and timing to the adapter. It is recommended to use `J2534CanAdapter` unless you have specific speed or latency requirements.
+ - J2534 PassThru Devices are supported through the `j2534` feature. The library provides `J2534Adapter` for raw CAN access, and `J2534NativeIsoTP` to offload ISO-TP framing, flow-control, and timing to the adapter. It is recommended to use `J2534Adapter` unless you have specific speed or latency requirements.
  - Vector Devices are supported through the Vector XL Driver Library, and support can be enabled using the `vector-xl` feature. Make sure to distribute `vxlapi64.dll` alongside your application.
    - Configuring bus timing requires a data bitrate (`.data_bitrate(...)`) alongside
      nominal timing, even when sending only Classical CAN or FD frames without

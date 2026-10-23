@@ -4,7 +4,7 @@ use super::{duration_to_stmin_byte, Error, DEFAULT_PADDING_BYTE, DEFAULT_TIMEOUT
 use crate::can::{Identifier, DLC_TO_LEN};
 use crate::Result;
 
-/// Configuration passed to the [`super::IsoTPAdapter`].
+/// Configuration passed to the [`super::IsoTP`].
 ///
 /// Use [`Self::builder`] for checked construction with automatic receive IDs.
 /// Only the transmit identifier is required. A standard transmit ID defaults

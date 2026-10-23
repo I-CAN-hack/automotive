@@ -2,13 +2,13 @@
 
 import asyncio
 
-from automotive.adapters import Adapter
+from automotive.adapters import CanAdapter
 from automotive.can import Frame
 
 
 async def main() -> None:
     """Discover an adapter and send a frame."""
-    adapter = Adapter()
+    adapter = CanAdapter()
     frame = Frame(id=0x123, data=b"\x01\x02\x03\x04")
     await adapter.send(frame)
     print("Sent", frame)

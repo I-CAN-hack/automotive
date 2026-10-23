@@ -280,7 +280,7 @@ impl Client {
         }
         if state.raw_receivers.load(Ordering::Acquire) != 0 {
             return Err(PyRuntimeError::new_err(
-                "close raw ISO-TP receivers before using UDS on this transport",
+                "close raw transport receivers before using UDS on this transport",
             ));
         }
         let (mut result, response) = oneshot::channel();

@@ -1,16 +1,16 @@
 """Query named DIDs across standard and extended ECU addresses."""
 
-from automotive.sync.adapters import Adapter
+from automotive.sync.adapters import CanAdapter
 from automotive.sync.errors import AutomotiveError
 from automotive.sync.protocols.uds import DataIdentifier, UDSClient, UDSConfig
-from automotive.sync.transports.isotp import IsoTPAdapter, IsoTPConfig
+from automotive.sync.transports.isotp import IsoTP, IsoTPConfig
 
 
-def get_version(adapter: Adapter, identifier: int) -> None:
+def get_version(adapter: CanAdapter, identifier: int) -> None:
     """Query each named DID for one ECU, retaining its configured transport."""
     # Lower timeout for the sync version since we scan each ECU individually and bus load is low
     config = IsoTPConfig(tx_id=identifier, timeout=0.05)
-    isotp = IsoTPAdapter(adapter, config)
+    isotp = IsoTP(adapter, config)
     uds = UDSClient(isotp, UDSConfig(p2_timeout=0.05))
 
     uds.tester_present()
@@ -25,7 +25,7 @@ def get_version(adapter: Adapter, identifier: int) -> None:
 
 def main() -> None:
     """Scan the Rust example's standard/extended address ranges sequentially."""
-    adapter = Adapter()
+    adapter = CanAdapter()
 
     standard_ids = range(0x700, 0x7F8)
     extended_ids = (0x18DA0000 + (i << 8) + 0xF1 for i in range(0x100))

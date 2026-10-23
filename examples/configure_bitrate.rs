@@ -4,7 +4,7 @@
 
 #[cfg(feature = "peak")]
 pub async fn run() -> automotive::Result<()> {
-    use automotive::adapters::peak::{Peak, PeakConfig};
+    use automotive::adapters::peak::{PeakAdapter, PeakConfig};
     use automotive::StreamExt;
 
     tracing_subscriber::fmt::init();
@@ -19,7 +19,7 @@ pub async fn run() -> automotive::Result<()> {
         })
         .build()?;
     println!("Resolved timing: {:?}", config.bitrate);
-    let adapter = Peak::new_async(config)?;
+    let adapter = PeakAdapter::new_async(config)?;
     let mut stream = adapter.recv();
 
     while let Some(frame) = stream.next().await {

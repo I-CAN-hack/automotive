@@ -3,7 +3,7 @@
 use automotive::adapters::socketcan::SocketCanConfig;
 use automotive::can::AsyncCanAdapter;
 use automotive::can::{Frame, Identifier};
-use automotive::transports::isotp::{IsoTPAdapter, IsoTPConfig};
+use automotive::transports::isotp::{IsoTP, IsoTPConfig};
 use automotive::StreamExt;
 use std::process::{Child, Command};
 
@@ -75,7 +75,7 @@ async fn vecu_spawn(adapter: &AsyncCanAdapter, config: VECUConfig) -> ChildGuard
 #[cfg(feature = "test-vcan")]
 async fn isotp_test_echo(msg_len: usize, config: VECUConfig) {
     let adapter =
-        automotive::adapters::socketcan::SocketCan::new_async(SocketCanConfig::new("vcan0"))
+        automotive::adapters::socketcan::SocketCanAdapter::new_async(SocketCanConfig::new("vcan0"))
             .unwrap();
     let _vecu = vecu_spawn(&adapter, config).await;
 
@@ -95,12 +95,12 @@ async fn isotp_test_echo(msg_len: usize, config: VECUConfig) {
     }
     let isotp_config = builder.build().unwrap();
 
-    let isotp = IsoTPAdapter::new(&adapter, isotp_config);
+    let isotp = IsoTP::new(&adapter, isotp_config);
 
     let mut stream = isotp.recv();
     // A separate socket observes wire order even when TX ACKs are emulated.
     let monitor =
-        automotive::adapters::socketcan::SocketCan::new_async(SocketCanConfig::new("vcan0"))
+        automotive::adapters::socketcan::SocketCanAdapter::new_async(SocketCanConfig::new("vcan0"))
             .unwrap();
     let mut can_stream = monitor.recv();
     let marker = Frame::new(0, Identifier::standard(0x123).unwrap(), &[]).unwrap();

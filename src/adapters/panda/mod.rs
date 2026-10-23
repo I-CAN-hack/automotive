@@ -54,7 +54,7 @@ struct PandaBitrateConfig {
 }
 
 /// Blocking implementation of the panda CAN adapter
-pub struct Panda {
+pub struct PandaAdapter {
     handle: rusb::DeviceHandle<rusb::GlobalContext>,
     timeout: std::time::Duration,
     dat: Vec<u8>,
@@ -67,17 +67,17 @@ struct Versions {
     can_health_version: u8,
 }
 
-unsafe impl Send for Panda {}
+unsafe impl Send for PandaAdapter {}
 
-impl Panda {
+impl PandaAdapter {
     /// Convenience function to create a new panda adapter and wrap in an [`AsyncCanAdapter`]
     pub fn new_async(config: PandaConfig) -> Result<AsyncCanAdapter> {
-        let panda = Panda::new(config)?;
+        let panda = PandaAdapter::new(config)?;
         Ok(AsyncCanAdapter::new(panda))
     }
 
     /// Connect to the first available panda. This function will set the safety mode to ALL_OUTPUT and clear all buffers.
-    pub fn new(config: PandaConfig) -> Result<Panda> {
+    pub fn new(config: PandaConfig) -> Result<PandaAdapter> {
         let bitrate_cfg = config.bitrate;
         let resolved_bitrate_cfg = resolve_bitrate_config(&bitrate_cfg)?;
         warn_if_non_default_sample_points(&bitrate_cfg);
@@ -92,7 +92,7 @@ impl Panda {
                 continue;
             }
 
-            let panda = Panda {
+            let panda = PandaAdapter {
                 dat: vec![],
                 handle: device.open()?,
                 timeout: std::time::Duration::from_millis(100),
@@ -236,7 +236,7 @@ impl Panda {
     }
 }
 
-impl CanAdapter for Panda {
+impl CanAdapter for PandaAdapter {
     /// Sends a buffer of CAN messages to the panda.
     fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
         if frames.is_empty() {

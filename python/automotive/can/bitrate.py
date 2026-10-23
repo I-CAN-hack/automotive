@@ -8,7 +8,7 @@ from .. import _native
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class AdapterBitTiming:
+class BitTiming:
     """Resolved timing for one CAN phase.
 
     Attributes:
@@ -36,8 +36,8 @@ class BitrateConfig:
     config's ``resolved_bitrate`` property. It reports Rust's calculation.
     """
 
-    nominal: AdapterBitTiming
-    data: AdapterBitTiming | None = None
+    nominal: BitTiming
+    data: BitTiming | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -93,6 +93,4 @@ class BitrateSettings:
 
 def _resolved(backend: str, settings: BitrateSettings | None) -> BitrateConfig:
     value = _native.resolve_bitrate(backend, settings)
-    return BitrateConfig(
-        AdapterBitTiming(**value["nominal"]), None if value["data"] is None else AdapterBitTiming(**value["data"])
-    )
+    return BitrateConfig(BitTiming(**value["nominal"]), None if value["data"] is None else BitTiming(**value["data"]))

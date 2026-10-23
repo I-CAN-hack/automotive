@@ -24,14 +24,14 @@ from ...protocols.uds import (
     UDSConfig,
 )
 from .._runtime import call, run
-from ..transports.isotp import IsoTPAdapter
+from ..transports import Transport
 
 
 class UDSClient:
     """A blocking diagnostic client retaining its transport and session timing.
 
     Args:
-        transport: Open synchronous software or native J2534 ISO-TP transport.
+        transport: Open synchronous message transport, such as software or native J2534 ISO-TP.
         config: Shared timing and validation settings; None uses Rust defaults.
 
     Calls on one transport are serialized by Rust. Results and exceptions match
@@ -48,7 +48,7 @@ class UDSClient:
         ConnectionError: The connection closed during an exchange.
     """
 
-    def __init__(self, transport: IsoTPAdapter, config: UDSConfig | None = None) -> None:
+    def __init__(self, transport: Transport, config: UDSConfig | None = None) -> None:
         self.transport = transport
         self._async = call(_uds.UDSClient, transport._async, config)
         self.config = self._async.config

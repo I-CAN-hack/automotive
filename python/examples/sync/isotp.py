@@ -1,14 +1,14 @@
 """Exchange short and segmented PDUs with an ECU at 0x7A1/0x7A9."""
 
-from automotive.sync.adapters import Adapter
-from automotive.sync.transports.isotp import IsoTPAdapter, IsoTPConfig
+from automotive.sync.adapters import CanAdapter
+from automotive.sync.transports.isotp import IsoTP, IsoTPConfig
 
 
 def main() -> None:
     """Send short and segmented requests, printing each response as hex."""
-    adapter = Adapter()
+    adapter = CanAdapter()
     config = IsoTPConfig(tx_id=0x7A1)
-    isotp = IsoTPAdapter(adapter, config)
+    isotp = IsoTP(adapter, config)
 
     stream = isotp.recv()
 

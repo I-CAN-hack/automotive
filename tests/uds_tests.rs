@@ -9,7 +9,7 @@ use automotive::protocols::uds::{
     DTCFormatIdentifier, ProtocolDeviation, RequestOutcome, RoutineControlType, ServiceIdentifier,
     UDSClient, UDSConfig,
 };
-use automotive::transports::isotp::{IsoTPAdapter, IsoTPConfig};
+use automotive::transports::isotp::{IsoTP, IsoTPConfig};
 use automotive::Error;
 use automotive::StreamExt;
 use std::process::{Child, Command};
@@ -55,15 +55,16 @@ fn suppression_config(strict: bool) -> UDSConfig {
 }
 
 fn vcan_adapter() -> AsyncCanAdapter {
-    automotive::adapters::socketcan::SocketCan::new_async(SocketCanConfig::new("vcan0")).unwrap()
+    automotive::adapters::socketcan::SocketCanAdapter::new_async(SocketCanConfig::new("vcan0"))
+        .unwrap()
 }
 
-fn suppression_transport(adapter: &AsyncCanAdapter) -> IsoTPAdapter<'_> {
+fn suppression_transport(adapter: &AsyncCanAdapter) -> IsoTP<'_> {
     let config = IsoTPConfig::builder(Identifier::standard(0x7a1).unwrap())
         .timeout(Duration::from_secs(2))
         .build()
         .unwrap();
-    IsoTPAdapter::new(adapter, config)
+    IsoTP::new(adapter, config)
 }
 
 fn assert_deviation(error: Error, expected: ProtocolDeviation, payload: &[u8]) {
@@ -83,7 +84,7 @@ fn assert_deviation(error: Error, expected: ProtocolDeviation, payload: &[u8]) {
 #[serial_test::serial]
 async fn uds_test_sids() {
     let adapter =
-        automotive::adapters::socketcan::SocketCan::new_async(SocketCanConfig::new("vcan0"))
+        automotive::adapters::socketcan::SocketCanAdapter::new_async(SocketCanConfig::new("vcan0"))
             .unwrap();
     let _vecu = vecu_spawn(&adapter).await;
 
@@ -92,7 +93,7 @@ async fn uds_test_sids() {
         .build()
         .unwrap();
 
-    let isotp = IsoTPAdapter::new(&adapter, isotp_config);
+    let isotp = IsoTP::new(&adapter, isotp_config);
     let uds_config = UDSConfig::builder()
         .p2_timeout(Duration::from_secs(1))
         .build();

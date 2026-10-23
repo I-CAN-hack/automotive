@@ -6,8 +6,9 @@ from typing import Self
 
 from .. import _native
 from .._base import AsyncResource
-from ..transports.isotp import IsoTPAdapter, IsoTPConfig
-from . import Adapter, J2534Config
+from ..transports import Transport
+from ..transports.isotp import IsoTPConfig
+from . import J2534Config
 
 
 class J2534Device(AsyncResource[_native._Device]):
@@ -22,7 +23,7 @@ class J2534Device(AsyncResource[_native._Device]):
         super().__init__(native)
 
 
-class J2534NativeIsoTpTransport(IsoTPAdapter):
+class J2534NativeIsoTP(Transport):
     """Firmware-managed ISO-TP transport; use the asynchronous open factory.
 
     The vendor DLL must support concurrent read/write calls. Native J2534 uses
@@ -30,10 +31,11 @@ class J2534NativeIsoTpTransport(IsoTPAdapter):
     configure a native ISO15765 channel. Other fields follow Rust behavior.
     """
 
+    config: IsoTPConfig
     adapter_config: J2534Config = J2534Config()
 
-    def __new__(cls, adapter: Adapter, config: IsoTPConfig) -> Self:
-        raise TypeError("use await J2534NativeIsoTpTransport.open(config)")
+    def __new__(cls, config: IsoTPConfig, adapter_config: J2534Config | None = None) -> Self:
+        raise TypeError("use await J2534NativeIsoTP.open(config)")
 
     @classmethod
     async def open(cls, config: IsoTPConfig, adapter_config: J2534Config | None = None) -> Self:
@@ -82,4 +84,4 @@ class J2534NativeIsoTpTransport(IsoTPAdapter):
         return J2534Device(await self._native.into_device())
 
 
-__all__ = ["J2534Config", "J2534Device", "J2534NativeIsoTpTransport"]
+__all__ = ["J2534Config", "J2534Device", "J2534NativeIsoTP"]

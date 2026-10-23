@@ -1,14 +1,14 @@
 """Read software identification from a diagnostic ECU at transmit ID 0x7A1."""
 
-from automotive.sync.adapters import Adapter
+from automotive.sync.adapters import CanAdapter
 from automotive.sync.protocols.uds import DataIdentifier, SessionType, UDSClient
-from automotive.sync.transports.isotp import IsoTPAdapter
+from automotive.sync.transports.isotp import IsoTP
 
 
 def main() -> None:
     """Use defaults, select a session, and read an ECU data identifier."""
-    adapter = Adapter()
-    isotp = IsoTPAdapter.from_id(adapter, 0x7A1)
+    adapter = CanAdapter()
+    isotp = IsoTP.from_id(adapter, 0x7A1)
     uds = UDSClient(isotp)
     uds.tester_present()
     uds.diagnostic_session_control(SessionType.EXTENDED_DIAGNOSTIC)

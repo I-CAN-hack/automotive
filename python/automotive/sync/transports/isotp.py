@@ -4,16 +4,15 @@ from __future__ import annotations
 
 from typing import Self
 
-from ..._base import Buffer
 from ...transports import isotp as _isotp
 from ...transports.isotp import IsoTPConfig
-from .._base import Receiver, Resource
-from .._runtime import call, run
-from ..adapters import Adapter
+from .._runtime import call
+from ..adapters import CanAdapter
 from ..can import Identifier
+from . import Transport
 
 
-class IsoTPAdapter(Resource[_isotp.IsoTPAdapter]):
+class IsoTP(Transport):
     """A blocking complete-message ISO-TP transport retaining its CAN adapter.
 
     Args:
@@ -23,10 +22,15 @@ class IsoTPAdapter(Resource[_isotp.IsoTPAdapter]):
     Closing this transport leaves the CAN adapter open. Closing the adapter
     invalidates this transport and its clients. Drop or close raw ISO-TP receivers
     before issuing UDS requests on the same transport.
+    Sending an empty or oversized payload raises ValueError. Framing and peer
+    rejection failures raise IsoTPError; receive and transmit deadlines raise
+    TimeoutError.
     """
 
-    def __init__(self, adapter: Adapter, config: IsoTPConfig) -> None:
-        super().__init__(call(_isotp.IsoTPAdapter, adapter._async, config))
+    _async: _isotp.IsoTP
+
+    def __init__(self, adapter: CanAdapter, config: IsoTPConfig) -> None:
+        super().__init__(call(_isotp.IsoTP, adapter._async, config))
 
     @property
     def config(self) -> IsoTPConfig:
@@ -34,7 +38,7 @@ class IsoTPAdapter(Resource[_isotp.IsoTPAdapter]):
         return self._async.config
 
     @classmethod
-    def from_id(cls, adapter: Adapter, tx_id: int | Identifier) -> Self:
+    def from_id(cls, adapter: CanAdapter, tx_id: int | Identifier) -> Self:
         """Create a transport with defaults and a Rust-derived receive ID.
 
         Args:
@@ -43,27 +47,5 @@ class IsoTPAdapter(Resource[_isotp.IsoTPAdapter]):
         """
         return cls(adapter, IsoTPConfig(tx_id=tx_id))
 
-    def send(self, data: Buffer) -> None:
-        """Transmit one nonempty PDU, blocking until Rust completes the transfer.
 
-        Args:
-            data: Bytes, bytearray, or a contiguous byte-oriented memoryview.
-
-        Raises:
-            ValueError: The payload is empty or exceeds the protocol limit.
-            TimeoutError: Confirmation or required flow control timed out.
-            IsoTPError: The peer rejected the transfer or framing failed.
-        """
-        run(self._async.send, data)
-
-    def recv(self) -> Receiver[bytes]:
-        """Subscribe immediately to complete PDUs as bytes.
-
-        Returns:
-            A blocking iterator supporting with and close(). Subscribe before
-            sending. A receive timeout raises TimeoutError; next() can resume.
-        """
-        return Receiver(call(self._async.recv))
-
-
-__all__ = ["IsoTPAdapter", "IsoTPConfig"]
+__all__ = ["IsoTP", "IsoTPConfig"]

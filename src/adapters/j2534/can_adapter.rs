@@ -40,20 +40,20 @@ const J2534_TIMING_CONST: AdapterTimingConst = AdapterTimingConst {
 /// calls from the existing `AsyncCanAdapter` background thread. Successful
 /// writes enqueue a synthetic loopback frame, matching the behaviour expected
 /// by the generic async wrapper.
-pub struct J2534CanAdapter {
+pub struct J2534Adapter {
     loopback_queue: VecDeque<Frame>,
     channel: J2534Channel,
     connected: bool,
     device: Option<J2534Device>,
 }
 
-impl J2534CanAdapter {
-    /// Creates a new [`AsyncCanAdapter`] from a J2534CanAdapter
+impl J2534Adapter {
+    /// Creates a new [`AsyncCanAdapter`] from a J2534Adapter
     pub fn new_async(
         dll_path: Option<&str>,
         bitrate_cfg: BitrateConfig,
     ) -> Result<AsyncCanAdapter> {
-        let socket = J2534CanAdapter::new(dll_path, bitrate_cfg)?;
+        let socket = J2534Adapter::new(dll_path, bitrate_cfg)?;
         Ok(AsyncCanAdapter::new(socket))
     }
 
@@ -124,7 +124,7 @@ impl J2534CanAdapter {
     }
 }
 
-impl Drop for J2534CanAdapter {
+impl Drop for J2534Adapter {
     fn drop(&mut self) {
         self.shutdown_channel();
         // Drop the device (calls PassThruClose).
@@ -132,7 +132,7 @@ impl Drop for J2534CanAdapter {
     }
 }
 
-impl CanAdapter for J2534CanAdapter {
+impl CanAdapter for J2534Adapter {
     fn send(&mut self, frames: &mut VecDeque<Frame>) -> crate::Result<()> {
         if !self.connected {
             return Err(crate::Error::Disconnected);

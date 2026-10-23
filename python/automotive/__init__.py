@@ -1,6 +1,6 @@
 """Synchronous and asynchronous CAN, ISO-TP, and UDS powered by Rust.
 
-Start with ``adapters.Adapter()``, ``IsoTPAdapter.from_id()``, and
+Start with ``adapters.CanAdapter()``, ``IsoTP.from_id()``, and
 ``UDSClient(transport)``. Explicit config objects expose advanced settings.
 Adapter constructors open hardware synchronously. Sending and receiving are
 asynchronous. Hardware is released when its last owner is dropped; ``aclose()``

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use automotive::can::AsyncCanAdapter;
-use automotive::transports::isotp::{IsoTPAdapter, IsoTPConfig};
+use automotive::transports::isotp::{IsoTP, IsoTPConfig};
 use automotive::Result;
 
 use automotive::protocols::uds::DataIdentifier;
@@ -17,7 +17,7 @@ async fn get_version(adapter: &AsyncCanAdapter, identifier: u32) -> Result<()> {
         .timeout(Duration::from_secs(1))
         .build()?;
 
-    let isotp = IsoTPAdapter::new(adapter, config);
+    let isotp = IsoTP::new(adapter, config);
 
     let config = UDSConfig::builder()
         .p2_timeout(Duration::from_secs(1))

@@ -1,4 +1,4 @@
-use super::Peak;
+use super::PeakAdapter;
 use crate::adapters::{default_bitrate, default_tx_timeout};
 use crate::can::bitrate::{BitrateBuilder, BitrateConfig, BitrateError};
 use std::time::Duration;
@@ -48,7 +48,9 @@ impl PeakConfigBuilder {
     /// Configure bus timing using PEAK's timing capabilities, starting without
     /// preset timing. Setting only a nominal bitrate selects classic CAN.
     pub fn bitrate(mut self, configure: impl FnOnce(BitrateBuilder) -> BitrateBuilder) -> Self {
-        let bitrate = self.bitrate.unwrap_or_else(BitrateBuilder::new::<Peak>);
+        let bitrate = self
+            .bitrate
+            .unwrap_or_else(BitrateBuilder::new::<PeakAdapter>);
         self.bitrate = Some(configure(bitrate));
         self
     }
@@ -69,7 +71,7 @@ impl PeakConfigBuilder {
     pub fn build(self) -> Result<PeakConfig, BitrateError> {
         let bitrate = self
             .bitrate
-            .unwrap_or_else(|| default_bitrate(BitrateBuilder::new::<Peak>()));
+            .unwrap_or_else(|| default_bitrate(BitrateBuilder::new::<PeakAdapter>()));
         Ok(PeakConfig {
             bitrate: bitrate.build()?,
             tx_timeout: self.tx_timeout,

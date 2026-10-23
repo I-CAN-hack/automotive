@@ -63,7 +63,7 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
         let config = crate::adapters::panda::PandaConfig::builder()
             .build()
             .unwrap();
-        if let Ok(panda) = crate::adapters::panda::Panda::new_async(config) {
+        if let Ok(panda) = crate::adapters::panda::PandaAdapter::new_async(config) {
             return Ok(panda);
         }
     }
@@ -73,7 +73,7 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
         let config = crate::adapters::peak::PeakConfig::builder()
             .build()
             .unwrap();
-        if let Ok(peak) = crate::adapters::peak::Peak::new_async(config) {
+        if let Ok(peak) = crate::adapters::peak::PeakAdapter::new_async(config) {
             return Ok(peak);
         }
     }
@@ -83,7 +83,7 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
         // TODO: iterate over all available SocketCAN adapters to also find things like vcan0
         for iface in ["can0", "vcan0"] {
             let config = crate::adapters::socketcan::SocketCanConfig::builder(iface).build();
-            if let Ok(socket) = crate::adapters::socketcan::SocketCan::new_async(config) {
+            if let Ok(socket) = crate::adapters::socketcan::SocketCanAdapter::new_async(config) {
                 return Ok(socket);
             }
         }
@@ -95,7 +95,7 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
             .bitrate(default_bitrate)
             .build()
             .unwrap();
-        if let Ok(adapter) = crate::adapters::vector::VectorCan::new_async(config) {
+        if let Ok(adapter) = crate::adapters::vector::VectorAdapter::new_async(config) {
             return Ok(adapter);
         };
     }
@@ -103,12 +103,12 @@ pub fn get_adapter() -> Result<crate::can::AsyncCanAdapter, crate::error::Error>
     #[cfg(all(target_os = "windows", feature = "j2534"))]
     {
         let bitrate_cfg =
-            crate::can::bitrate::BitrateBuilder::new::<crate::adapters::j2534::J2534CanAdapter>()
+            crate::can::bitrate::BitrateBuilder::new::<crate::adapters::j2534::J2534Adapter>()
                 .bitrate(500_000)
                 .build()
                 .unwrap();
 
-        if let Ok(adapter) = crate::adapters::j2534::J2534CanAdapter::new_async(None, bitrate_cfg) {
+        if let Ok(adapter) = crate::adapters::j2534::J2534Adapter::new_async(None, bitrate_cfg) {
             return Ok(adapter);
         };
     }

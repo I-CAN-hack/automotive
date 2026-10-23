@@ -1,4 +1,4 @@
-use super::VectorCan;
+use super::VectorAdapter;
 use crate::adapters::default_tx_timeout;
 use crate::can::bitrate::{BitrateBuilder, BitrateConfig, BitrateError};
 use std::time::Duration;
@@ -72,7 +72,7 @@ impl VectorConfigBuilder {
     pub fn bitrate(mut self, configure: impl FnOnce(BitrateBuilder) -> BitrateBuilder) -> Self {
         let bitrate = self
             .bitrate
-            .unwrap_or_else(BitrateBuilder::new::<VectorCan>);
+            .unwrap_or_else(BitrateBuilder::new::<VectorAdapter>);
         self.bitrate = Some(configure(bitrate));
         self
     }

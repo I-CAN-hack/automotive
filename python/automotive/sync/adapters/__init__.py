@@ -20,7 +20,7 @@ from .._runtime import call, run
 from ..can import Frame
 
 
-class Adapter(Resource[_adapters.Adapter]):
+class CanAdapter(Resource[_adapters.CanAdapter]):
     """Open a CAN adapter immediately, using discovery when no config is supplied.
 
     Args:
@@ -34,7 +34,7 @@ class Adapter(Resource[_adapters.Adapter]):
     """
 
     def __init__(self, config: AdapterConfig | None = None) -> None:
-        super().__init__(_adapters.Adapter(config))
+        super().__init__(_adapters.CanAdapter(config))
 
     @property
     def config(self) -> AdapterConfig | None:
@@ -74,7 +74,7 @@ class Adapter(Resource[_adapters.Adapter]):
         return Receiver(call(self._async.recv))
 
 
-class SocketCanAdapter(Adapter):
+class SocketCanAdapter(CanAdapter):
     """Open a Linux SocketCAN adapter with ``SocketCanAdapter('can0')``.
 
     Args:
@@ -88,7 +88,7 @@ class SocketCanAdapter(Adapter):
         super().__init__(_adapter_config(config, SocketCanConfig))
 
 
-class PandaAdapter(Adapter):
+class PandaAdapter(CanAdapter):
     """Open a panda USB adapter immediately.
 
     Args:
@@ -99,7 +99,7 @@ class PandaAdapter(Adapter):
         super().__init__(_adapter_config(config, PandaConfig))
 
 
-class PeakAdapter(Adapter):
+class PeakAdapter(CanAdapter):
     """Open a PEAK PCAN-USB FD adapter immediately.
 
     Args:
@@ -110,7 +110,7 @@ class PeakAdapter(Adapter):
         super().__init__(_adapter_config(config, PeakConfig))
 
 
-class VectorAdapter(Adapter):
+class VectorAdapter(CanAdapter):
     """Open a Windows Vector XL adapter immediately.
 
     Args:
@@ -121,13 +121,13 @@ class VectorAdapter(Adapter):
         super().__init__(_adapter_config(config, VectorConfig))
 
 
-class J2534Adapter(Adapter):
+class J2534Adapter(CanAdapter):
     """Open a Windows J2534 raw CAN adapter immediately.
 
     Args:
         config: Reusable J2534Config; None discovers a DLL and uses Rust defaults.
 
-    Use J2534NativeIsoTpTransport for firmware-managed ISO-TP.
+    Use J2534NativeIsoTP for firmware-managed ISO-TP.
     """
 
     def __init__(self, config: J2534Config | None = None) -> None:
@@ -135,8 +135,8 @@ class J2534Adapter(Adapter):
 
 
 __all__ = [
-    "Adapter",
     "AdapterConfig",
+    "CanAdapter",
     "J2534Adapter",
     "J2534Config",
     "PandaAdapter",
