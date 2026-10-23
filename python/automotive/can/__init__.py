@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import IntEnum
+from numbers import Number
 from typing import Any, Self
 
 from .. import _native
@@ -21,6 +22,9 @@ class ErrorFlag(IntEnum):
 @dataclass(frozen=True, slots=True)
 class Identifier:
     """A validated CAN arbitration ID, preserving its wire format.
+
+    Equality with a number compares the raw value, so ``frame.id == 0x123``
+    works directly. Equality between identifiers also compares the wire format.
 
     Args:
         value: Unsigned arbitration ID. Standard IDs fit in 11 bits;
@@ -54,6 +58,16 @@ class Identifier:
     def __index__(self) -> int:
         """Allow this identifier wherever Python accepts an integer index."""
         return self.value
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Identifier):
+            return self.value == other.value and self.is_extended == other.is_extended
+        if isinstance(other, Number):
+            return self.value == other
+        return NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self.value)
 
 
 def _identifier(value: int | Identifier) -> Identifier:

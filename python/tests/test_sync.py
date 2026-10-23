@@ -22,7 +22,9 @@ async def test_can_frame_round_trip() -> None:
     try:
         with SocketCanAdapter("vcan0") as monitor, monitor.recv() as frames:
             await asyncio.to_thread(sender.send, frame)
-            assert await asyncio.wait_for(asyncio.to_thread(next, frames), 2) == frame
+            received = await asyncio.wait_for(asyncio.to_thread(lambda: next(frames)), 2)
+            assert received.id == 0x123
+            assert received == frame
     finally:
         sender.close()
 
