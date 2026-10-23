@@ -44,7 +44,7 @@ dependencies = [
 
 [[package]]
 name = "automotive"
-version = "0.5.0-alpha.2"
+version = "0.5.0-alpha.3"
 dependencies = [
  "arrayvec",
  "async-stream",
@@ -70,7 +70,7 @@ dependencies = [
 
 [[package]]
 name = "automotive-python"
-version = "0.5.0-alpha.2"
+version = "0.5.0-alpha.3"
 dependencies = [
  "automotive",
  "futures",
