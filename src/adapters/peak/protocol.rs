@@ -89,6 +89,19 @@ pub fn cmd_set_fd_iso(channel: u8, iso: bool) -> Command {
     cmd
 }
 
+/// Enable or disable the USB fast-forward option.
+pub fn cmd_set_fast_forward(channel: u8, enabled: bool) -> Command {
+    let opcode = if enabled {
+        CMD_SET_EN_OPTION
+    } else {
+        CMD_CLR_DIS_OPTION
+    };
+    let mut cmd = command(channel, opcode);
+    // USB options use the final word, separate from the uCAN option mask.
+    cmd[6..8].copy_from_slice(&USB_OPTION_FAST_FWD.to_le_bytes());
+    cmd
+}
+
 /// Accept-all entry for one of the 64 standard-ID filter rows.
 pub fn cmd_filter_std_row(channel: u8, idx: u16, mask: u32) -> Command {
     let mut cmd = command(channel, CMD_FILTER_STD);
@@ -273,6 +286,18 @@ mod tests {
         assert_eq!(opcode_channel(1, CMD_NORMAL_MODE), 0x1002);
         // Extended commands keep their opcode in the low bits.
         assert_eq!(opcode_channel(0, CMD_CLOCK_SET), 0x080);
+    }
+
+    #[test]
+    fn fast_forward_uses_usb_option_mask() {
+        assert_eq!(
+            cmd_set_fast_forward(1, true),
+            [0x0b, 0x10, 0, 0, 0, 0, 0, 0x20]
+        );
+        assert_eq!(
+            cmd_set_fast_forward(1, false),
+            [0x0c, 0x10, 0, 0, 0, 0, 0, 0x20]
+        );
     }
 
     #[test]

@@ -89,6 +89,9 @@ pub const WRERRCNT_RX_ENABLE: u16 = 0x8000;
 /// Option bit selecting ISO CAN-FD framing.
 pub const OPTION_CAN_FD_ISO: u16 = 0x0004;
 
+/// USB option bit for fast-forward mode.
+pub const USB_OPTION_FAST_FWD: u16 = 0x2000;
+
 /// uCAN message types (the `type` field of a record).
 pub const MSG_CAN_RX: u16 = 0x0001;
 pub const MSG_ERROR: u16 = 0x0002;

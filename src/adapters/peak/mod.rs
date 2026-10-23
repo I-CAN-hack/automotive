@@ -31,7 +31,8 @@ use tracing::{info, warn};
 
 const CMD_TIMEOUT: Duration = Duration::from_millis(1000);
 const TX_TIMEOUT: Duration = Duration::from_millis(1000);
-const RX_TIMEOUT: Duration = Duration::from_millis(5);
+// Keep an idle receive from delaying the worker's next send for several ms.
+const RX_TIMEOUT: Duration = Duration::from_millis(1);
 const FLUSH_TIMEOUT: Duration = Duration::from_millis(10);
 
 /// Maximum number of command records per USB transfer, leaving room for the
@@ -244,6 +245,11 @@ impl PeakAdapter {
 
         // Bit timing can only be set while in reset (bus-off) mode.
         self.send_commands(&[protocol::cmd_reset_mode(ch)])?;
+        // Tell the USB CANFD interfaces to transfer the received frames as
+        // soon as they arrive rather than waiting a while to agglomerate them
+        // and thus minimize the USB traffic. Its default value is 0 (no fast
+        // forward).
+        self.send_commands(&[protocol::cmd_set_fast_forward(ch, true)])?;
         self.send_commands(&[protocol::cmd_timing_slow(ch, &cfg.nominal)])?;
         if let Some(data) = &cfg.data {
             self.send_commands(&[protocol::cmd_timing_fast(ch, data)])?;
@@ -407,6 +413,8 @@ impl Drop for PeakAdapter {
     fn drop(&mut self) {
         // Best-effort: take the bus down and tell the device the driver is gone.
         let _ = self.set_bus_off();
+        // This USB option persists across host drivers; restore its default.
+        let _ = self.send_commands(&[protocol::cmd_set_fast_forward(self.channel, false)]);
         let _ = self.set_driver_loaded(false);
     }
 }
