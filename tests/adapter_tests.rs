@@ -117,22 +117,16 @@ fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
         }
     }
 
-    let start = std::time::Instant::now();
-
-    let mut received: Vec<Frame> = vec![];
-    while received.len() < frames.len()
-        && start.elapsed() < Duration::from_millis(BULK_SYNC_TIMEOUT_MS)
-    {
-        let rx = adapter.recv().unwrap();
-        let rx: Vec<Frame> = rx.into_iter().filter(|frame| frame.loopback).collect();
-
-        for frame in rx {
-            let mut copy = frame.clone();
-            copy.loopback = false;
-            received.push(copy);
-        }
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    let received: Vec<Frame> = adapter
+        .recv_for(Duration::from_millis(BULK_SYNC_TIMEOUT_MS))
+        .unwrap()
+        .into_iter()
+        .filter(|frame| frame.loopback)
+        .map(|mut frame| {
+            frame.loopback = false;
+            frame
+        })
+        .collect();
 
     assert_eq!(
         frames.len(),
@@ -294,6 +288,53 @@ async fn vcan_bulk_send_async() {
         automotive::adapters::socketcan::SocketCanAdapter::new_async(SocketCanConfig::new("vcan0"))
             .unwrap();
     bulk_send(&adapter).await;
+}
+
+#[cfg(feature = "test-vcan")]
+#[tokio::test]
+#[serial_test::serial]
+async fn vcan_recv_for() {
+    use automotive::adapters::socketcan::SocketCanAdapter;
+    use automotive::StreamExt;
+
+    let mut raw = SocketCanAdapter::new(SocketCanConfig::new("vcan0")).unwrap();
+    let adapter = SocketCanAdapter::new_async(SocketCanConfig::new("vcan0")).unwrap();
+    let sender = SocketCanAdapter::new_async(SocketCanConfig::new("vcan0")).unwrap();
+    let mut independent = adapter.recv();
+    let frames = vec![
+        Frame::new(0, Identifier::standard(0x123).unwrap(), b"classic").unwrap(),
+        Frame::new(0, Identifier::extended(0x123).unwrap(), b"extended").unwrap(),
+        Frame::builder(Identifier::standard(0x345).unwrap())
+            .fd(true)
+            .brs(true)
+            .data(&[0xaa; 12])
+            .build()
+            .unwrap(),
+        Frame::remote(0, Identifier::standard(0x321).unwrap(), 8).unwrap(),
+    ];
+
+    let transmit = async {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        for frame in &frames {
+            sender.send(frame).await.unwrap();
+        }
+    };
+    let (received, ()) = tokio::join!(adapter.recv_for(Duration::from_millis(100)), transmit);
+    assert_eq!(received, frames);
+    assert_eq!(raw.recv_for(Duration::from_millis(5)).unwrap(), frames);
+    // Timed collection leaves other receive subscriptions untouched.
+    for frame in &frames {
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), independent.next())
+                .await
+                .unwrap()
+                .as_ref(),
+            Some(frame)
+        );
+    }
+
+    assert!(raw.recv_for(Duration::from_millis(5)).unwrap().is_empty());
+    assert!(adapter.recv_for(Duration::from_millis(5)).await.is_empty());
 }
 
 #[cfg(feature = "test-vcan")]

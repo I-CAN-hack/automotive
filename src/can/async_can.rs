@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use crate::can::{CanAdapter, Frame, Identifier};
-use crate::{Error, Result, Stream};
+use crate::{Error, Result, Stream, StreamExt};
 use async_stream::stream;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
@@ -319,6 +319,23 @@ impl AsyncCanAdapter {
     /// Receive all frames.
     pub fn recv(&self) -> impl Stream<Item = Frame> {
         self.recv_filter(|_| true)
+    }
+
+    /// Collect frames, including transmit echoes, for the given duration.
+    ///
+    /// Creates an independent subscription when polled and closes it on return
+    /// or cancellation. Returns frames in receive order, or finishes early if
+    /// the adapter closes. Existing receive subscriptions are unaffected.
+    pub async fn recv_for(&self, duration: Duration) -> Vec<Frame> {
+        let mut stream = self.recv();
+        let mut frames = Vec::new();
+        let _ = tokio::time::timeout(duration, async {
+            while let Some(frame) = stream.next().await {
+                frames.push(frame);
+            }
+        })
+        .await;
+        frames
     }
 
     /// Receive frames that match a filter. Useful in combination with stream adapters.
