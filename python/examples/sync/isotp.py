@@ -7,6 +7,7 @@ from automotive.sync.transports.isotp import IsoTP, IsoTPConfig
 def main() -> None:
     """Send short and segmented requests, printing each response as hex."""
     adapter = CanAdapter()
+    # Set batch_send=False if the adapter reorders queued frames.
     config = IsoTPConfig(tx_id=0x7A1)
     isotp = IsoTP(adapter, config)
 

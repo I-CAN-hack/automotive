@@ -142,6 +142,90 @@ async fn sender_applies_each_blocks_size_and_stmin() {
 }
 
 #[tokio::test]
+async fn zero_stmin_queues_a_block_and_awaits_all_transmit_confirmations() {
+    let (adapter, mut peer) = channel();
+    let config = config();
+    let isotp = IsoTP::new(&adapter, config);
+    let (done, mut completion) = tokio::sync::oneshot::channel();
+    let sending = async {
+        let result = isotp.send(&[0xaa; 34]).await;
+        let _ = done.send(());
+        result
+    };
+    let exchange = async {
+        assert_eq!(peer.next().await.frame.data()[0] & 0xf0, 0x10);
+        peer.inject(received(&config, &[0x30, 2, 0]));
+
+        // Both CFs may be submitted before USB returns either CAN echo.
+        let first = peer.outgoing.recv().await.unwrap();
+        let second = peer.outgoing.recv().await.unwrap();
+        assert_eq!(first.frame.data()[0], 0x21);
+        assert_eq!(second.frame.data()[0], 0x22);
+        peer.assert_no_transmission().await;
+
+        // FC can reach the host before the preceding block's echoes. The
+        // sender must still confirm that block before sending the next one.
+        peer.inject(received(&config, &[0x30, 0, 0]));
+        peer.assert_no_transmission().await;
+        peer.acknowledge(&first.frame);
+        peer.acknowledge(&second.frame);
+
+        let third = peer.outgoing.recv().await.unwrap();
+        let fourth = peer.outgoing.recv().await.unwrap();
+        assert_eq!(third.frame.data()[0], 0x23);
+        assert_eq!(fourth.frame.data()[0], 0x24);
+        peer.acknowledge(&third.frame);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), &mut completion)
+                .await
+                .is_err()
+        );
+        peer.acknowledge(&fourth.frame);
+    };
+    let (result, ()) = within(async { tokio::join!(sending, exchange) }).await;
+    result.unwrap();
+}
+
+#[tokio::test]
+async fn disabling_batch_send_confirms_each_zero_stmin_frame_before_the_next() {
+    let (adapter, mut peer) = channel();
+    let mut config = config();
+    config.batch_send = false;
+    let isotp = IsoTP::new(&adapter, config);
+    let (done, mut completion) = tokio::sync::oneshot::channel();
+    let sending = async {
+        let result = isotp.send(&[0xaa; 34]).await;
+        let _ = done.send(());
+        result
+    };
+    let exchange = async {
+        assert_eq!(peer.next().await.frame.data()[0] & 0xf0, 0x10);
+        peer.inject(received(&config, &[0x30, 2, 0]));
+
+        for sn in 1..=4 {
+            let sent = peer.outgoing.recv().await.unwrap();
+            assert_eq!(sent.frame.data()[0], 0x20 | sn);
+            if sn == 2 {
+                // Even an early FC cannot bypass the pending confirmation.
+                peer.inject(received(&config, &[0x30, 0, 0]));
+            }
+            if sn == 4 {
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(20), &mut completion)
+                        .await
+                        .is_err()
+                );
+            } else {
+                peer.assert_no_transmission().await;
+            }
+            peer.acknowledge(&sent.frame);
+        }
+    };
+    let (result, ()) = within(async { tokio::join!(sending, exchange) }).await;
+    result.unwrap();
+}
+
+#[tokio::test]
 async fn receive_ignores_other_buses_during_start_and_reassembly() {
     let (adapter, mut peer) = channel();
     let config = config();

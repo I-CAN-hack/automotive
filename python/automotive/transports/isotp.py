@@ -34,6 +34,9 @@ class IsoTPConfig:
             CAN confirmation, flow control, consecutive frames, and idle receive.
         separation_time_min: Transmit STmin override in seconds; None follows
             the peer's advertised value.
+        batch_send: Batch consecutive frames when transmit STmin is zero,
+            default True. Set False for adapters that reorder queued frames;
+            each frame is then confirmed before submitting the next one.
         ext_address: Optional transmit and default receive address byte.
         rx_ext_address: Alternate receive address byte; requires ext_address.
         max_dlen: Transmit data length including the address byte. None selects
@@ -58,6 +61,7 @@ class IsoTPConfig:
     padding: int | None = _DEFAULTS["padding"]
     timeout: float = _DEFAULTS["timeout"]
     separation_time_min: float | None = None
+    batch_send: bool = _DEFAULTS["batch_send"]
     ext_address: int | None = None
     rx_ext_address: int | None = None
     max_dlen: int | None = None

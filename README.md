@@ -243,6 +243,12 @@ Defaults are bus zero, Classical CAN, padding enabled, a one-second transport
 timeout, unlimited receive blocks, and zero receive STmin.
 Transmitted consecutive frames follow the peer's block size and
 STmin; `.separation_time_min(...)` overrides transmit STmin.
+With zero transmit STmin, consecutive frames are queued in bounded batches
+within the peer's block limit. Every frame is confirmed before completing the
+block or transfer, without adding a timer delay between frames.
+Batching is enabled by default. Set `.batch_send(false)` for adapters that
+reorder queued frames; each consecutive frame is then confirmed before
+submitting the next one.
 
 `.timeout(...)` applies independently to CAN transmit confirmation (N_As/N_Ar),
 required flow control (N_Bs), consecutive frames (N_Cr), and idle reception.

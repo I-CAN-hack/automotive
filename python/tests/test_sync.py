@@ -28,8 +28,9 @@ async def test_can_frame_round_trip() -> None:
 
 
 @pytest.mark.parametrize("fd", [False, True])
-async def test_isotp_segmented_echo_and_receive_timeout(ecu_factory: EcuFactory, fd: bool) -> None:
-    config = IsoTPConfig(tx_id=0x7A1, fd=fd, block_size=2, timeout=2.0)
+@pytest.mark.parametrize("batch_send", [True, False])
+async def test_isotp_segmented_echo_and_receive_timeout(ecu_factory: EcuFactory, fd: bool, batch_send: bool) -> None:
+    config = IsoTPConfig(tx_id=0x7A1, fd=fd, batch_send=batch_send, block_size=2, timeout=2.0)
     async with ecu_factory(script="vecu_isotp.py", config=config, bs=2):
 
         def exchange() -> None:

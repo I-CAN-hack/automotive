@@ -8,6 +8,7 @@ async fn main() -> automotive::Result<()> {
     tracing_subscriber::fmt::init();
 
     let adapter = automotive::adapters::get_adapter()?;
+    // Use .batch_send(false) if the adapter reorders queued frames.
     let config = IsoTPConfig::builder(Identifier::standard(0x7a1)?).build()?;
     let isotp = IsoTP::new(&adapter, config);
 

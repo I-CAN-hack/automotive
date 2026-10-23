@@ -147,6 +147,7 @@ pub fn isotp(obj: &Bound<'_, PyAny>) -> PyResult<IsoTPConfig> {
     let mut builder = IsoTPConfig::builder(identifier(&obj.getattr("tx_id")?)?)
         .bus(field!(obj, bus, u8))
         .fd(field!(obj, fd, bool))
+        .batch_send(field!(obj, batch_send, bool))
         .timeout(duration(field!(obj, timeout, f64))?)
         .block_size(field!(obj, block_size, u8))
         .receive_separation_time_min(duration(field!(obj, receive_separation_time_min, f64))?);
@@ -399,6 +400,7 @@ fn defaults(py: Python<'_>) -> PyResult<Py<PyAny>> {
     values.set_item("timeout", config.timeout.as_secs_f64())?;
     values.set_item("bus", config.bus)?;
     values.set_item("fd", config.fd)?;
+    values.set_item("batch_send", config.batch_send)?;
     values.set_item("block_size", config.block_size)?;
     values.set_item(
         "receive_separation_time_min",

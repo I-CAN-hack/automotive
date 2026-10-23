@@ -93,6 +93,19 @@ async def _echo_and_capture(
         assert_blocks(frames, rx, tx, receive_bs, offset)
 
 
+@pytest.mark.parametrize("batch_send", [True, False])
+@pytest.mark.parametrize("bs", [0, 3])
+async def test_zero_stmin_segmented_echo(ecu_factory: EcuFactory, batch_send: bool, bs: int) -> None:
+    config = IsoTPConfig(tx_id=0x7A1, batch_send=batch_send, timeout=2.0)
+    async with (
+        ecu_factory(script="vecu_isotp.py", config=config, bs=bs) as ecu,
+        ecu.transport.recv() as messages,
+    ):
+        payload = bytes(range(256)) * 4
+        await ecu.transport.send(payload)
+        assert await asyncio.wait_for(anext(messages), 5) == payload
+
+
 async def test_default_configuration_and_subscription_before_send(ecu_factory: EcuFactory) -> None:
     async with (
         ecu_factory(script="vecu_isotp.py", config=IsoTPConfig(tx_id=0x7A1)) as ecu,

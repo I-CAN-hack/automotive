@@ -101,6 +101,11 @@ pub struct IsoTPConfig {
     /// Override the peer's STmin for transmitted consecutive frames.
     /// `None` follows the peer's flow-control settings.
     pub separation_time_min: Option<Duration>,
+    /// Queue consecutive frames in batches when transmit STmin is zero.
+    /// Enabled by default. Disable for adapters that reorder queued frames;
+    /// each frame is then confirmed before submitting the next one.
+    #[cfg_attr(feature = "serde", serde(default = "default_batch_send"))]
+    pub batch_send: bool,
     pub fd: bool,
     /// First data byte for extended/mixed addressing, used for transmission.
     /// Also used for reception unless `rx_ext_address` is specified.
@@ -119,9 +124,14 @@ pub struct IsoTPConfig {
     pub receive_separation_time_min: Duration,
 }
 
+fn default_batch_send() -> bool {
+    true
+}
+
 impl IsoTPConfig {
     /// Start a configuration with bus zero, Classical CAN, padding enabled,
     /// a one-second transport timeout, and unlimited receive blocks with zero STmin.
+    /// Transmit batching is enabled by default when transmit STmin is zero.
     ///
     /// Unless overridden, the receive ID is derived by adding eight to a
     /// standard ID or swapping the low two bytes of an extended ID. These are
@@ -137,6 +147,7 @@ impl IsoTPConfig {
                 padding: Some(DEFAULT_PADDING_BYTE),
                 timeout: Duration::from_millis(DEFAULT_TIMEOUT_MS),
                 separation_time_min: None,
+                batch_send: default_batch_send(),
                 fd: false,
                 ext_address: None,
                 rx_ext_address: None,
@@ -230,6 +241,14 @@ impl IsoTPConfigBuilder {
     /// Override transmit STmin. Omitting this setter follows the peer's STmin.
     pub fn separation_time_min(mut self, duration: Duration) -> Self {
         self.config.separation_time_min = Some(duration);
+        self
+    }
+
+    /// Enable batching of consecutive frames when transmit STmin is zero.
+    /// Defaults to true. Set false for adapters that reorder queued frames,
+    /// so each frame is confirmed before submitting the next one.
+    pub fn batch_send(mut self, enabled: bool) -> Self {
+        self.config.batch_send = enabled;
         self
     }
 

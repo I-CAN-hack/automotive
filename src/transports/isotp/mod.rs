@@ -57,6 +57,8 @@ const CAN_FD_MAX_DLEN: usize = 64;
 
 const ISO_TP_MAX_DLEN: usize = (1 << 12) - 1;
 const ISO_TP_FD_MAX_DLEN: usize = u32::MAX as usize;
+// Bound queued frames even when the peer permits an unlimited flow-control block.
+const MAX_TX_BATCH: usize = 128;
 
 /// Encode a separation-time value to the ISO 15765-2 STmin byte.
 ///
@@ -303,6 +305,11 @@ impl<'a> IsoTP<'a> {
     }
 
     pub async fn send_consecutive_frame(&self, data: &[u8], idx: usize) -> Result<()> {
+        let frame = self.consecutive_frame(data, idx)?;
+        self.transmit_frame(&frame).await
+    }
+
+    fn consecutive_frame(&self, data: &[u8], idx: usize) -> Result<Frame> {
         self.config.validate()?;
         if data.is_empty() {
             return Err(Error::EmptyPayload.into());
@@ -320,11 +327,54 @@ impl<'a> IsoTP<'a> {
 
         debug!("TX CF, idx: {} data {}", idx, hex::encode(&buf));
 
-        let frame = self.frame(&mut buf)?;
+        self.frame(&mut buf)
+    }
 
-        self.transmit_frame(&frame).await?;
+    /// Admit a zero-STmin batch in order, then await every CAN confirmation.
+    /// Waiting after each individual frame would serialize USB echo latency.
+    async fn transmit_frames(&self, frames: &[Frame]) -> Result<()> {
+        use std::future::{poll_fn, Future};
+        use std::task::Poll;
 
-        Ok(())
+        let mut sends: Vec<_> = frames
+            .iter()
+            .map(|frame| Some(Box::pin(self.transmit_frame(frame))))
+            .collect();
+        poll_fn(|cx| {
+            let mut pending = false;
+            for send in &mut sends {
+                let Some(future) = send else { continue };
+                match future.as_mut().poll(cx) {
+                    Poll::Ready(result) => {
+                        *send = None;
+                        if let Err(error) = result {
+                            return Poll::Ready(Err(error));
+                        }
+                    }
+                    Poll::Pending => pending = true,
+                }
+            }
+            if pending {
+                Poll::Pending
+            } else {
+                Poll::Ready(Ok(()))
+            }
+        })
+        .await
+    }
+
+    fn transmit_separation_time(
+        &self,
+        fc_config: &FlowControlConfig,
+        fallback_stmin: bool,
+    ) -> std::time::Duration {
+        self.config
+            .separation_time_min
+            .unwrap_or(if fallback_stmin {
+                std::time::Duration::from_millis(127)
+            } else {
+                fc_config.separation_time_min
+            })
     }
 
     async fn receive_flow_control(
@@ -376,27 +426,39 @@ impl<'a> IsoTP<'a> {
         let mut it = chunks.enumerate().peekable();
         let mut block_frames = 0u8;
         while let Some((idx, chunk)) = it.next() {
-            self.send_consecutive_frame(chunk, idx).await?;
+            if self.config.batch_send
+                && self
+                    .transmit_separation_time(&fc_config, fallback_stmin)
+                    .is_zero()
+            {
+                let mut frames = vec![self.consecutive_frame(chunk, idx)?];
+                block_frames = block_frames.saturating_add(1);
+                while frames.len() < MAX_TX_BATCH
+                    && (fc_config.block_size == 0 || block_frames < fc_config.block_size)
+                {
+                    let Some((idx, chunk)) = it.next() else { break };
+                    frames.push(self.consecutive_frame(chunk, idx)?);
+                    block_frames = block_frames.saturating_add(1);
+                }
+                self.transmit_frames(&frames).await?;
+            } else {
+                self.send_consecutive_frame(chunk, idx).await?;
+                block_frames = block_frames.saturating_add(1);
+            }
 
             if it.peek().is_none() {
                 break;
             }
             // Each flow-control frame can specify a new block size and STmin.
-            block_frames = block_frames.saturating_add(1);
             if fc_config.block_size != 0 && block_frames == fc_config.block_size {
                 fc_config = self.receive_flow_control(&mut stream).await?;
                 fallback_stmin |= fc_config.reserved_stmin;
                 block_frames = 0;
             }
-            let st_min = self
-                .config
-                .separation_time_min
-                .unwrap_or(if fallback_stmin {
-                    std::time::Duration::from_millis(127)
-                } else {
-                    fc_config.separation_time_min
-                });
-            tokio::time::sleep(st_min).await;
+            let st_min = self.transmit_separation_time(&fc_config, fallback_stmin);
+            if !st_min.is_zero() {
+                tokio::time::sleep(st_min).await;
+            }
         }
 
         Ok(())
