@@ -160,6 +160,12 @@ a nominal bitrate produces no data-phase timing; direct timing parameters are al
 supported. `get_adapter()` uses the same defaults when configuring PEAK, panda,
 or Vector.
 
+PEAK leaves kernel drivers attached by default. Opening the raw-USB adapter
+fails if a driver such as `peak_usb` already owns the USB interface. Set
+`.detach_kernel_driver(true)` on the PEAK config builder to allow detaching
+the driver while the adapter is open. Automatic discovery uses the default
+and leaves SocketCAN devices available.
+
 For example, to configure a PEAK adapter without selecting a generic adapter
 type for the bitrate builder:
 
@@ -568,7 +574,7 @@ This library supports awaiting a sent frame and waiting for the ACK on the CAN b
  - comma.ai panda
    - The panda does not retry frames that are not ACKed, and drops them instead. This can cause panics in some internal parts of the library when frames are dropped. [panda#1922](https://github.com/commaai/panda/issues/1922) tracks this issue.
  - PEAK PCAN-USB FD (raw USB, `peak` feature)
-   - This driver talks to the device directly over USB instead of through SocketCAN, so it does not need the `peak_usb` kernel module to be unloaded; the in-kernel driver is detached automatically when the device is opened.
+   - This driver talks to the device directly over USB instead of through SocketCAN. Opening fails if a kernel driver such as `peak_usb` owns the interface. Opt in to temporary driver detachment with `PeakConfig::builder().detach_kernel_driver(true)`; the driver is reattached when the adapter is released.
    - To temporarily unload `peak_usb` or the out-of-tree `pcan` driver for testing, run `scripts/unload_peak_driver.sh`. Test raw USB in another terminal, then press Enter to restore the drivers. The script also restores them on Ctrl+C or ordinary errors, and only reloads drivers that were initially loaded.
    - On Linux the USB device node is owned by root by default. To use the adapter without running as root, install a udev rule granting access to your user, e.g. in `/etc/udev/rules.d/70-pcan-usb-fd.rules`:
      ```text

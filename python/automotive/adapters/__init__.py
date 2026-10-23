@@ -71,12 +71,17 @@ class PeakConfig(_TimingConfig):
             2 Mbit/s data timing, with 80% sample points.
         tx_timeout: Queue-admission/confirmation deadline in seconds; default
             one second. None disables the deadline; zero is invalid.
+        detach_kernel_driver: Allow detaching a kernel driver to claim the
+            USB interface, default False. Otherwise opening fails if a kernel
+            driver owns it. True interrupts SocketCAN access until the adapter
+            is released and the kernel driver is reattached.
 
     A timeout clears the transmit queue, cancelling other affected sends.
     BRS requires a configured FD data bitrate.
     """
 
     tx_timeout: float | None = _DEFAULTS["tx_timeout"]
+    detach_kernel_driver: bool = False
     backend: ClassVar[str] = "peak"
 
 

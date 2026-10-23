@@ -301,6 +301,7 @@ impl AdapterConfig {
                     "peak",
                     &obj.getattr("bitrate")?,
                 )?);
+                config.detach_kernel_driver = field!(obj, detach_kernel_driver, bool);
                 config.tx_timeout = field!(obj, tx_timeout, Option<f64>)
                     .map(duration)
                     .transpose()?;
