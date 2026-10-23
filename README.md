@@ -556,13 +556,14 @@ This library supports awaiting a sent frame and waiting for the ACK on the CAN b
  - SocketCAN Devices
    - SocketCAN drivers without `IFF_ECHO`: This class of SocketCAN drivers has no hardware support for notifying the driver when a frame was ACKed. This is instead emulated by the [Linux kernel](https://github.com/torvalds/linux/blob/master/net/can/af_can.c#L256). Due to transmitted frames immediately being received again this can cause the receive queue to fill up if more than 476 (default RX queue size on most systems) are transmitted in one go. To solve this we implement emulated ACKs ourself, instead of relying on the ACKs from the kernel.
    - PCAN-USB: The Peak CAN adapters have two drivers:
-     - Kenel built in driver (`peak_usb`). The kernel driver properly implements `IFF_ECHO`, but has a rather small TX queue. This should not cause any issues, but it can be increased with `ifconfig can0 txqueuelen <size>`.
+     - Kernel built-in driver (`peak_usb`). The driver exposes `IFF_ECHO` and reports transmit completion when the USB write completes. It has a rather small TX queue, which can be increased with `ifconfig can0 txqueuelen <size>`.
      - Out-of-tree driver (`pcan`) that can be [downloaded](https://www.peak-system.com/fileadmin/media/linux/index.htm) from Peak System's website. The out-of-tree driver is not recommended as it does  not implement `IFF_ECHO`.
    - neoVI/ValueCAN: Use of Intrepid Control System's devices is not recommended due to issues in their SocketCAN driver. If many frames are transmitted simultaneously it will cause the whole system/kernel to hang. [intrepid-socketcan-kernel-module#20](https://github.com/intrepidcs/intrepid-socketcan-kernel-module/issues/20) tracks this issue.
  - comma.ai panda
    - The panda does not retry frames that are not ACKed, and drops them instead. This can cause panics in some internal parts of the library when frames are dropped. [panda#1922](https://github.com/commaai/panda/issues/1922) tracks this issue.
  - PEAK PCAN-USB FD (raw USB, `peak` feature)
    - This driver talks to the device directly over USB instead of through SocketCAN, so it does not need the `peak_usb` kernel module to be unloaded; the in-kernel driver is detached automatically when the device is opened.
+   - USB reception uses a 1 ms timeout to limit how long an idle read can delay outgoing frames. Transmit confirmation comes from the adapter's CAN acknowledgement.
    - To temporarily unload `peak_usb` or the out-of-tree `pcan` driver for testing, run `scripts/unload_peak_driver.sh`. Test raw USB in another terminal, then press Enter to restore the drivers. The script also restores them on Ctrl+C or ordinary errors, and only reloads drivers that were initially loaded.
    - On Linux the USB device node is owned by root by default. To use the adapter without running as root, install a udev rule granting access to your user, e.g. in `/etc/udev/rules.d/70-pcan-usb-fd.rules`:
      ```text
