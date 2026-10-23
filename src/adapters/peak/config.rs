@@ -14,24 +14,32 @@ pub struct PeakConfig {
         serde(default = "crate::adapters::default_tx_timeout")
     )]
     pub tx_timeout: Option<Duration>,
+    /// Allow detaching a kernel driver to claim the USB interface.
+    /// Defaults to false, so opening fails if the kernel driver owns it.
+    /// When enabled, the driver is reattached when the adapter is released.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub detach_kernel_driver: bool,
 }
 
 impl PeakConfig {
     /// Create a configuration with the required bus timing.
+    /// Kernel driver detachment is disabled by default.
     pub fn new(bitrate: BitrateConfig) -> Self {
         Self {
             bitrate,
             tx_timeout: default_tx_timeout(),
+            detach_kernel_driver: false,
         }
     }
 
     /// Build a configuration using PEAK's bit timing capabilities.
     /// Omitting bus timing uses 500 kbit/s nominal and 2 Mbit/s data, both with
-    /// an 80% sample point.
+    /// an 80% sample point. Kernel driver detachment is disabled by default.
     pub fn builder() -> PeakConfigBuilder {
         PeakConfigBuilder {
             bitrate: None,
             tx_timeout: default_tx_timeout(),
+            detach_kernel_driver: false,
         }
     }
 }
@@ -42,6 +50,7 @@ impl PeakConfig {
 pub struct PeakConfigBuilder {
     bitrate: Option<BitrateBuilder>,
     tx_timeout: Option<Duration>,
+    detach_kernel_driver: bool,
 }
 
 impl PeakConfigBuilder {
@@ -67,6 +76,14 @@ impl PeakConfigBuilder {
         self
     }
 
+    /// Allow detaching a kernel driver to claim the USB interface.
+    /// Disabled by default. Enabling this interrupts SocketCAN access until
+    /// the adapter is released and the kernel driver is reattached.
+    pub fn detach_kernel_driver(mut self, detach: bool) -> Self {
+        self.detach_kernel_driver = detach;
+        self
+    }
+
     /// Calculate bus timing and build the adapter configuration.
     pub fn build(self) -> Result<PeakConfig, BitrateError> {
         let bitrate = self
@@ -75,6 +92,7 @@ impl PeakConfigBuilder {
         Ok(PeakConfig {
             bitrate: bitrate.build()?,
             tx_timeout: self.tx_timeout,
+            detach_kernel_driver: self.detach_kernel_driver,
         })
     }
 }

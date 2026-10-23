@@ -2,8 +2,8 @@
 //!
 //! This talks the "uCAN" protocol directly over USB bulk endpoints using
 //! [rusb](https://crates.io/crates/rusb), without relying on the in-kernel
-//! `peak_usb` driver or SocketCAN. The in-kernel driver is detached
-//! automatically when the device is opened.
+//! `peak_usb` driver or SocketCAN. Opening fails if a kernel driver owns the
+//! USB interface unless [`PeakConfig::detach_kernel_driver`] is enabled.
 //!
 //! On Linux, accessing the USB device as a non-root user requires a udev rule
 //! granting access (see the crate README).
@@ -106,7 +106,9 @@ impl PeakAdapter {
 
     /// Connect to the first available PCAN-USB FD family adapter.
     ///
-    /// The in-kernel `peak_usb` driver, if bound, is detached automatically.
+    /// Returns a USB busy error if a kernel driver owns the interface.
+    /// Set [`PeakConfig::detach_kernel_driver`] to true to allow detaching
+    /// that driver while the adapter is open.
     pub fn new(config: PeakConfig) -> Result<PeakAdapter> {
         let bitrate_cfg = config.bitrate;
         validate_tx_timeout(config.tx_timeout)?;
@@ -122,9 +124,11 @@ impl PeakAdapter {
 
             let handle = device.open()?;
 
-            // Detach the in-kernel peak_usb driver if it is still bound, so we
-            // can claim the interface for raw USB access.
-            handle.set_auto_detach_kernel_driver(true).ok();
+            // Detaching a kernel driver takes the device away from SocketCAN.
+            // Only enable that behavior with explicit opt-in.
+            if config.detach_kernel_driver {
+                handle.set_auto_detach_kernel_driver(true).ok();
+            }
             handle.claim_interface(0)?;
 
             // Read firmware info to learn the firmware version and (on newer
