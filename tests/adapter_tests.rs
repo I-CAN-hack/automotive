@@ -3,7 +3,7 @@
 use automotive::adapters::socketcan::SocketCanConfig;
 use automotive::can::AsyncCanAdapter;
 use automotive::can::{CanAdapter, Frame, Identifier};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::time::Duration;
 
 /// Must not be larger than the RX buffer size of the adapter, otherwise the test will fail due to dropped messages.
@@ -90,7 +90,7 @@ fn get_test_frames(amount: usize) -> Vec<Frame> {
 }
 
 /// Sends a large number of frames to a "blocking" adapter, and then reads back all sent messages.
-/// This verified the adapter doesn't drop messages and reads them back in the same order as they are sent,
+/// This verifies the adapter doesn't drop messages and preserves order for each bus/identifier,
 /// which is needed for the async adapter to work correctly.
 fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
     let frames = get_test_frames(BULK_NUM_FRAMES_SYNC);
@@ -100,9 +100,21 @@ fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
     let limit = adapter.buffer_size().unwrap_or(frames.len());
     let frames: Vec<Frame> = frames.into_iter().take(limit).collect();
 
+    let start = std::time::Instant::now();
+    let timeout = Duration::from_millis(BULK_SYNC_TIMEOUT_MS);
     let mut to_send: VecDeque<Frame> = frames.clone().into();
     while !to_send.is_empty() {
+        assert!(
+            start.elapsed() < timeout,
+            "Timed out submitting frames: {} of {} still queued",
+            to_send.len(),
+            frames.len(),
+        );
+        let remaining = to_send.len();
         adapter.send(&mut to_send).unwrap();
+        if to_send.len() == remaining {
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     let start = std::time::Instant::now();
@@ -122,8 +134,30 @@ fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
         std::thread::sleep(Duration::from_millis(1));
     }
 
-    assert_eq!(frames.len(), received.len());
-    assert_eq!(frames, received);
+    assert_eq!(
+        frames.len(),
+        received.len(),
+        "Missing transmit confirmations"
+    );
+    // Adapters may prioritize different arbitration IDs. Only frames sharing
+    // a bus and identifier must retain their submission order.
+    let mut expected: HashMap<_, VecDeque<_>> = HashMap::new();
+    for frame in &frames {
+        expected
+            .entry((frame.bus, frame.id()))
+            .or_default()
+            .push_back(frame);
+    }
+    for (index, frame) in received.iter().enumerate() {
+        let next = expected
+            .get_mut(&(frame.bus, frame.id()))
+            .and_then(VecDeque::pop_front);
+        assert_eq!(
+            Some(frame),
+            next,
+            "Unexpected transmit confirmation #{index}"
+        );
+    }
 }
 
 /// Sends a large number of frames to the adapter, and awaits them simultaneously.
@@ -131,13 +165,26 @@ fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
 async fn bulk_send(adapter: &AsyncCanAdapter) {
     let frames = get_test_frames(BULK_NUM_FRAMES_ASYNC);
 
-    let r = frames.iter().map(|frame| adapter.send(frame));
+    let confirmed = std::cell::Cell::new(0);
+    let r = frames.iter().map(|frame| async {
+        let result = adapter.send(frame).await;
+        if result.is_ok() {
+            confirmed.set(confirmed.get() + 1);
+        }
+        result
+    });
     let results = tokio::time::timeout(
         Duration::from_millis(BULK_ASYNC_TIMEOUT_MS),
         futures::future::join_all(r),
     )
     .await
-    .unwrap();
+    .unwrap_or_else(|_| {
+        panic!(
+            "Timed out waiting for transmit confirmations: {} of {} confirmed",
+            confirmed.get(),
+            frames.len(),
+        )
+    });
     for result in results {
         result.unwrap();
     }
