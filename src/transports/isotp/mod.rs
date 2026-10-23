@@ -535,6 +535,8 @@ impl<'a> IsoTP<'a> {
     /// and while awaiting the next valid consecutive frame. Ignored traffic does
     /// not restart a deadline. A replacement SF/FF yields UnexpectedPdu before
     /// processing the replacement message.
+    /// Idle expiry yields [`crate::Error::IdleTimeout`]; a timeout during
+    /// transmission or reassembly yields [`crate::Error::Timeout`].
     pub fn recv(&self) -> impl Stream<Item = Result<Vec<u8>>> + '_ {
         self.clone().into_recv()
     }
@@ -559,9 +561,13 @@ impl<'a> IsoTP<'a> {
                     Ok(Some(frame)) => frame,
                     Ok(None) => break,
                     Err(_) => {
-                        reception = None;
+                        let error = if reception.take().is_some() {
+                            crate::Error::Timeout
+                        } else {
+                            crate::Error::IdleTimeout
+                        };
                         deadline = tokio::time::Instant::now() + self.config.timeout;
-                        yield Err(crate::Error::Timeout);
+                        yield Err(error);
                         continue;
                     }
                 };

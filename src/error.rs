@@ -17,6 +17,11 @@ pub enum Error {
     InvalidAdapterConfig(String),
     #[error("Timeout")]
     Timeout,
+    /// No message reception started before the transport's idle deadline.
+    /// Polling the same receive stream again resumes waiting for a new message.
+    /// A timeout during transmission or reassembly is [`Self::Timeout`] instead.
+    #[error("Idle receive timeout")]
+    IdleTimeout,
     #[error("Transmission cancelled by a transmit queue clear")]
     Cancelled,
     #[error("Disconnected")]

@@ -246,6 +246,10 @@ impl<'a, T: Transport> UDSClient<'a, T> {
             let response = match tokio::time::timeout_at(response_deadline, stream.next()).await {
                 Err(_) if suppress && !pending_received => return Ok(RequestOutcome::Suppressed),
                 Err(_) => return Err(crate::Error::Timeout),
+                // An idle transport poll is shorter than P2/P2* on some
+                // transports. Keep the subscription and the UDS deadline;
+                // transfer failures still propagate through the branch below.
+                Ok(Some(Err(crate::Error::IdleTimeout))) => continue,
                 Ok(response) => response.ok_or(crate::Error::Disconnected)??,
             };
 

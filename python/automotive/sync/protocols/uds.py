@@ -39,6 +39,8 @@ class UDSClient:
     drains under the transaction lock before another request can start. Closing
     the parent interrupts dependent operations. Set request_timeout to bound
     repeated response-pending messages.
+    Idle receive expiry resumes waiting on the same stream without resending the
+    request or extending P2/P2*. Transport transfer failures still raise errors.
 
     Raises:
         NegativeResponseError: The ECU rejected the request; code is its raw NRC.

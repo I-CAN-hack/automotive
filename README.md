@@ -249,6 +249,9 @@ required flow control (N_Bs), consecutive frames (N_Cr), and idle reception.
 The one-second default follows ISO 15765-2:2016 Table 21. N_Bs starts after the
 preceding data frame is confirmed; N_Cr starts after flow control is confirmed
 and restarts on each valid consecutive frame. Ignored PDUs do not restart timers.
+Idle reception expiry yields `Error::IdleTimeout`; poll the same stream again
+to resume waiting. Timeouts during transmission or reassembly yield
+`Error::Timeout`.
 
 Receive IDs are derived by adding eight to a standard ID or swapping the low two
 bytes of an extended ID (for example, `0x18DA10F1` becomes `0x18DAF110`). These
@@ -512,10 +515,11 @@ in place.
 
 The transport returns complete messages, so the waits include response
 reception (P6/P6* in ISO 14229-2, §7.1–§7.2). Set timeouts to cover network
-delays and response transmission as needed. Transport timeouts still apply: for
-example, raise `IsoTPConfig::timeout` above the longest UDS response wait to avoid its idle
-receive timeout expiring first. Session keepalive remains caller-managed through
-`tester_present()`.
+delays and response transmission as needed. UDS retries transport idle receive
+timeouts on the same stream without resending the request or extending P2/P2*.
+Transport transmission and frame-reassembly timeouts still fail the request;
+`IsoTPConfig::timeout` need not exceed P2/P2*. Session keepalive remains
+caller-managed through `tester_present()`.
 
 Strict mode follows ISO 14229-1:2013. It validates service IDs, sub-function
 echoes, identifiers, block counters, and response formats. Negative responses

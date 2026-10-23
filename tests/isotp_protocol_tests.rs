@@ -2,6 +2,7 @@
 //! conforming Scapy peer would not normally transmit.
 
 use automotive::can::{AsyncCanAdapter, CanAdapter, Frame, Identifier};
+use automotive::protocols::uds::{RequestOutcome, UDSClient, UDSConfig};
 use automotive::transports::isotp::{Error as IsoTPError, IsoTP, IsoTPConfig};
 use automotive::StreamExt;
 use std::collections::VecDeque;
@@ -500,4 +501,134 @@ async fn ignored_pdus_do_not_extend_consecutive_frame_deadline() {
         assert_eq!(stream.next().await.unwrap().unwrap(), [0xab]);
     };
     within(async { tokio::join!(receive, exchange) }).await;
+}
+
+#[tokio::test]
+async fn uds_session_timings_survive_shorter_transport_idle_timeouts() {
+    for suppressed in [false, true] {
+        let (adapter, mut peer) = channel();
+        let mut config = config();
+        config.timeout = Duration::from_millis(40);
+        let isotp = IsoTP::new(&adapter, config);
+        let uds = UDSClient::with_config(
+            &isotp,
+            UDSConfig::builder()
+                .p2_timeout(Duration::from_millis(100))
+                .p2_star_timeout(Duration::from_millis(50))
+                .build(),
+        );
+        let exchange = async {
+            assert_eq!(peer.next().await.frame.data(), [2, 0x10, 3]);
+            // The ECU advertises P2 = P2* = 400 ms.
+            peer.inject(received(&config, &[6, 0x50, 3, 0x01, 0x90, 0, 0x28]));
+            let sub_function = if suppressed { 0x81 } else { 1 };
+            assert_eq!(
+                peer.next().await.frame.data(),
+                [4, 0x31, sub_function, 0xff, 0]
+            );
+            // Every gap exceeds both the transport idle timeout and the
+            // configured UDS timings. Only the adopted session timings work.
+            for _ in 0..2 {
+                tokio::time::sleep(Duration::from_millis(150)).await;
+                peer.inject(received(&config, &[3, 0x7f, 0x31, 0x78]));
+            }
+            tokio::time::sleep(Duration::from_millis(150)).await;
+            peer.inject(received(&config, &[5, 0x71, 1, 0xff, 0, 0]));
+            // Receiving again must not retransmit the erase request.
+            peer.assert_no_transmission().await;
+        };
+        let request = async {
+            uds.diagnostic_session_control(3).await.unwrap();
+            let sub_function = if suppressed { 0x81 } else { 1 };
+            assert_eq!(
+                uds.request(0x31, Some(sub_function), Some(&[0xff, 0]))
+                    .await
+                    .unwrap(),
+                RequestOutcome::PositiveResponse(vec![0xff, 0, 0])
+            );
+        };
+        within(async { tokio::join!(request, exchange) }).await;
+    }
+}
+
+#[tokio::test]
+async fn uds_idle_retries_preserve_response_and_overall_deadlines() {
+    for (suppressed, pending, overall_ms) in [
+        (false, false, None),
+        (true, false, None),
+        (false, true, None),
+        (true, true, None),
+        (true, true, Some(100)),
+    ] {
+        let (adapter, mut peer) = channel();
+        let mut config = config();
+        config.timeout = Duration::from_millis(40);
+        let isotp = IsoTP::new(&adapter, config);
+        let mut uds_config = UDSConfig::builder()
+            .p2_timeout(Duration::from_millis(160))
+            .p2_star_timeout(Duration::from_millis(240));
+        if let Some(ms) = overall_ms {
+            uds_config = uds_config.request_timeout(Duration::from_millis(ms));
+        }
+        let uds = UDSClient::with_config(&isotp, uds_config.build());
+        let exchange = async {
+            peer.next().await;
+            if pending {
+                peer.inject(received(&config, &[3, 0x7f, 0x3e, 0x78]));
+            }
+        };
+        let request = async {
+            let start = Instant::now();
+            let sub_function = if suppressed { 0x80 } else { 0 };
+            let result = tokio::time::timeout(
+                Duration::from_millis(500),
+                uds.request(0x3e, Some(sub_function), None),
+            )
+            .await
+            .expect("idle retries extended the UDS deadline");
+            if suppressed && !pending {
+                assert_eq!(result.unwrap(), RequestOutcome::Suppressed);
+            } else {
+                assert!(matches!(result, Err(automotive::Error::Timeout)));
+            }
+            let expected_ms = overall_ms.unwrap_or(if pending { 240 } else { 160 });
+            assert!(start.elapsed() >= Duration::from_millis(expected_ms - 10));
+        };
+        within(async { tokio::join!(request, exchange) }).await;
+    }
+}
+
+#[tokio::test]
+async fn uds_does_not_retry_an_incomplete_segmented_response() {
+    for suppressed in [false, true] {
+        let (adapter, mut peer) = channel();
+        let mut config = config();
+        config.timeout = Duration::from_millis(40);
+        let isotp = IsoTP::new(&adapter, config);
+        let uds = UDSClient::with_config(
+            &isotp,
+            UDSConfig::builder()
+                .p2_timeout(Duration::from_millis(400))
+                .p2_star_timeout(Duration::from_millis(400))
+                .build(),
+        );
+        let exchange = async {
+            peer.next().await;
+            peer.inject(received(&config, &[3, 0x7f, 0x3e, 0x78]));
+            peer.inject(received(&config, &[0x10, 13, 0x7e, 0, 1, 2, 3, 4]));
+            assert_eq!(peer.next().await.frame.data(), [0x30, 0, 0]);
+            // The ECU never supplies the required consecutive frame.
+        };
+        let request = async {
+            let sub_function = if suppressed { 0x80 } else { 0 };
+            let result = tokio::time::timeout(
+                Duration::from_millis(200),
+                uds.request(0x3e, Some(sub_function), None),
+            )
+            .await
+            .expect("UDS retried a failed ISO-TP reassembly");
+            assert!(matches!(result, Err(automotive::Error::Timeout)));
+        };
+        within(async { tokio::join!(request, exchange) }).await;
+    }
 }

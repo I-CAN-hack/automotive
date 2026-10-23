@@ -53,7 +53,7 @@ create_exception!(
 pub fn convert(error: Error) -> PyErr {
     let message = error.to_string();
     match error {
-        Error::Timeout => PyTimeoutError::new_err(message),
+        Error::Timeout | Error::IdleTimeout => PyTimeoutError::new_err(message),
         Error::Disconnected => PyConnectionError::new_err(message),
         Error::NotFound => AdapterError::new_err("No supported adapter found"),
         Error::NotSupported => NotSupportedError::new_err(message),
