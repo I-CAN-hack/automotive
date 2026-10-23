@@ -9,7 +9,7 @@ Rust handles adapter I/O, protocol framing, validation, and timing; Python
 provides reusable configuration objects, typed values, context managers, and
 documented services.
 
-Requires CPython 3.11+ and builds locally with maturin. This directory contains
+Requires CPython 3.11+. This directory contains
 the Python package, its Rust extension, examples, and Scapy ECU regression tests.
 
 Read the [Python documentation](https://i-can-hack.github.io/automotive/) for the
@@ -17,17 +17,10 @@ user guide, examples, and generated API reference.
 
 ## Installation and development
 
-To test the alpha release from PyPI in another uv project:
+Install the package from PyPI in your uv project:
 
 ```sh
-uv add --prerelease allow automotive
-```
-
-To test the library from Git in another uv project, run this inside the Nix
-development shell:
-
-```sh
-uv add "automotive @ git+https://github.com/I-CAN-hack/automotive.git#subdirectory=python"
+uv add automotive
 ```
 
 For development, run the following from the repository root. The Nix shell
