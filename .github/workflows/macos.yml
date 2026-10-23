@@ -1,6 +1,6 @@
-name: macOS
+name: Rust (macOS)
 
-on: [push, pull_request]
+on: [push]
 
 env:
   CARGO_TERM_COLOR: always
@@ -11,9 +11,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      - name: Build
+      - name: Build Rust library
         run: cargo build --verbose --features=serde
-      - name: Build Examples
+      - name: Build Rust examples
         run: cargo build --verbose --features=serde --examples
-      - name: Run tests
+      - name: Run Rust tests
         run: cargo test --features=serde --verbose

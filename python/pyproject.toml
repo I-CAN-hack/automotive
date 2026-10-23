@@ -1,0 +1,56 @@
+[build-system]
+requires = ["maturin>=1.8,<2"]
+build-backend = "maturin"
+
+[project]
+name = "automotive"
+version = "0.5.0a1"
+description = "Synchronous and asynchronous CAN, ISO-TP, and UDS powered by Rust"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+
+[project.urls]
+Documentation = "https://i-can-hack.github.io/automotive/"
+Repository = "https://github.com/I-CAN-hack/automotive"
+Issues = "https://github.com/I-CAN-hack/automotive/issues"
+
+[dependency-groups]
+dev = ["maturin>=1.8,<2", "pytest>=8", "pytest-asyncio>=0.24", "scapy==2.8.0"]
+docs = [
+    "furo>=2025.12.19",
+    "myst-parser>=5.1.0",
+    "sphinx>=9.0.4",
+]
+release = [
+    "maturin[zig]>=1.15,<2; sys_platform == 'linux' or sys_platform == 'darwin'",
+    "maturin>=1.15,<2; sys_platform == 'win32'",
+    "patchelf; sys_platform == 'linux'",
+]
+
+[tool.uv]
+required-environments = ["sys_platform == 'win32' and platform_machine == 'AMD64'"]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "README.md" },
+    { file = "Cargo.toml" },
+    { file = "src/**/*.rs" },
+    { file = "../Cargo.toml" },
+    { file = "../Cargo.lock" },
+    { file = "../src/**/*.rs" },
+    { file = "../build.rs" },
+    { file = "../third_party/vector/*.h" },
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.maturin]
+module-name = "automotive._native"
+python-source = "."
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = ["vcan: protocol tests requiring Linux vcan0 and Scapy"]

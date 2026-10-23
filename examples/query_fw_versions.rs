@@ -5,7 +5,7 @@ use automotive::transports::isotp::{IsoTPAdapter, IsoTPConfig};
 use automotive::Result;
 
 use automotive::protocols::uds::DataIdentifier;
-use automotive::protocols::uds::UDSClient;
+use automotive::protocols::uds::{UDSClient, UDSConfig};
 
 use bstr::ByteSlice;
 use strum::IntoEnumIterator;
@@ -18,7 +18,11 @@ async fn get_version(adapter: &AsyncCanAdapter, identifier: u32) -> Result<()> {
         .build()?;
 
     let isotp = IsoTPAdapter::new(adapter, config);
-    let uds = UDSClient::new(&isotp);
+
+    let config = UDSConfig::builder()
+        .p2_timeout(Duration::from_secs(1))
+        .build();
+    let uds = UDSClient::with_config(&isotp, config);
 
     uds.tester_present().await?;
 

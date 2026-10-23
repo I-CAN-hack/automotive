@@ -1,0 +1,106 @@
+# Examples
+
+These are the Python programs from the repository's `python/examples/` directory.
+They run against real adapters and ECUs. Select a suitable adapter and ECU address
+for your setup before running them.
+
+## Print CAN frames
+
+Discover an adapter and print received CAN frames.
+
+```{literalinclude} ../examples/can_printer.py
+:language: python
+```
+
+## Send a CAN frame
+
+Discover an adapter and send one Classic CAN frame.
+
+```{literalinclude} ../examples/can_sender.py
+:language: python
+```
+
+## Send ISO-TP messages
+
+Follow the Rust example's four explicit exchanges: two short requests, a
+33-byte segmented request, and another DID request that can produce a long reply.
+
+```{literalinclude} ../examples/isotp.py
+:language: python
+```
+
+## Query an ECU with UDS
+
+Read diagnostic data through a persistent UDS client.
+
+```{literalinclude} ../examples/uds.py
+:language: python
+```
+
+## Configure bitrate and sample points
+
+Configure a PEAK PCAN-USB FD adapter with 500 kbit/s nominal and 2 Mbit/s data
+timing, both with an 80% sample point.
+
+```{literalinclude} ../examples/configure_bitrate.py
+:language: python
+```
+
+## Query firmware versions concurrently
+
+Use independent ECU transports for concurrent diagnostic requests.
+
+```{literalinclude} ../examples/query_fw_versions.py
+:language: python
+```
+
+## Synchronous examples
+
+These programs use the matching modules under `automotive.sync`, including
+`automotive.sync.adapters`, `automotive.sync.transports.isotp`, and
+`automotive.sync.protocols.uds`, with the same configuration and value types.
+They use ordinary constructors, blocking calls, and receive iterators. Both the
+async and sync examples let ownership release resources when they go out of scope.
+Their setup, requests, output, and flow follow the corresponding Rust programs.
+
+### Send a CAN frame
+
+```{literalinclude} ../examples/sync/can_sender.py
+:language: python
+```
+
+### Print CAN frames
+
+```{literalinclude} ../examples/sync/can_printer.py
+:language: python
+```
+
+### Send ISO-TP messages
+
+```{literalinclude} ../examples/sync/isotp.py
+:language: python
+```
+
+### Query an ECU with UDS
+
+```{literalinclude} ../examples/sync/uds.py
+:language: python
+```
+
+### Configure bitrate and sample points
+
+Configure the same PEAK timing through the synchronous API.
+
+```{literalinclude} ../examples/sync/configure_bitrate.py
+:language: python
+```
+
+### Query firmware versions
+
+Query the same DIDs and ECU address ranges as the Rust and async Python examples.
+The synchronous version visits ECUs sequentially; the async version queries them
+concurrently.
+
+```{literalinclude} ../examples/sync/query_fw_versions.py
+:language: python
+```

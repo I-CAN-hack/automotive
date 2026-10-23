@@ -25,7 +25,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -68,10 +68,14 @@ enum J2534IsoTpEvt {
 /// Implements [`TransportLayer`] so it plugs directly into `UDSClient`
 /// without going through the software ISO-TP layer.
 pub struct J2534NativeIsoTpTransport {
-    tx_cmd: Option<SyncSender<J2534IsoTpCmd>>,
     rx_bcast: broadcast::Sender<J2534IsoTpEvt>,
     timeout: Duration,
     stop_rx: Arc<AtomicBool>,
+    worker: Mutex<Worker>,
+}
+
+struct Worker {
+    tx_cmd: Option<SyncSender<J2534IsoTpCmd>>,
     tx_thread: Option<thread::JoinHandle<()>>,
     rx_thread: Option<thread::JoinHandle<()>>,
     channel: Option<J2534Channel>,
@@ -216,35 +220,54 @@ impl J2534NativeIsoTpTransport {
         }?;
 
         Ok(Self {
-            tx_cmd: Some(tx_cmd),
             rx_bcast: bcast_tx,
             timeout,
             stop_rx,
-            tx_thread: Some(tx_thread),
-            rx_thread: Some(rx_thread),
-            channel: Some(channel),
-            device: Some(device),
+            worker: Mutex::new(Worker {
+                tx_cmd: Some(tx_cmd),
+                tx_thread: Some(tx_thread),
+                rx_thread: Some(rx_thread),
+                channel: Some(channel),
+                device: Some(device),
+            }),
         })
     }
 
     /// Disconnect the ISO 15765 channel and return the underlying
     /// [`J2534Device`] so it can be reused for another channel.
-    pub fn into_device(mut self) -> J2534Device {
-        self.shutdown_channel();
-        self.device.take().expect("device already taken")
+    pub fn into_device(self) -> J2534Device {
+        self.take_device().expect("device already taken")
     }
 
-    fn shutdown_channel(&mut self) {
-        drop(self.tx_cmd.take());
+    /// Disconnect and return the device, invalidating outstanding shared users.
+    /// Blocks until both I/O threads have exited; returns `None` after closure.
+    pub fn take_device(&self) -> Option<J2534Device> {
+        let mut worker = self
+            .worker
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        self.shutdown_channel(&mut worker);
+        worker.device.take()
+    }
+
+    /// Disconnect and release this device. Safe to call repeatedly.
+    /// This blocks until both I/O threads have stopped.
+    pub fn close(&self) {
+        drop(self.take_device());
+    }
+
+    fn shutdown_channel(&self, worker: &mut Worker) {
+        drop(worker.tx_cmd.take());
         self.stop_rx.store(true, Ordering::Release);
-        if let Some(channel) = self.channel.take() {
+        let _ = self.rx_bcast.send(J2534IsoTpEvt::Disconnected);
+        if let Some(channel) = worker.channel.take() {
             let status = channel.disconnect();
             tracing::trace!(ret = %status, "PassThruDisconnect");
         }
-        if let Some(h) = self.tx_thread.take() {
+        if let Some(h) = worker.tx_thread.take() {
             let _ = h.join();
         }
-        if let Some(h) = self.rx_thread.take() {
+        if let Some(h) = worker.rx_thread.take() {
             let _ = h.join();
         }
     }
@@ -252,8 +275,7 @@ impl J2534NativeIsoTpTransport {
 
 impl Drop for J2534NativeIsoTpTransport {
     fn drop(&mut self) {
-        self.shutdown_channel();
-        drop(self.device.take());
+        self.close();
     }
 }
 
@@ -264,7 +286,13 @@ impl TransportLayer for J2534NativeIsoTpTransport {
     ) -> impl std::future::Future<Output = crate::Result<()>> + 'a {
         let pdu = data.to_vec();
         async move {
-            let Some(tx) = &self.tx_cmd else {
+            let tx = self
+                .worker
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .tx_cmd
+                .clone();
+            let Some(tx) = tx else {
                 return Err(crate::Error::Disconnected);
             };
             let (done_tx, done_rx) = oneshot::channel();
@@ -275,9 +303,23 @@ impl TransportLayer for J2534NativeIsoTpTransport {
     }
 
     fn recv(&self) -> impl crate::Stream<Item = crate::Result<Vec<u8>>> + Unpin + '_ {
+        self.recv_owned()
+    }
+}
+
+impl J2534NativeIsoTpTransport {
+    /// Subscribe immediately without borrowing the transport in the returned stream.
+    pub fn recv_owned(
+        &self,
+    ) -> impl crate::Stream<Item = crate::Result<Vec<u8>>> + Unpin + Send + 'static {
         let mut rx = self.rx_bcast.subscribe();
         let timeout = self.timeout;
+        let closed = self.stop_rx.load(Ordering::Acquire);
         Box::pin(stream! {
+            if closed {
+                yield Err(crate::Error::Disconnected);
+                return;
+            }
             loop {
                 match tokio::time::timeout(timeout, rx.recv()).await {
                     Err(_) => yield Err(crate::Error::Timeout),
@@ -341,7 +383,12 @@ fn isotp_tx_thread(
     _bcast: broadcast::Sender<J2534IsoTpEvt>,
     stop_rx: Arc<AtomicBool>,
 ) {
-    while let Ok(J2534IsoTpCmd::Send(pdu, done)) = rx_cmds.recv() {
+    while !stop_rx.load(Ordering::Acquire) {
+        let (pdu, done) = match rx_cmds.recv_timeout(Duration::from_millis(50)) {
+            Ok(J2534IsoTpCmd::Send(pdu, done)) => (pdu, done),
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        };
         tracing::debug!(
             len = pdu.len(),
             payload = %hex::encode(&pdu[..pdu.len().min(16)]),

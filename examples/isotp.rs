@@ -21,7 +21,7 @@ async fn main() -> automotive::Result<()> {
     let response = stream.next().await.ok_or(Error::Disconnected)??;
     println!("RX: {}", hex::encode(response));
 
-    let mut long_request: [u8; 32] = [0; 32];
+    let mut long_request: [u8; 33] = [0; 33];
     long_request[0] = 0x10;
     isotp.send(&long_request).await?;
     let response = stream.next().await.ok_or(Error::Disconnected)??;

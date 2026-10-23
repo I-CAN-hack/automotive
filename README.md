@@ -1,6 +1,7 @@
 # The Automotive Crate
 [![crates.io](https://img.shields.io/crates/v/automotive.svg)](https://crates.io/crates/automotive)
 [![docs.rs](https://img.shields.io/docsrs/automotive)](https://docs.rs/automotive/latest/automotive/)
+[![PyPI](https://img.shields.io/pypi/v/automotive.svg)](https://pypi.org/project/automotive/)
 
 Welcome to the `automotive` crate documentation. The purpose of this crate is to help you with all things automotive related. Most importantly, it provides a fully async CAN interface supporting multiple adapters.
 
@@ -13,6 +14,15 @@ Welcome to the `automotive` crate documentation. The purpose of this crate is to
 - `automotive::protocols` contains `uds`, which uses a `TransportLayer`.
 - `automotive::can` provides shared CAN types and traits.
 
+## Python library
+
+A Python package with synchronous and asyncio APIs is available in `python/`,
+with the import name `automotive`. See the [Python README](python/README.md) for
+installation, configuration, examples, API documentation, and Scapy ECU
+regression tests.
+The [Python documentation](https://i-can-hack.github.io/automotive/) includes its
+user guide, examples, and API reference.
+
 ## Development with Nix
 
 Enter the development environment and run the tests:
@@ -23,14 +33,13 @@ cargo test --features all
 ```
 
 The shell includes Rust, Cargo, rustfmt, Clippy, rust-analyzer, libusb,
-libclang for bindgen, and Python with Scapy. On Linux it also includes the CAN
-and network tools used by the virtual ECU tests. The flake lock pins the packages.
+libclang for bindgen, maturin, uv, and Python with Scapy. On Linux it also
+includes the CAN and network tools used by the virtual ECU tests. The flake lock
+and release checksums pin the packages.
 
-To run the virtual CAN tests on Linux, first load the host's CAN/ISO-TP kernel
-modules and create `vcan0` using the existing setup scripts:
+To run the virtual CAN tests on Linux, create `vcan0` from the repository root:
 
 ```sh
-scripts/build_can_isotp.sh
 scripts/set_up_vcan.sh
 cargo test --features test-vcan,serde
 ```
@@ -39,11 +48,18 @@ The UDS tests exercise all 14 implemented service IDs against Scapy's
 `EcuAnsweringMachine`, including DID and memory writes followed by reads, and
 download/upload transfers. Scapy decodes requests and constructs responses.
 
-The setup scripts require `sudo`; entering the shell does not change the host's
-network interfaces or load kernel modules. Windows-only adapters still require
-their Windows SDKs and drivers.
+The setup script requires `sudo`. Windows-only adapters still require their
+Windows SDKs and drivers.
 
 ## Async CAN Example
+
+The [CAN sender example](examples/can_sender.rs) sends one Classic CAN frame
+through the first available adapter:
+
+```sh
+cargo run --example can_sender --features default-adapters
+```
+
 The following adapter opens the first available adapter on the system, and then receives all frames. Note how the sent frame is awaited, which waits until the message is ACKed on the CAN bus.
 
 ```rust
@@ -138,25 +154,30 @@ a nominal bitrate produces no data-phase timing; direct timing parameters are al
 supported. `get_adapter()` uses the same defaults when configuring PEAK, panda,
 or Vector.
 
-For example, to configure a Vector channel without selecting a generic adapter
+For example, to configure a PEAK adapter without selecting a generic adapter
 type for the bitrate builder:
 
 ```rust,no_run
-# #[cfg(all(target_os = "windows", feature = "vector-xl"))]
+# #[cfg(feature = "peak")]
 # fn example() -> automotive::Result<()> {
-use automotive::adapters::vector::{VectorCan, VectorConfig};
+use automotive::adapters::peak::{Peak, PeakConfig};
 
-let config = VectorConfig::builder(0)
+let config = PeakConfig::builder()
     .bitrate(|bitrate| {
         bitrate
             .bitrate(500_000)
+            .sample_point(0.8)
             .data_bitrate(2_000_000)
+            .data_sample_point(0.8)
     })
     .build()?;
-let adapter = VectorCan::new_async(config)?;
+let adapter = Peak::new_async(config)?;
 # Ok(())
 # }
 ```
+
+Run the complete PEAK bitrate example with
+`cargo run --example configure_bitrate --features peak`.
 
 Each adapter's configuration types live in its `config.rs` module and are
 re-exported from the adapter module.
@@ -192,12 +213,6 @@ be pending in hardware.
 Unmatched echoes are warned about and ignored until the first current TX
 confirmation. After that, an unmatched echo is an adapter invariant violation and
 panics the worker. Every queue clear resets this startup/recovery grace period.
-
-Run the `tx_timeout` example with the desired adapter feature (for example,
-`cargo run --example tx_timeout --features peak`) to queue two frames and print
-each result. The second frame is queued 250 ms later so the first can time out
-and cancel it before its own deadline. After timeout/cancellation, the example
-waits one second and retries both frames with the same adapter open.
 
 ## ISO-TP configuration
 

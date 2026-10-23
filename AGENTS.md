@@ -3,6 +3,10 @@
  - `cargo test --features=test-vcan`: Run tests against the virtual SocketCAN ECU.
    - If this fails, ensure the vcan interface is up: `scripts/set_up_vcan.sh`
 
+ # Python
+ - Keep the sync API and documentation up to date with the async version of the API 
+ - Keep the examples in python/examples and python/examples/sync up to date with examples
+
 # Workflow
  - Make sure to run all tests after making a series of code changes.
  - Keep `README.md` and the crate-level documentation in `src/lib.rs` in sync.

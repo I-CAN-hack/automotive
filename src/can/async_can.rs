@@ -1,6 +1,7 @@
 //! Async wrapper for adapters implementing the [`CanAdapter`] trait.
 
 use std::collections::{HashMap, VecDeque};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use crate::can::{CanAdapter, Frame, Identifier};
@@ -208,11 +209,15 @@ fn process<T: CanAdapter>(
 
 /// Async wrapper around a [`CanAdapter`] with a dedicated TX/RX worker.
 pub struct AsyncCanAdapter {
-    processing_handle: Option<std::thread::JoinHandle<()>>,
+    worker: Mutex<Worker>,
     recv_receiver: broadcast::Receiver<Frame>,
     send_sender: mpsc::Sender<Transmission>,
     state: watch::Receiver<WorkerState>,
     tx_timeout: Option<Duration>,
+}
+
+struct Worker {
+    processing_handle: Option<std::thread::JoinHandle<()>>,
     shutdown: Option<oneshot::Sender<()>>,
 }
 
@@ -233,12 +238,32 @@ impl AsyncCanAdapter {
             );
         });
         Self {
-            shutdown: Some(shutdown_sender),
-            processing_handle: Some(processing_handle),
+            worker: Mutex::new(Worker {
+                shutdown: Some(shutdown_sender),
+                processing_handle: Some(processing_handle),
+            }),
             recv_receiver,
             send_sender,
             state,
             tx_timeout,
+        }
+    }
+
+    /// Stop the worker and release the hardware, even while shared references exist.
+    ///
+    /// This is idempotent and blocks until the worker has stopped. Pending sends
+    /// fail with `Disconnected` and receive streams finish. Async callers should
+    /// run this on a blocking thread.
+    pub fn close(&self) {
+        let mut worker = self
+            .worker
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some(shutdown) = worker.shutdown.take() {
+            let _ = shutdown.send(());
+        }
+        if let Some(handle) = worker.processing_handle.take() {
+            let _ = handle.join();
         }
     }
 
@@ -322,16 +347,6 @@ impl AsyncCanAdapter {
 
 impl Drop for AsyncCanAdapter {
     fn drop(&mut self) {
-        if let Some(handle) = self.processing_handle.take() {
-            // Send shutdown signal to background thread.
-            // Use `ok()` instead of `unwrap()` because the receiver may already
-            // be dropped if the process thread exited early (e.g. adapter error).
-            if let Some(shutdown) = self.shutdown.take() {
-                let _ = shutdown.send(());
-            }
-            // Join the thread; use `ok()` to avoid panicking inside Drop if the
-            // process thread panicked (double-panic would abort the process).
-            let _ = handle.join();
-        }
+        self.close();
     }
 }

@@ -1,6 +1,6 @@
-name: Linux-Windows cross-compile
+name: Rust (Linux-Windows cross-compile)
 
-on: [push, pull_request]
+on: [push]
 
 env:
   CARGO_TERM_COLOR: always
@@ -17,7 +17,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get -y install clang gcc-mingw-w64-x86-64 libclang-dev
-      - name: Build
+      - name: Build Rust library
         run: cargo build --verbose --target=x86_64-pc-windows-gnu --features=all
-      - name: Build Examples
+      - name: Build Rust examples
         run: cargo build --verbose --target=x86_64-pc-windows-gnu --features=all --examples
