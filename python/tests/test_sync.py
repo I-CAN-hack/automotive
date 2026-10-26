@@ -30,10 +30,12 @@ async def test_can_frame_round_trip() -> None:
         sender.close()
 
 
-@pytest.mark.parametrize("fd", [False, True])
+@pytest.mark.parametrize("fd,brs", [(False, None), (True, None), (True, False), (True, True)])
 @pytest.mark.parametrize("batch_send", [True, False])
-async def test_isotp_segmented_echo_and_receive_timeout(ecu_factory: EcuFactory, fd: bool, batch_send: bool) -> None:
-    config = IsoTPConfig(tx_id=0x7A1, fd=fd, batch_send=batch_send, block_size=2, timeout=2.0)
+async def test_isotp_segmented_echo_and_receive_timeout(
+    ecu_factory: EcuFactory, fd: bool, brs: bool | None, batch_send: bool
+) -> None:
+    config = IsoTPConfig(tx_id=0x7A1, fd=fd, brs=brs, batch_send=batch_send, block_size=2, timeout=2.0)
     async with ecu_factory(script="vecu_isotp.py", config=config, bs=2):
 
         def exchange() -> None:
@@ -41,12 +43,20 @@ async def test_isotp_segmented_echo_and_receive_timeout(ecu_factory: EcuFactory,
                 SocketCanAdapter("vcan0") as adapter,
                 IsoTP(adapter, config) as transport,
                 transport.recv() as messages,
+                adapter.recv() as frames,
             ):
                 with pytest.raises(TimeoutError):
                     next(messages)
                 payload = bytes(range(256)) * 2
                 transport.send(memoryview(payload))
                 assert next(messages) == payload
+                adapter.send(Frame(id=0x123))
+                for frame in frames:
+                    if frame.id == 0x123:
+                        break
+                    if frame.id == config.tx_id:
+                        assert frame.fd is fd
+                        assert frame.brs is (fd and brs is not False)
 
         await asyncio.to_thread(exchange)
 

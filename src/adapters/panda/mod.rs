@@ -58,6 +58,7 @@ pub struct PandaAdapter {
     handle: rusb::DeviceHandle<rusb::GlobalContext>,
     timeout: std::time::Duration,
     dat: Vec<u8>,
+    default_brs: bool,
 }
 
 #[allow(dead_code)]
@@ -96,6 +97,7 @@ impl PandaAdapter {
                 dat: vec![],
                 handle: device.open()?,
                 timeout: std::time::Duration::from_millis(100),
+                default_brs: bitrate_cfg.data.is_some(),
             };
 
             panda.handle.claim_interface(0)?;
@@ -237,6 +239,10 @@ impl PandaAdapter {
 }
 
 impl CanAdapter for PandaAdapter {
+    fn default_brs(&self) -> bool {
+        self.default_brs
+    }
+
     /// Sends a buffer of CAN messages to the panda.
     fn send(&mut self, frames: &mut VecDeque<Frame>) -> Result<()> {
         if frames.is_empty() {

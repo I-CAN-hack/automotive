@@ -88,7 +88,7 @@ pub struct PeakAdapter {
     ep_cmd_out: u8,
     ep_msg_out: u8,
     ep_msg_in: u8,
-    /// Whether CAN-FD frames should request a bitrate switch (data bitrate set).
+    /// Whether a configured data bitrate permits bitrate switching.
     use_brs: bool,
     /// Whether the firmware supports toggling ISO / non-ISO CAN-FD framing.
     iso_fd_supported: bool,
@@ -279,6 +279,10 @@ impl PeakAdapter {
 }
 
 impl CanAdapter for PeakAdapter {
+    fn default_brs(&self) -> bool {
+        self.use_brs
+    }
+
     fn supports_tx_timeout() -> bool {
         true
     }

@@ -52,6 +52,15 @@ pub trait CanAdapter {
         None
     }
 
+    /// Default bitrate-switching setting for outgoing CAN FD frames.
+    ///
+    /// Adapters with known timing return whether a data bitrate is configured.
+    /// Unknown or externally managed timing defaults to enabled. ISO-TP uses
+    /// this setting unless its configuration explicitly overrides BRS.
+    fn default_brs(&self) -> bool {
+        true
+    }
+
     /// Cancel every pending hardware transmission in this adapter session.
     /// A backend may defer the clear until the next real frame (Vector's
     /// HIGHPRIO replacement), but must perform it before submitting that frame.

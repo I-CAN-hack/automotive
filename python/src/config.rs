@@ -164,6 +164,9 @@ pub fn isotp(obj: &Bound<'_, PyAny>) -> PyResult<IsoTPConfig> {
     if let Some(offset) = offset {
         builder = builder.rx_id_offset(offset);
     }
+    if let Some(value) = field!(obj, brs, Option<bool>) {
+        builder = builder.brs(value);
+    }
     builder = match field!(obj, padding, Option<u8>) {
         Some(value) => builder.padding(value),
         None => builder.without_padding(),

@@ -221,6 +221,7 @@ impl<'a> IsoTP<'a> {
             .bus(self.config.bus)
             .data(data)
             .fd(self.config.fd)
+            .brs(self.config.fd && self.config.brs.unwrap_or(self.adapter.default_brs()))
             .build()
     }
 

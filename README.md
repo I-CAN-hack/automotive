@@ -310,6 +310,12 @@ address byte. The builder checks §9.5.1 values: 8 for Classical CAN, or 8, 12,
 16, 20, 24, 32, 48, and 64 for FD. `.padding(byte)` changes optional padding;
 `.without_padding()` disables it, while FD still pads frames to a valid DLC.
 
+For CAN FD, BRS defaults to enabled when a data bitrate is configured. Timing
+that is unknown or managed externally, such as SocketCAN or shared Vector
+channels, also defaults to BRS enabled. `.brs(true)` or `.brs(false)` explicitly
+enables or disables it for all outgoing frames, including flow control.
+Enabling BRS requires `.fd(true)` and adapter support.
+
 Receive data length is learned from each incoming FirstFrame, independently of
 the local transmit length. Invalid SF/FF length encodings and CAN data lengths
 are discarded; non-final consecutive frames must match the peer's FirstFrame

@@ -46,7 +46,10 @@ use crate::Result;
 /// ```
 ///
 /// CAN FD defaults to a 64-byte transmit data link length; choose another valid
-/// length with `max_dlen()`. Physical normal fixed addressing swaps the address
+/// length with `max_dlen()`. BRS defaults to enabled when the adapter reports a
+/// configured data bitrate, or when timing is unknown. Use `brs(true)` or
+/// `brs(false)` to override it.
+/// Physical normal fixed addressing swaps the address
 /// bytes to derive the response ID. Receive flow-control settings advertise how
 /// quickly the peer may send consecutive frames:
 ///
@@ -85,7 +88,7 @@ use crate::Result;
 /// ```
 ///
 /// `build()` returns an error for an overflowing derived receive ID, an invalid
-/// transmit length, a zero timeout, or receive STmin above 127 ms.
+/// transmit length, BRS without CAN FD, a zero timeout, or receive STmin above 127 ms.
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IsoTPConfig {
@@ -107,6 +110,12 @@ pub struct IsoTPConfig {
     #[cfg_attr(feature = "serde", serde(default = "default_batch_send"))]
     pub batch_send: bool,
     pub fd: bool,
+    /// Bitrate switching for all outgoing CAN FD frames, including flow control.
+    /// `None` follows the adapter's data bitrate setting, assuming BRS is enabled
+    /// when timing is unknown or managed externally.
+    /// `Some(true)` requires CAN FD; `Some(false)` disables BRS.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub brs: Option<bool>,
     /// First data byte for extended/mixed addressing, used for transmission.
     /// Also used for reception unless `rx_ext_address` is specified.
     pub ext_address: Option<u8>,
@@ -149,6 +158,7 @@ impl IsoTPConfig {
                 separation_time_min: None,
                 batch_send: default_batch_send(),
                 fd: false,
+                brs: None,
                 ext_address: None,
                 rx_ext_address: None,
                 max_dlen: None,
@@ -161,6 +171,9 @@ impl IsoTPConfig {
 
     /// Validate public fields again before using them for transport arithmetic.
     pub(super) fn validate(&self) -> Result<()> {
+        if self.brs == Some(true) && !self.fd {
+            return Err(Error::InvalidConfig("BRS requires CAN FD").into());
+        }
         let length = self.max_dlen.unwrap_or(if self.fd { 64 } else { 8 });
         if length < 8 || !DLC_TO_LEN.contains(&length) || (!self.fd && length != 8) {
             return Err(Error::InvalidConfig(
@@ -254,6 +267,16 @@ impl IsoTPConfigBuilder {
 
     pub fn fd(mut self, fd: bool) -> Self {
         self.config.fd = fd;
+        self
+    }
+
+    /// Override bitrate switching on every outgoing CAN FD frame.
+    /// Omitting this setter enables BRS when the adapter reports a configured
+    /// data bitrate, and assumes BRS is enabled when timing is unknown or managed
+    /// externally (such as SocketCAN or a shared Vector channel).
+    /// Enabling BRS requires `fd(true)` and adapter support for bitrate switching.
+    pub fn brs(mut self, enabled: bool) -> Self {
+        self.config.brs = Some(enabled);
         self
     }
 

@@ -1,7 +1,7 @@
 //! Scripted CAN peers exercise ISO-TP wire behavior, including traffic that a
 //! conforming Scapy peer would not normally transmit.
 
-use automotive::can::{AsyncCanAdapter, CanAdapter, Frame, Identifier};
+use automotive::can::{AsyncCanAdapter, CanAdapter, Frame, FrameContent, Identifier};
 use automotive::protocols::uds::{RequestOutcome, UDSClient, UDSConfig};
 use automotive::transports::isotp::{Error as IsoTPError, IsoTP, IsoTPConfig};
 use automotive::StreamExt;
@@ -19,9 +19,14 @@ struct SentFrame {
 struct ScriptedCan {
     incoming: mpsc::Receiver<Frame>,
     outgoing: UnboundedSender<SentFrame>,
+    data_bitrate: Option<u32>,
 }
 
 impl CanAdapter for ScriptedCan {
+    fn default_brs(&self) -> bool {
+        self.data_bitrate.is_some()
+    }
+
     fn send(&mut self, frames: &mut VecDeque<Frame>) -> automotive::Result<()> {
         for frame in frames.drain(..) {
             self.outgoing
@@ -71,11 +76,16 @@ impl Peer {
 }
 
 fn channel() -> (AsyncCanAdapter, Peer) {
+    channel_with_data_bitrate(None)
+}
+
+fn channel_with_data_bitrate(data_bitrate: Option<u32>) -> (AsyncCanAdapter, Peer) {
     let (incoming, receiver) = mpsc::channel();
     let (outgoing, sent) = unbounded_channel();
     let adapter = AsyncCanAdapter::new(ScriptedCan {
         incoming: receiver,
         outgoing,
+        data_bitrate,
     });
     (
         adapter,
@@ -108,6 +118,69 @@ async fn within<T>(future: impl Future<Output = T>) -> T {
     tokio::time::timeout(Duration::from_secs(3), future)
         .await
         .expect("protocol exchange stalled")
+}
+
+#[tokio::test]
+async fn bitrate_switching_applies_to_all_outgoing_isotp_frames() {
+    for (fd, brs) in [
+        (false, None),
+        (false, Some(false)),
+        (true, None),
+        (true, Some(false)),
+        (true, Some(true)),
+    ] {
+        for data_bitrate in [None, Some(2_000_000)] {
+            for batch_send in [false, true] {
+                let (adapter, mut peer) = channel_with_data_bitrate(data_bitrate);
+                let mut builder = IsoTPConfig::builder(Identifier::standard(0x700).unwrap())
+                    .fd(fd)
+                    .max_dlen(8)
+                    .batch_send(batch_send)
+                    .without_padding();
+                if let Some(brs) = brs {
+                    builder = builder.brs(brs);
+                }
+                let config = builder.build().unwrap();
+                let isotp = IsoTP::new(&adapter, config);
+                let mut messages = isotp.recv();
+                let expected_brs = fd && brs.unwrap_or(data_bitrate.is_some());
+                let check_frame = |frame: Frame, frame_type| {
+                    assert_eq!(frame.data()[0] & 0xf0, frame_type);
+                    assert_eq!(frame.is_fd(), fd);
+                    assert_eq!(
+                        matches!(frame.content(), FrameContent::Fd { brs: true, .. }),
+                        expected_brs,
+                        "fd={fd}, brs={brs:?}, data_bitrate={data_bitrate:?}"
+                    );
+                };
+                let exchange = async {
+                    check_frame(peer.next().await.frame, 0x00); // SingleFrame.
+                    check_frame(peer.next().await.frame, 0x10); // FirstFrame.
+                    peer.inject(received(&config, &[0x30, 0, 0]));
+                    for _ in 0..2 {
+                        check_frame(peer.next().await.frame, 0x20); // ConsecutiveFrame.
+                    }
+                    peer.inject(received(&config, &[0x10, 8, 1, 2, 3, 4, 5, 6]));
+                    check_frame(peer.next().await.frame, 0x30); // FlowControl.
+                    peer.inject(received(&config, &[0x21, 7, 8]));
+                };
+                within(async {
+                    let ((), ()) = tokio::join!(
+                        async {
+                            isotp.send(&[0xaa; 3]).await.unwrap();
+                            isotp.send(&[0xaa; 20]).await.unwrap();
+                            assert_eq!(
+                                messages.next().await.unwrap().unwrap(),
+                                [1, 2, 3, 4, 5, 6, 7, 8]
+                            );
+                        },
+                        exchange
+                    );
+                })
+                .await;
+            }
+        }
+    }
 }
 
 #[tokio::test]

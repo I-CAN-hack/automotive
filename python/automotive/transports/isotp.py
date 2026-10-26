@@ -28,6 +28,10 @@ class IsoTPConfig:
         rx_id_offset: Alternative standard-ID offset, exclusive with rx_id.
         bus: CAN bus index, default zero.
         fd: Select CAN FD, default False.
+        brs: CAN FD bitrate switching for data and flow-control frames. None
+            follows the adapter's data bitrate setting, assuming BRS is enabled
+            for unknown or externally managed timing. True or False overrides
+            it. True requires fd=True and adapter support.
         padding: Optional padding byte, default 0xCC. None disables optional
             padding; FD still pads to a valid DLC.
         timeout: Per-stage transport deadline in seconds, default 1.0. Covers
@@ -47,7 +51,7 @@ class IsoTPConfig:
             default zero; rounded up to a wire value and limited to 0.127.
 
     Raises:
-        ValueError: Rust rejects an ID mapping, length, or timing setting.
+        ValueError: Rust rejects an ID mapping, length, BRS, or timing setting.
 
     Durations must be finite and nonnegative; timeout must be greater than zero.
     Use resolved_rx_id to inspect the derived receive identifier.
@@ -58,6 +62,7 @@ class IsoTPConfig:
     rx_id_offset: int | None = None
     bus: int = _DEFAULTS["bus"]
     fd: bool = _DEFAULTS["fd"]
+    brs: bool | None = None
     padding: int | None = _DEFAULTS["padding"]
     timeout: float = _DEFAULTS["timeout"]
     separation_time_min: float | None = None
