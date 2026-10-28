@@ -17,6 +17,11 @@ one segment per call, with the mode or remaining length supplied explicitly.
 Callers handle transfer loops using the CONNECT capabilities. Sizes count bytes;
 addresses count ECU elements, with negotiated byte order and address granularity.
 
+Commands use a mutex with no background request tasks. Cancelling an active
+exchange leaves the session unsynchronized; call `synchronize()` before another
+command. An interrupted TCP write requires reopening the connection. Closing
+waits for the active exchange to finish or reach its command deadline.
+
 UDS and XCP share enum conversion machinery, with their own scoped definitions.
 The API provides standard-mode commands, not an A2L parser, block-mode sequence
 engine or background DAQ scheduler. The protocol references are ASAM XCP 1.5,

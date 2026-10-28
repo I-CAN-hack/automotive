@@ -20,8 +20,8 @@ class XCPConfig:
     """Command deadline in seconds, including transmission and reception.
 
     Timeout must be finite and positive. Commands are never automatically
-    retried. Cancelling queued work prevents transmission; active exchanges
-    finish under the Rust transaction gate before another command can start.
+    retried. Cancelling a command before it acquires the session sends nothing.
+    Cancelling an active exchange requires an explicit synchronize() afterwards.
     """
 
     timeout: float = _native.xcp_defaults()["timeout"]
@@ -104,7 +104,7 @@ class XCPClient(AsyncResource[_native._XCP]):
 
     Construct with XCPOnCAN, XCPOnTCP or XCPOnUDP, then call connect()
     before other commands. One client serializes its command exchanges.
-    After a timeout or malformed response, call synchronize(); an interrupted
+    After cancellation, a timeout, or a malformed response, call synchronize(); an interrupted
     TCP transmission requires closing and reopening the client. Negative
     responses raise XCPResponseError with raw command, code, and data fields.
 
@@ -113,6 +113,7 @@ class XCPClient(AsyncResource[_native._XCP]):
     granularity; addresses count ECU elements. No memory write or programming
     command is sent by connection or read commands. Each method sends one
     command; callers handle transfer loops and segmented seed/key exchanges.
+    Closing waits for an active exchange to finish or reach its deadline.
     """
 
     def __init__(self, transport: XCPTransport, config: XCPConfig | None = None) -> None:

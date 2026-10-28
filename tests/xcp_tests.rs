@@ -291,11 +291,13 @@ async fn cancelled_queued_command_never_reaches_the_ecu() {
             .write_all(&ethernet(1, &[0xff, 0, 0, 0, 0, 0]))
             .await
             .unwrap();
+        assert_eq!(read_request(&mut socket, 2).await, [0xfc]);
+        socket.write_all(&ethernet(2, &[0xfe, 0])).await.unwrap();
         assert_eq!(
-            read_request(&mut socket, 2).await,
+            read_request(&mut socket, 3).await,
             [0xf4, 1, 0, 0, 0, 0, 0, 0x80]
         );
-        socket.write_all(&ethernet(2, &[0xff, 42])).await.unwrap();
+        socket.write_all(&ethernet(3, &[0xff, 42])).await.unwrap();
     });
     let client = tcp_client(address, XCPConfig::default()).await.unwrap();
     client.connect(0).await.unwrap();
@@ -310,6 +312,13 @@ async fn cancelled_queued_command_never_reaches_the_ecu() {
     request.abort();
     let _ = request.await;
     resume.send(()).unwrap();
+    assert!(matches!(
+        client.short_upload(0x8000_0000, 1, 0).await,
+        Err(automotive::Error::XCPError(
+            XCPError::SynchronizationRequired
+        ))
+    ));
+    client.synchronize().await.unwrap();
     assert_eq!(client.short_upload(0x8000_0000, 1, 0).await.unwrap(), [42]);
     client.close().await;
     peer.await.unwrap();

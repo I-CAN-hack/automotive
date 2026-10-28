@@ -12,7 +12,7 @@ from ..can import Identifier
 class XCPTransport(AsyncResource[_native._XCPTransport]):
     """Own complete-packet I/O and framing; attach one XCP client at a time.
 
-    Closing either the transport or its client interrupts outstanding calls.
+    Closing stops new commands and waits for the active exchange or its timeout.
     Rust implementations provide limits, send, receive and optional recovery.
     """
 

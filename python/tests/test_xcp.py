@@ -243,7 +243,7 @@ async def test_scapy_timeout_requires_synch_and_never_retries(tmp_path: Path) ->
         assert json.loads(stats.read_text())["commands"]["fd"] == 1
 
 
-async def test_scapy_cancelled_active_call_drains_before_next_command(tmp_path: Path) -> None:
+async def test_scapy_cancelled_exchange_requires_explicit_synch(tmp_path: Path) -> None:
     async with (
         ecu(tmp_path, "tcp", "--case", "slow") as (ready, _, _),
         await tcp_client("127.0.0.1", ready["port"]) as client,
@@ -254,6 +254,9 @@ async def test_scapy_cancelled_active_call_drains_before_next_command(tmp_path: 
         pending.cancel()
         with pytest.raises(asyncio.CancelledError):
             await pending
+        with pytest.raises(XCPError, match="synchronize"):
+            await client.short_upload(BASE, 7)
+        await client.synchronize()
         assert await client.short_upload(BASE, 7) == FLASH[:7]
         await client.disconnect()
 
