@@ -6,6 +6,7 @@ mod config;
 mod errors;
 mod runtime;
 mod uds;
+mod xcp;
 
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -13,5 +14,6 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     config::register(m)?;
     runtime::register(m)?;
     m.add_class::<uds::Client>()?;
+    xcp::register(m)?;
     Ok(())
 }

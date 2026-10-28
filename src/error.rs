@@ -39,6 +39,12 @@ pub enum Error {
     #[error(transparent)]
     UDSError(#[from] crate::protocols::uds::Error),
 
+    #[error(transparent)]
+    XCPError(#[from] crate::protocols::xcp::Error),
+
+    #[error(transparent)]
+    XCPTransportError(#[from] crate::protocols::xcp::transport::Error),
+
     #[cfg(all(target_os = "windows", feature = "vector-xl"))]
     #[error(transparent)]
     VectorError(#[from] crate::adapters::vector::Error),

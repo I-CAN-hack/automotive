@@ -1,4 +1,8 @@
-use automotive::{protocols::uds, transports::isotp, Error};
+use automotive::{
+    protocols::{uds, xcp},
+    transports::isotp,
+    Error,
+};
 use pyo3::{create_exception, exceptions::*, prelude::*};
 
 create_exception!(
@@ -36,6 +40,24 @@ create_exception!(
     UDSError,
     AutomotiveError,
     "A UDS exchange failed."
+);
+create_exception!(
+    automotive,
+    XCPError,
+    AutomotiveError,
+    "An XCP exchange failed."
+);
+create_exception!(
+    automotive,
+    XCPResponseError,
+    XCPError,
+    "The ECU rejected an XCP command; code and command preserve the raw bytes."
+);
+create_exception!(
+    automotive,
+    XCPTransportError,
+    XCPError,
+    "XCP Ethernet framing or counter validation failed."
 );
 create_exception!(
     automotive,
@@ -93,6 +115,36 @@ pub fn convert(error: Error) -> PyErr {
             | uds::Error::MemoryValueOverflow { .. },
         ) => PyValueError::new_err(message),
         Error::UDSError(_) => UDSError::new_err(message),
+        Error::XCPError(xcp::Error::InvalidArgument(_)) => PyValueError::new_err(message),
+        Error::XCPError(xcp::Error::NegativeResponse {
+            command,
+            code,
+            data,
+        }) => Python::attach(|py| {
+            let error = XCPResponseError::new_err(message);
+            let value = error.value(py);
+            let _ = value.setattr("command", command.as_raw());
+            let _ = value.setattr("code", code.as_raw());
+            let _ = value.setattr("data", pyo3::types::PyBytes::new(py, &data));
+            error
+        }),
+        Error::XCPError(xcp::Error::MalformedResponse { response, .. }) => Python::attach(|py| {
+            let error = XCPError::new_err(message);
+            let _ = error
+                .value(py)
+                .setattr("response", pyo3::types::PyBytes::new(py, &response));
+            error
+        }),
+        Error::XCPError(_) => XCPError::new_err(message),
+        Error::XCPTransportError(error) => Python::attach(|py| {
+            let result = XCPTransportError::new_err(message);
+            if let xcp::transport::Error::InvalidPacket { response, .. } = error {
+                let _ = result
+                    .value(py)
+                    .setattr("response", pyo3::types::PyBytes::new(py, &response));
+            }
+            result
+        }),
         _ => AdapterError::new_err(message),
     }
 }
@@ -107,7 +159,13 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         IsoTPError,
         UDSError,
         NegativeResponseError,
-        ProtocolDeviationError
+        ProtocolDeviationError,
+        XCPError,
+        XCPResponseError,
+        XCPTransportError
     );
+    m.py()
+        .get_type::<XCPError>()
+        .setattr("response", m.py().None())?;
     Ok(())
 }

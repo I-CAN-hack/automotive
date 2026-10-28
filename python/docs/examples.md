@@ -37,6 +37,28 @@ Read diagnostic data through a persistent UDS client.
 :language: python
 ```
 
+## XCP on CAN and Ethernet
+
+Both examples set MTA, read 4 KiB with an explicit loop of UPLOAD commands,
+and print the data as hex and ASCII without writing files. CAN uses hardcoded
+settings and `CanAdapter()` discovery, TX
+`0x6C3`, RX `0x6C4`, and sends ten wake-up frames with ID `0x541` and eight `FF`
+bytes, 100 ms apart, before connecting. The examples use straight-line code
+without context managers or explicit cleanup.
+
+CAN reads from `0x8000_0000`. Ethernet requires `--host`, `--port`, `--bind`,
+`--bind-port`, and `--address` arguments, with no defaults. It reads 4 KiB over
+UDP from the supplied address, using the negotiated maximum upload size and
+a two-second timeout. Addresses accept hexadecimal or decimal values.
+
+```{literalinclude} ../examples/xcp_on_can.py
+:language: python
+```
+
+```{literalinclude} ../examples/xcp_on_ethernet.py
+:language: python
+```
+
 ## Configure bitrate and sample points
 
 Configure a PEAK PCAN-USB FD adapter with 500 kbit/s nominal and 2 Mbit/s data
@@ -84,6 +106,16 @@ Their setup, requests, output, and flow follow the corresponding Rust programs.
 ### Query an ECU with UDS
 
 ```{literalinclude} ../examples/sync/uds.py
+:language: python
+```
+
+### XCP on CAN and Ethernet
+
+```{literalinclude} ../examples/sync/xcp_on_can.py
+:language: python
+```
+
+```{literalinclude} ../examples/sync/xcp_on_ethernet.py
 :language: python
 ```
 

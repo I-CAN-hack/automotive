@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use super::{DataIdentifier, RoutineIdentifier, ServiceIdentifier};
 
-uds_code_enum! {
+wire_code_enum! {
     /// Negative Response Codes returned by ECU as defined in ISO 14229
     pub enum NegativeResponseCode: u8 {
         GeneralReject = 0x10,

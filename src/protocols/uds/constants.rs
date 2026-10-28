@@ -4,7 +4,7 @@ pub static POSITIVE_RESPONSE: u8 = 0x40;
 pub static NEGATIVE_RESPONSE: u8 = 0x7f;
 pub static ZERO_SUB_FUNCTION: u8 = 0x00;
 
-uds_code_enum! {
+wire_code_enum! {
     /// Service Identifiers (SIDs) as defined in ISO 14229
     pub enum ServiceIdentifier: u8 {
         // Diagnostic and Communication Management
@@ -47,7 +47,7 @@ uds_code_enum! {
     }
 }
 
-uds_code_enum! {
+wire_code_enum! {
     /// Standard Data Identifiers (DIDs) as defined in ISO 14229
     pub enum DataIdentifier: u16 {
         BootSoftwareIdentification = 0xf180,
@@ -84,7 +84,7 @@ uds_code_enum! {
     }
 }
 
-uds_code_enum! {
+wire_code_enum! {
     /// Diagnostic Session Type Sub-Function ID as defined in ISO 14229
     pub enum SessionType: u8 {
         Default = 0x01,
@@ -94,7 +94,7 @@ uds_code_enum! {
     }
 }
 
-uds_code_enum! {
+wire_code_enum! {
     /// ECU Reset Sub-Function ID as defined in ISO 14229
     pub enum ResetType: u8 {
         /// Simulates power-on/start-up sequence after a power loss
@@ -108,7 +108,7 @@ uds_code_enum! {
     }
 }
 
-uds_code_enum! {
+wire_code_enum! {
     /// Security Access Type Sub-Function ID as defined in ISO 14229
     pub enum SecurityAccessType: u8 {
         RequestSeed = 0x01,
@@ -116,7 +116,7 @@ uds_code_enum! {
     }
 }
 
-uds_code_enum! {
+wire_code_enum! {
     /// Routine Control Sub-Function ID as defined in ISO 14229
     pub enum RoutineControlType: u8 {
         Start = 0x01,
@@ -125,7 +125,7 @@ uds_code_enum! {
     }
 }
 
-uds_code_enum! {
+wire_code_enum! {
     /// Read DTC Information Sub-Function ID as defined in ISO 14229
     pub enum ReportType: u8 {
         ReportNumberOfDTCByStatusMask = 0x01,
@@ -157,7 +157,7 @@ uds_code_enum! {
     }
 }
 
-uds_code_enum! {
+wire_code_enum! {
     /// Standard routine identifiers defined in ISO 14229, Annex F.
     /// Other routine identifiers can be passed as raw `u16` values or [`Self::NonStandard`].
     pub enum RoutineIdentifier: u16 {

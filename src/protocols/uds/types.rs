@@ -26,7 +26,7 @@ pub struct SessionParameterRecord {
     pub p2_star_server_max: Duration,
 }
 
-uds_code_enum! {
+wire_code_enum! {
     /// DTC format identifiers defined in ISO 14229, Annex D.
     #[allow(non_camel_case_types)]
     pub enum DTCFormatIdentifier: u8 {

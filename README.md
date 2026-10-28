@@ -10,8 +10,9 @@ Welcome to the `automotive` crate documentation. The purpose of this crate is to
 - `automotive::adapters` contains the feature-gated hardware adapters: `j2534`,
   `panda`, `peak`, `socketcan`, and `vector`, plus the `get_adapter()` discovery
   helper.
-- `automotive::transports` contains `isotp` and the shared `Transport` trait.
-- `automotive::protocols` contains `uds`, which uses a `Transport`.
+- `automotive::transports` contains ISO-TP and the diagnostic `Transport` interface.
+- `automotive::protocols` contains `uds`, which uses a `Transport`, and `xcp`,
+  which exchanges XCP packets over raw CAN/CAN FD or Ethernet TCP/UDP.
 - `automotive::can` provides shared CAN types and traits.
 
 Hardware adapter types use the `Adapter` suffix: `PandaAdapter`, `PeakAdapter`,
@@ -359,6 +360,11 @@ assert_eq!(config.rx_id, Identifier::extended(0x18daf110)?);
 The `IsoTPConfig` API documentation also includes an extended-addressing example
 with different transmit and receive address bytes.
 
+## XCP
+
+XCP over CAN, CAN FD, and Ethernet (TCP/UDP) is supported through
+`automotive::protocols::xcp`, with matching asynchronous and synchronous Python APIs.
+
 ## UDS Example
 The automotive crate also supplies interfaces for various diagnostic protocols such as UDS. The adapter is first wrapped to support the ISO Transport Layer, then a UDS Client is created. All methods are fully async, making it easy to communicate with multiple ECUs in parallel. See [automotive#21](https://github.com/I-CAN-hack/automotive/issues/21) for progress on the supported SIDs.
 
@@ -617,7 +623,7 @@ Implementing a new adapter is done by implementing the `CanAdapter` Trait. Hardw
 
  ## Roadmap
  Features I'd like to add in the future. Also check the [issues page](https://github.com/I-CAN-hack/automotive/issues?q=is%3Aopen+is%3Aissue+label%3Aenhancement).
- - CCP/XCP Client
+ - CCP Client
  - Update file extraction (e.g. .frf and .odx)
  - VIN Decoding
  - More device support
