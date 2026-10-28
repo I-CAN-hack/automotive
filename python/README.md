@@ -3,7 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/automotive.svg)](https://pypi.org/project/automotive/)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://i-can-hack.github.io/automotive/)
 
-A library for synchronous and asynchronous CAN, ISO-TP, UDS, and XCP, powered by the
+A library for synchronous and asynchronous CAN, ISO-TP, UDS, CCP, and XCP, powered by the
 `automotive` Rust crate. The distribution and import name are both `automotive`.
 Rust handles adapter I/O, protocol framing, validation, and timing; Python
 provides reusable configuration objects, typed values, context managers, and
@@ -168,14 +168,18 @@ from automotive.transports.isotp import IsoTP, IsoTPConfig
 
 adapter_config = PeakConfig(
     bitrate=BitrateSettings(
-        bitrate=500_000, sample_point=0.8,
-        data_bitrate=2_000_000, data_sample_point=0.8,
+        bitrate=500_000,
+        sample_point=0.8,
+        data_bitrate=2_000_000,
+        data_sample_point=0.8,
     ),
     tx_timeout=1.0,
 )
 transport_config = IsoTPConfig(
     tx_id=Identifier.extended(0x18DA10F1),
-    fd=True, max_dlen=32, block_size=8,
+    fd=True,
+    max_dlen=32,
+    block_size=8,
     receive_separation_time_min=0.0003,
 )
 uds_config = UDSConfig(request_timeout=10.0, strict=True)

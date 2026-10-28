@@ -1,7 +1,7 @@
 """Read 4 KiB using SET_MTA and UPLOAD over XCP on CAN and CAN FD."""
 
-import time
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))

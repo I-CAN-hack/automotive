@@ -2,9 +2,10 @@
 
 import asyncio
 
+from utils import hexdump
+
 from automotive.adapters import CanAdapter
 from automotive.protocols.ccp import CCPCanConfig, CCPClient, CCPConfig, CCPOnCAN
-from utils import hexdump
 
 
 async def main() -> None:

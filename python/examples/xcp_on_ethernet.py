@@ -3,8 +3,9 @@
 import argparse
 import asyncio
 
-from automotive.protocols.xcp import XCPClient, XCPConfig, XCPOnUDP
 from utils import hexdump
+
+from automotive.protocols.xcp import XCPClient, XCPConfig, XCPOnUDP
 
 
 def parse_address(value: str) -> int:

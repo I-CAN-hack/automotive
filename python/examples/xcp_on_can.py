@@ -2,10 +2,11 @@
 
 import asyncio
 
+from utils import hexdump
+
 from automotive.adapters import CanAdapter
 from automotive.can import Frame
 from automotive.protocols.xcp import XCPCanConfig, XCPClient, XCPOnCAN
-from utils import hexdump
 
 
 async def main() -> None:

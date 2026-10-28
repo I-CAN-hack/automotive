@@ -1,4 +1,4 @@
-"""Synchronous and asynchronous CAN, ISO-TP, UDS, and XCP powered by Rust.
+"""Synchronous and asynchronous CAN, ISO-TP, UDS, CCP, and XCP powered by Rust.
 
 Start with ``adapters.CanAdapter()``, ``IsoTP.from_id()``, and
 ``UDSClient(transport)``. Explicit config objects expose advanced settings.

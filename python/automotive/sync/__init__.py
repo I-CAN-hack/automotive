@@ -1,4 +1,4 @@
-"""Synchronous CAN, ISO-TP, UDS, and XCP with the same Rust implementation.
+"""Synchronous CAN, ISO-TP, UDS, CCP, and XCP with the same Rust implementation.
 
 Import blocking classes from automotive.sync.adapters,
 automotive.sync.transports.isotp, and automotive.sync.protocols.uds.
