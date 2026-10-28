@@ -14,6 +14,8 @@ from importlib.metadata import version as _distribution_version
 from .errors import (
     AdapterError,
     AutomotiveError,
+    CCPError,
+    CCPResponseError,
     IsoTPError,
     NegativeResponseError,
     NotSupportedError,
@@ -30,6 +32,8 @@ __version__ = _distribution_version("automotive")
 __all__ = [
     "AdapterError",
     "AutomotiveError",
+    "CCPError",
+    "CCPResponseError",
     "IsoTPError",
     "NegativeResponseError",
     "NotSupportedError",

@@ -1,8 +1,14 @@
 """Read 4 KiB using SET_MTA and UPLOAD over XCP on Ethernet."""
 
 import argparse
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 
 from automotive.sync.protocols.xcp import XCPClient, XCPConfig, XCPOnUDP
+from examples.utils import hexdump
 
 
 def parse_address(value: str) -> int:
@@ -36,12 +42,7 @@ def main() -> None:
         data.extend(client.upload(min(chunk_size, 4096 - len(data))))
 
     # Print all data
-    for offset in range(0, len(data), 16):
-        chunk = data[offset : offset + 16]
-        hex_data = chunk.hex(" ")
-        ascii_data = "".join(chr(byte) if 32 <= byte < 127 else "." for byte in chunk)
-        address = args.address + offset // info.address_granularity
-        print(f"{address:08x}  {hex_data:<47}  |{ascii_data}|")
+    print(hexdump(data, args.address, address_granularity=info.address_granularity))
 
 
 if __name__ == "__main__":

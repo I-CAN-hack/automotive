@@ -13,6 +13,7 @@ Welcome to the `automotive` crate documentation. The purpose of this crate is to
 - `automotive::transports` contains ISO-TP and the diagnostic `Transport` interface.
 - `automotive::protocols` contains `uds`, which uses a `Transport`, and `xcp`,
   which exchanges XCP packets over raw CAN/CAN FD or Ethernet TCP/UDP.
+  `ccp` provides CCP 2.1 session and memory commands over Classical CAN.
 - `automotive::can` provides shared CAN types and traits.
 
 Hardware adapter types use the `Adapter` suffix: `PandaAdapter`, `PeakAdapter`,
@@ -359,6 +360,22 @@ assert_eq!(config.rx_id, Identifier::extended(0x18daf110)?);
 
 The `IsoTPConfig` API documentation also includes an extended-addressing example
 with different transmit and receive address bytes.
+
+## CCP
+
+CCP 2.1 on Classical CAN is supported through `automotive::protocols::ccp`,
+with matching asynchronous and synchronous Python APIs. Configure the ECU's
+memory address byte order explicitly; station addresses are always little endian.
+
+Commands share a serialized session and are never retried automatically.
+After cancellation, timeout or a malformed response, reconnect and re-establish
+MTA and access privileges before continuing.
+
+The [Rust example](examples/ccp.rs) reads the first 4 KiB of ECU
+flash and prints a hexdump. Run it with
+`cargo run --features socketcan --example ccp` on Linux, or enable the
+appropriate adapter feature. Matching Python examples are available in
+`python/examples/ccp.py` and `python/examples/sync/ccp.py`.
 
 ## XCP
 

@@ -1,5 +1,5 @@
 use automotive::{
-    protocols::{uds, xcp},
+    protocols::{ccp, uds, xcp},
     transports::isotp,
     Error,
 };
@@ -46,6 +46,18 @@ create_exception!(
     XCPError,
     AutomotiveError,
     "An XCP exchange failed."
+);
+create_exception!(
+    automotive,
+    CCPError,
+    AutomotiveError,
+    "A CCP exchange failed."
+);
+create_exception!(
+    automotive,
+    CCPResponseError,
+    CCPError,
+    "The ECU rejected a CCP command."
 );
 create_exception!(
     automotive,
@@ -115,6 +127,35 @@ pub fn convert(error: Error) -> PyErr {
             | uds::Error::MemoryValueOverflow { .. },
         ) => PyValueError::new_err(message),
         Error::UDSError(_) => UDSError::new_err(message),
+        Error::CCPError(ccp::Error::InvalidArgument(_)) => PyValueError::new_err(message),
+        Error::CCPError(ccp::Error::NegativeResponse {
+            command,
+            code,
+            data,
+        }) => Python::attach(|py| {
+            let error = CCPResponseError::new_err(message);
+            let value = error.value(py);
+            let _ = value.setattr("command", command.as_raw());
+            let _ = value.setattr("code", code.as_raw());
+            let _ = value.setattr("data", pyo3::types::PyBytes::new(py, &data));
+            error
+        }),
+        Error::CCPError(ccp::Error::MalformedResponse { response }) => Python::attach(|py| {
+            let error = CCPError::new_err(message);
+            let _ = error
+                .value(py)
+                .setattr("response", pyo3::types::PyBytes::new(py, &response));
+            error
+        }),
+        Error::CCPError(ccp::Error::Event { code, data }) => Python::attach(|py| {
+            let error = CCPError::new_err(message);
+            let _ = error.value(py).setattr("code", code.as_raw());
+            let _ = error
+                .value(py)
+                .setattr("data", pyo3::types::PyBytes::new(py, &data));
+            error
+        }),
+        Error::CCPError(_) => CCPError::new_err(message),
         Error::XCPError(xcp::Error::InvalidArgument(_)) => PyValueError::new_err(message),
         Error::XCPError(xcp::Error::NegativeResponse {
             command,
@@ -153,6 +194,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     macro_rules! add { ($($name:ident),*) => { $(m.add(stringify!($name), m.py().get_type::<$name>())?;)* }; }
     add!(
         AutomotiveError,
+        CCPError,
+        CCPResponseError,
         AdapterError,
         NotSupportedError,
         TransmissionCancelledError,
@@ -166,6 +209,9 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     );
     m.py()
         .get_type::<XCPError>()
+        .setattr("response", m.py().None())?;
+    m.py()
+        .get_type::<CCPError>()
         .setattr("response", m.py().None())?;
     Ok(())
 }

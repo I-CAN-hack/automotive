@@ -2,6 +2,7 @@
 
 use pyo3::prelude::*;
 
+mod ccp;
 mod config;
 mod errors;
 mod runtime;
@@ -15,5 +16,6 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     runtime::register(m)?;
     m.add_class::<uds::Client>()?;
     xcp::register(m)?;
+    ccp::register(m)?;
     Ok(())
 }

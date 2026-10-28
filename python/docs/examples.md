@@ -136,3 +136,20 @@ concurrently.
 ```{literalinclude} ../examples/sync/query_fw_versions.py
 :language: python
 ```
+
+## CCP memory transfers
+
+Connect directly to the ECU and dump the first 4 KiB of
+flash. These examples configure little-endian memory addresses and print
+addresses, hex bytes and ASCII using the local `utils.py` helper shared
+with the XCP examples.
+
+```{literalinclude} ../examples/ccp.py
+:language: python
+```
+
+### Synchronous CCP
+
+```{literalinclude} ../examples/sync/ccp.py
+:language: python
+```
