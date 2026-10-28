@@ -2,10 +2,13 @@
 
 import argparse
 import asyncio
+import sys
+from pathlib import Path
 
-from utils import hexdump
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from automotive.protocols.xcp import XCPClient, XCPConfig, XCPOnUDP
+from examples.utils import hexdump
 
 
 def parse_address(value: str) -> int:
