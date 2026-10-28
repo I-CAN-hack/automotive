@@ -26,6 +26,7 @@ section:
 | `automotive.sync.transports` | {ref}`Transport interface <sync-transports>` |
 | `automotive.sync.transports.isotp` | {ref}`ISO-TP <sync-isotp>` |
 | `automotive.sync.protocols.uds` | {ref}`UDS <sync-uds>` |
+| `automotive.sync.protocols.xcp` | {ref}`XCP <sync-xcp>` |
 | `automotive.sync.errors` | [Exceptions](errors.md) |
 
 ## Receive subscriptions

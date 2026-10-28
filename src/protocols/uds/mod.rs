@@ -34,9 +34,6 @@
 //!     Ok(())
 //! }
 
-#[macro_use]
-mod macros;
-
 mod config;
 mod constants;
 mod error;

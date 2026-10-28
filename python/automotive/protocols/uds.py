@@ -17,7 +17,8 @@ from typing import Any, Self
 
 from .. import _native
 from .._base import Buffer, buffer_bytes, optional_bytes
-from .._enums import (
+from ..transports import Transport
+from ._uds_enums import (
     DataIdentifier,
     DTCFormatIdentifier,
     NegativeResponseCode,
@@ -29,7 +30,6 @@ from .._enums import (
     ServiceIdentifier,
     SessionType,
 )
-from ..transports import Transport
 
 _DEFAULTS = _native.defaults()
 

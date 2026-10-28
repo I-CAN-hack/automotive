@@ -3,7 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/automotive.svg)](https://pypi.org/project/automotive/)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://i-can-hack.github.io/automotive/)
 
-A library for synchronous and asynchronous CAN, ISO-TP, and UDS, powered by the
+A library for synchronous and asynchronous CAN, ISO-TP, UDS, and XCP, powered by the
 `automotive` Rust crate. The distribution and import name are both `automotive`.
 Rust handles adapter I/O, protocol framing, validation, and timing; Python
 provides reusable configuration objects, typed values, context managers, and
@@ -96,6 +96,7 @@ print(uds.read_data_by_identifier(DataIdentifier.VIN))
 | `automotive.transports` | `automotive.sync.transports` |
 | `automotive.transports.isotp` | `automotive.sync.transports.isotp` |
 | `automotive.protocols.uds` | `automotive.sync.protocols.uds` |
+| `automotive.protocols.xcp` | `automotive.sync.protocols.xcp` |
 | `automotive.can` | `automotive.sync.can` |
 | `automotive.can.bitrate` | `automotive.sync.can.bitrate` |
 | `automotive.errors` | `automotive.sync.errors` |
@@ -132,6 +133,11 @@ Use the async API for awaitable sends and receives in asyncio applications.
 Suppression scopes in the synchronous API are local to the
 calling thread and context. Ctrl+C interrupts a blocking wait; an active Rust UDS
 exchange still drains before the next request, matching async cancellation.
+
+## XCP
+
+XCP over CAN, CAN FD, and Ethernet (TCP/UDP) is supported through
+`automotive.protocols.xcp` and `automotive.sync.protocols.xcp`.
 
 ## Configuration
 

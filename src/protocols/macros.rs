@@ -1,6 +1,6 @@
 // Keep wire assignments separate from Rust enum discriminants: these enums
 // preserve unknown values and must be encoded through as_raw(), never a cast.
-macro_rules! uds_code_enum {
+macro_rules! wire_code_enum {
     (
         $(#[$meta:meta])*
         pub enum $name:ident: $wire:ty {

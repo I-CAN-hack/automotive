@@ -9,6 +9,9 @@ from ..errors import (
     ProtocolDeviationError,
     TransmissionCancelledError,
     UDSError,
+    XCPError,
+    XCPResponseError,
+    XCPTransportError,
 )
 
 __all__ = [
@@ -20,4 +23,7 @@ __all__ = [
     "ProtocolDeviationError",
     "TransmissionCancelledError",
     "UDSError",
+    "XCPError",
+    "XCPResponseError",
+    "XCPTransportError",
 ]

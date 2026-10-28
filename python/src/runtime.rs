@@ -101,7 +101,7 @@ pub fn join_error(error: tokio::task::JoinError) -> PyErr {
 #[pyclass(name = "_CanAdapter", module = "automotive._native")]
 pub struct CanAdapter {
     pub inner: Arc<AsyncCanAdapter>,
-    closed: watch::Sender<bool>,
+    pub(crate) closed: watch::Sender<bool>,
 }
 
 #[pymethods]
