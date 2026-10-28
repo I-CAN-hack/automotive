@@ -34,22 +34,32 @@ def assert_blocks(frames: list[Frame], tx: Identifier, rx: Identifier, bs: int, 
 
 
 @pytest.mark.parametrize(
-    "fd,padding,address,max_dlen,bs,receive_bs",
+    "fd,brs,padding,address,max_dlen,bs,receive_bs",
     [
-        (False, None, None, 8, 0, 0),
-        (False, 0xAA, None, 8, 3, 2),
-        (False, 0xCC, 0xDA, 8, 3, 2),
-        (True, None, None, 64, 0, 0),
-        (True, 0xAA, 0xDA, 32, 2, 3),
-        (True, None, None, 8, 2, 2),
+        (False, None, None, None, 8, 0, 0),
+        (False, False, 0xAA, None, 8, 3, 2),
+        (False, None, 0xCC, 0xDA, 8, 3, 2),
+        (True, None, None, None, 64, 0, 0),
+        (True, True, None, None, 64, 0, 0),
+        (True, False, None, None, 64, 0, 0),
+        (True, True, 0xAA, 0xDA, 32, 2, 3),
+        (True, False, None, None, 8, 2, 2),
     ],
 )
 async def test_echo_and_flow_control(
-    ecu_factory: EcuFactory, fd: bool, padding: int | None, address: int | None, max_dlen: int, bs: int, receive_bs: int
+    ecu_factory: EcuFactory,
+    fd: bool,
+    brs: bool | None,
+    padding: int | None,
+    address: int | None,
+    max_dlen: int,
+    bs: int,
+    receive_bs: int,
 ) -> None:
     config = IsoTPConfig(
         tx_id=0x7A1,
         fd=fd,
+        brs=brs,
         padding=padding,
         ext_address=address,
         max_dlen=max_dlen,
@@ -89,6 +99,10 @@ async def _echo_and_capture(
         raw_tx = int(ecu.transport.config.tx_id)
         tx = Identifier(raw_tx, raw_tx > 0x7FF)
         rx = ecu.transport.config.resolved_rx_id
+        for frame in frames:
+            if frame.id == tx:
+                assert frame.fd is fd
+                assert frame.brs is (fd and ecu.transport.config.brs is not False)
         assert_blocks(frames, tx, rx, bs, offset)
         assert_blocks(frames, rx, tx, receive_bs, offset)
 

@@ -214,6 +214,7 @@ pub struct AsyncCanAdapter {
     send_sender: mpsc::Sender<Transmission>,
     state: watch::Receiver<WorkerState>,
     tx_timeout: Option<Duration>,
+    default_brs: bool,
 }
 
 struct Worker {
@@ -228,6 +229,7 @@ impl AsyncCanAdapter {
         let (recv_sender, recv_receiver) = broadcast::channel(CAN_RX_BUFFER_SIZE);
         let (state_sender, state) = watch::channel(WorkerState::default());
         let tx_timeout = adapter.tx_timeout();
+        let default_brs = adapter.default_brs();
         let processing_handle = std::thread::spawn(move || {
             process(
                 adapter,
@@ -246,7 +248,13 @@ impl AsyncCanAdapter {
             send_sender,
             state,
             tx_timeout,
+            default_brs,
         }
+    }
+
+    /// Default bitrate-switching setting reported by the backend for CAN FD.
+    pub fn default_brs(&self) -> bool {
+        self.default_brs
     }
 
     /// Stop the worker and release the hardware, even while shared references exist.
