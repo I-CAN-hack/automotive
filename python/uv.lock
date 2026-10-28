@@ -42,7 +42,7 @@ wheels = [
 
 [[package]]
 name = "automotive"
-version = "0.5.0"
+version = "0.5.1a1"
 source = { editable = "." }
 
 [package.dev-dependencies]

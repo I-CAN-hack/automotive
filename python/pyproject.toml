@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "automotive"
-version = "0.5.0"
+version = "0.5.1a1"
 description = "Synchronous and asynchronous CAN, ISO-TP, UDS, and XCP powered by Rust"
 readme = "README.md"
 requires-python = ">=3.11"
