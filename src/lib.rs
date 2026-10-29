@@ -7,6 +7,7 @@ mod error;
 pub mod protocols;
 mod shared;
 pub mod transports;
+pub mod utils;
 
 /// Re-export of relevant stream traits from `tokio_stream`.
 pub use tokio_stream::{Stream, StreamExt, Timeout};

@@ -5,6 +5,7 @@ async fn main() -> automotive::Result<()> {
     use automotive::{
         can::{Frame, Identifier},
         protocols::xcp::{XCPCanConfig, XCPClient, XCPOnCAN},
+        utils::hexdump,
     };
     use std::{sync::Arc, time::Duration};
 
@@ -34,24 +35,6 @@ async fn main() -> automotive::Result<()> {
     }
 
     // Print all data
-    for (row, chunk) in data.chunks(16).enumerate() {
-        let hex_data = chunk
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<Vec<_>>()
-            .join(" ");
-        let ascii_data: String = chunk
-            .iter()
-            .map(|&byte| {
-                if (32..127).contains(&byte) {
-                    char::from(byte)
-                } else {
-                    '.'
-                }
-            })
-            .collect();
-        let address = start + (row * 16 / usize::from(info.address_granularity)) as u32;
-        println!("{address:08x}  {hex_data:<47}  |{ascii_data}|");
-    }
+    println!("{}", hexdump(&data, start, info.address_granularity));
     Ok(())
 }

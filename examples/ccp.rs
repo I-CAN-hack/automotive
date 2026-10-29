@@ -5,6 +5,7 @@ async fn main() -> automotive::Result<()> {
     use automotive::{
         can::Identifier,
         protocols::ccp::{ByteOrder, CCPCanConfig, CCPClient, CCPConfig, CCPOnCAN},
+        utils::hexdump,
     };
     use std::sync::Arc;
 
@@ -27,27 +28,7 @@ async fn main() -> automotive::Result<()> {
     }
 
     // Print all data
-    for (row, chunk) in data.chunks(16).enumerate() {
-        let hex_data = chunk
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<Vec<_>>()
-            .join(" ");
-        let ascii_data: String = chunk
-            .iter()
-            .map(|&b| {
-                if (32..127).contains(&b) {
-                    char::from(b)
-                } else {
-                    '.'
-                }
-            })
-            .collect();
-        println!(
-            "{:08x}  {hex_data:<47}  |{ascii_data}|",
-            start + row as u32 * 16
-        );
-    }
+    println!("{}", hexdump(&data, start, 1));
     client.disconnect(false).await?;
     client.close().await;
     Ok(())
