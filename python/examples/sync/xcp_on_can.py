@@ -1,16 +1,11 @@
 """Read 4 KiB using SET_MTA and UPLOAD over XCP on CAN and CAN FD."""
 
-import sys
 import time
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
 
 from automotive.sync.adapters import CanAdapter
 from automotive.sync.can import Frame
 from automotive.sync.protocols.xcp import XCPCanConfig, XCPClient, XCPOnCAN
-from examples.utils import hexdump
+from automotive.utils import hexdump
 
 
 def main() -> None:

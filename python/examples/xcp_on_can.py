@@ -1,15 +1,11 @@
 """Read 4 KiB using SET_MTA and UPLOAD over XCP on CAN and CAN FD."""
 
 import asyncio
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from automotive.adapters import CanAdapter
 from automotive.can import Frame
 from automotive.protocols.xcp import XCPCanConfig, XCPClient, XCPOnCAN
-from examples.utils import hexdump
+from automotive.utils import hexdump
 
 
 async def main() -> None:

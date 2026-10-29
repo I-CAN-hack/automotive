@@ -1,13 +1,8 @@
 """Dump 4 KiB of ECU flash using CCP SHORT_UP."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
 from automotive.sync.adapters import CanAdapter
 from automotive.sync.protocols.ccp import CCPCanConfig, CCPClient, CCPConfig, CCPOnCAN
-from examples.utils import hexdump
+from automotive.utils import hexdump
 
 
 def main() -> None:

@@ -1,4 +1,4 @@
-"""Hexdump formatting shared by the CCP and XCP examples."""
+"""Utilities for displaying ECU memory."""
 
 
 def hexdump(data: bytes | bytearray | memoryview, address: int = 0, *, address_granularity: int = 1) -> str:

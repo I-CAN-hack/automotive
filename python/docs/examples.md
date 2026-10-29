@@ -141,7 +141,7 @@ concurrently.
 
 Connect directly to the ECU and dump the first 4 KiB of
 flash. These examples configure little-endian memory addresses and print
-addresses, hex bytes and ASCII using the local `utils.py` helper shared
+addresses, hex bytes and ASCII using the `automotive.utils.hexdump` helper shared
 with the XCP examples.
 
 ```{literalinclude} ../examples/ccp.py

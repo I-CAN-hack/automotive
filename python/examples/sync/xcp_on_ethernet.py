@@ -1,14 +1,9 @@
 """Read 4 KiB using SET_MTA and UPLOAD over XCP on Ethernet."""
 
 import argparse
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
 
 from automotive.sync.protocols.xcp import XCPClient, XCPConfig, XCPOnUDP
-from examples.utils import hexdump
+from automotive.utils import hexdump
 
 
 def parse_address(value: str) -> int:
