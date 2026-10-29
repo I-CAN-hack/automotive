@@ -24,6 +24,7 @@ section:
 | `automotive.sync.adapters` | {ref}`Adapters <sync-adapters>` |
 | `automotive.sync.adapters.j2534` | {ref}`Native J2534 ISO-TP <sync-j2534>` |
 | `automotive.sync.transports` | {ref}`Transport interface <sync-transports>` |
+| `automotive.sync.transports.doip` | {ref}`DoIP <sync-doip>` |
 | `automotive.sync.transports.isotp` | {ref}`ISO-TP <sync-isotp>` |
 | `automotive.sync.protocols.uds` | {ref}`UDS <sync-uds>` |
 | `automotive.sync.protocols.xcp` | {ref}`XCP <sync-xcp>` |

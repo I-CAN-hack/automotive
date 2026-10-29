@@ -3,7 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/automotive.svg)](https://pypi.org/project/automotive/)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://i-can-hack.github.io/automotive/)
 
-A library for synchronous and asynchronous CAN, ISO-TP, UDS, CCP, and XCP, powered by the
+A library for synchronous and asynchronous CAN, ISO-TP, DoIP, UDS, CCP, and XCP, powered by the
 `automotive` Rust crate. The distribution and import name are both `automotive`.
 Rust handles adapter I/O, protocol framing, validation, and timing; Python
 provides reusable configuration objects, typed values, context managers, and
@@ -44,6 +44,24 @@ For Rust formatting, run `cargo fmt --all`.
 The Python extension always includes every adapter supported on its platform:
 SocketCAN on Linux, panda and PEAK USB adapters, and Vector and J2534 on Windows. Vendor drivers/DLLs and USB permissions
 remain necessary. The Rust crate retains feature flags for Rust applications.
+
+## DoIP over IPv4 and IPv6
+
+`await automotive.transports.doip.discover()` triggers identification using IPv4
+broadcast and collects unique vehicles for two seconds. Connect to a result with
+`await vehicle.connect()`, or connect directly with
+`await DoIP.connect("192.168.0.10", 0x1000)`. Pass the resulting transport to
+`UDSClient` as usual. No CAN adapter or administrator privileges are needed.
+`DoIPConfig` and `DiscoveryConfig` expose optional settings. IPv6 multicast uses
+`DiscoveryConfig.ipv6(interface_index)` with a portable numeric adapter index.
+`await Discovery.listen()` receives passive announcements without sending.
+
+The matching blocking functions live in `automotive.sync.transports.doip`.
+See the [DoIP API](https://i-can-hack.github.io/automotive/api/transports/doip.html)
+and async/sync [examples](https://i-can-hack.github.io/automotive/examples.html).
+TLS and OEM authentication are not implemented.
+Run `uv run pytest tests/test_doip.py -q` for Scapy ECU tests on any platform;
+`--run-vcan` is not required.
 
 ## Basic usage
 

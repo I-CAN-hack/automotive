@@ -72,6 +72,9 @@ jobs:
           import automotive.sync.adapters.j2534, automotive.sync.protocols.uds, automotive.sync.can.bitrate, pydoc;
           print(pydoc.render_doc(automotive.protocols.uds.UDSClient));
           print(pydoc.render_doc(automotive.sync.protocols.uds.UDSClient))"
+      - name: Python DoIP ECU regression tests
+        if: runner.os != 'Linux'
+        run: uv run --locked pytest tests/test_doip.py -q
       - name: Python Scapy ECU regression tests
         if: runner.os == 'Linux'
         run: uv run --locked pytest --run-vcan -q

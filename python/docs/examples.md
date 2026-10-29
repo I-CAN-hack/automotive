@@ -37,6 +37,15 @@ Read diagnostic data through a persistent UDS client.
 :language: python
 ```
 
+## Discover vehicles and use UDS over DoIP
+
+Trigger IPv4 identification with defaults, then connect to the advertised entity.
+Optional config selects IPv6 multicast, source binding, filters, and TCP settings.
+
+```{literalinclude} ../examples/doip.py
+:language: python
+```
+
 ## XCP on CAN and Ethernet
 
 Both examples set MTA, read 4 KiB with an explicit loop of UPLOAD commands,
@@ -106,6 +115,12 @@ Their setup, requests, output, and flow follow the corresponding Rust programs.
 ### Query an ECU with UDS
 
 ```{literalinclude} ../examples/sync/uds.py
+:language: python
+```
+
+### Discover vehicles and use UDS over DoIP
+
+```{literalinclude} ../examples/sync/doip.py
 :language: python
 ```
 

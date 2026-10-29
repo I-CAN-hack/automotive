@@ -15,5 +15,7 @@ jobs:
         run: cargo build --verbose --features=all
       - name: Build Rust examples
         run: cargo build --verbose --features=all --examples
+      - name: Install Scapy for DoIP ECU tests
+        run: python -m pip install scapy==2.8.0
       - name: Run Rust tests
-        run: cargo test --features=all --verbose
+        run: cargo test --features=all,test-doip --verbose

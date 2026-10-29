@@ -27,4 +27,4 @@ jobs:
       - name: Build Rust examples
         run: cargo build --verbose --features=serde --examples
       - name: Run Rust tests
-        run: cargo test --features=test-vcan,serde --verbose
+        run: cargo test --features=test-vcan,test-doip,serde --verbose

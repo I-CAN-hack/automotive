@@ -10,7 +10,7 @@ Welcome to the `automotive` crate documentation. The purpose of this crate is to
 - `automotive::adapters` contains the feature-gated hardware adapters: `j2534`,
   `panda`, `peak`, `socketcan`, and `vector`, plus the `get_adapter()` discovery
   helper.
-- `automotive::transports` contains ISO-TP and the diagnostic `Transport` interface.
+- `automotive::transports` contains ISO-TP, DoIP, and the diagnostic `Transport` interface.
 - `automotive::protocols` contains `uds`, which uses a `Transport`, and `xcp`,
   which exchanges XCP packets over raw CAN/CAN FD or Ethernet TCP/UDP.
   `ccp` provides CCP 2.1 session and memory commands over Classical CAN.
@@ -19,8 +19,37 @@ Welcome to the `automotive` crate documentation. The purpose of this crate is to
 Hardware adapter types use the `Adapter` suffix: `PandaAdapter`, `PeakAdapter`,
 `SocketCanAdapter`, `VectorAdapter`, and `J2534Adapter`. Message transports
 implement `Transport`; the current implementations are `IsoTP` and
-`J2534NativeIsoTP`. UDS depends on this shared interface so additional transports,
-such as DoIP and HSFZ, can implement it independently of CAN.
+`J2534NativeIsoTP`, and `DoIP`. UDS depends on this shared interface; DoIP uses
+ordinary IPv4/IPv6 sockets independently of CAN.
+
+## DoIP and UDS over Ethernet
+
+DoIP works on Windows, Linux, and macOS without a hardware-adapter feature.
+Active discovery needs no configuration:
+
+```rust,no_run
+use automotive::{protocols::uds::UDSClient, transports::doip::discover};
+
+# async fn example() -> automotive::Result<()> {
+for vehicle in discover().await? {
+    let transport = vehicle.connect().await?;
+    let uds = UDSClient::new(&transport);
+    println!("{:?}", uds.read_data_by_identifier(0xf190).await?);
+}
+# Ok(())
+# }
+```
+
+`DoIP::connect("192.168.0.10:13400", 0x1000)` connects directly to a known ECU.
+`Discovery::bind(DiscoveryConfig::default().passive())?.recv().await` listens
+for announcements without transmitting. `DiscoveryConfig::ipv6(interface_index)`
+selects an adapter for IPv6 multicast; link-local TCP endpoints include a numeric
+scope ID. Ordinary unicast connections follow OS routing. Config types expose
+source binding, VIN/EID filters, version, routing activation, timeouts, and limits.
+Alive checks run in the background and sends wait for DoIP acknowledgements.
+This is an unsecured physical-addressed transport; TLS and OEM authentication
+are not implemented. See [DoIP design and implementation comparison](docs/doip.md)
+and [the Rust example](examples/doip.rs).
 
 ## Python library
 

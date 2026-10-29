@@ -1,9 +1,9 @@
 # Transports
 
 `UDSClient` accepts a `Transport`, which exchanges complete protocol data units
-independently of the underlying protocol. Software `IsoTP` and
-`J2534NativeIsoTP` share this interface. Future transports such as DoIP and HSFZ
-can implement it without inheriting ISO-TP behavior.
+independently of the underlying protocol. Software `IsoTP`, `DoIP`, and
+`J2534NativeIsoTP` share this interface. DoIP communicates over IPv4/IPv6 sockets
+without a CAN adapter.
 
 Software ISO-TP lives in `automotive.transports.isotp`. The native J2534
 implementation lives in `automotive.adapters.j2534` and is documented under
@@ -13,6 +13,7 @@ implementation lives in `automotive.adapters.j2534` and is documented under
 :maxdepth: 1
 
 isotp
+doip
 ```
 
 ## Asynchronous API
