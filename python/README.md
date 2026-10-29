@@ -60,8 +60,8 @@ The matching blocking functions live in `automotive.sync.transports.doip`.
 See the [DoIP API](https://i-can-hack.github.io/automotive/api/transports/doip.html)
 and async/sync [examples](https://i-can-hack.github.io/automotive/examples.html).
 TLS and OEM authentication are not implemented.
-Run `uv run pytest tests/test_doip.py -q` for Scapy ECU tests on any platform;
-`--run-vcan` is not required.
+Run `uv run pytest tests/test_doip.py tests/test_uds.py tests/test_uds_sync.py -q`
+for Scapy ECU tests on any platform; `--run-vcan` is not required.
 
 ## Basic usage
 
@@ -279,11 +279,14 @@ cd python
 uv run pytest --run-vcan -q
 ```
 
-The regression suite starts the existing Scapy ECU scripts, verifies readiness,
-and closes/reaps them after each scenario. It exercises all 14 implemented UDS
-service IDs through both APIs, transfer round trips, suppression and pending
-responses, strict validation, cancellation, and ISO-TP Classic/FD framing and
-flow control.
+The regression suite starts the Scapy ECU scripts, verifies readiness, and
+closes/reaps them after each scenario. The shared UDS fixtures run the same
+async and blocking service, transfer, suppression, pending-response, validation,
+and timing tests over CAN ISO-TP and IPv4/IPv6 DoIP. The answering machines share
+UDS responses and fault cases in `scripts/uds_ecu.py`. CAN frame observations,
+adapter lifecycle, ISO-TP Classic/FD framing and flow control, and DoIP
+routing/discovery checks stay in their respective transport test files.
 Tests run serially on `vcan0`; do not run the Rust and Python virtual-CAN suites
-concurrently. Without `--run-vcan`, the hardware-dependent tests are skipped;
-explicit runs fail if prerequisites are unavailable.
+concurrently. Without `--run-vcan`, the CAN cases are skipped and the shared UDS
+suite still runs over both DoIP address families. Explicit CAN runs fail if
+prerequisites are unavailable.

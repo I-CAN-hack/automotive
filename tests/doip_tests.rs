@@ -8,54 +8,15 @@ use automotive::transports::doip::{
 use automotive::{Error, StreamExt, Transport};
 use std::{
     net::{IpAddr, SocketAddr},
-    process::Stdio,
     time::Duration,
 };
-use tokio::{
-    io::{AsyncBufReadExt, BufReader},
-    process::{Child, Command},
-};
 
-#[path = "common/uds.rs"]
-mod uds_services;
-
-struct Ecu {
-    _process: Child,
-    address: SocketAddr,
-}
-
-impl Ecu {
-    async fn spawn(host: &str, case: &str, announce_to: Option<u16>) -> Self {
-        let mut command = Command::new(
-            std::env::var_os("PYTHON")
-                .unwrap_or_else(|| if cfg!(windows) { "python" } else { "python3" }.into()),
-        );
-        command
-            .args(["scripts/vecu_doip.py", "--host", host, "--case", case])
-            .stdout(Stdio::piped())
-            .kill_on_drop(true);
-        if let Some(port) = announce_to {
-            command.args(["--announce-to", &port.to_string()]);
-        }
-        let mut process = command
-            .spawn()
-            .expect("Scapy ECU requires Python and scapy==2.8.0");
-        let mut lines = BufReader::new(process.stdout.take().unwrap()).lines();
-        let ready = tokio::time::timeout(Duration::from_secs(10), lines.next_line())
-            .await
-            .unwrap()
-            .unwrap()
-            .expect("Scapy ECU exited during startup");
-        let port = ready.strip_prefix("READY ").unwrap().parse().unwrap();
-        Self {
-            _process: process,
-            address: SocketAddr::new(host.parse::<IpAddr>().unwrap(), port),
-        }
-    }
-}
+#[path = "common/doip_ecu.rs"]
+mod doip_ecu;
+use doip_ecu::Ecu;
 
 #[tokio::test]
-async fn scapy_uds_all_services_ipv4_and_ipv6() {
+async fn scapy_idle_alive_checks_ipv4_and_ipv6() {
     for host in ["127.0.0.1", "::1"] {
         let ecu = Ecu::spawn(host, "require-idle-alive", None).await;
         let transport = DoIP::connect(ecu.address, 0x1000).await.unwrap();
@@ -69,7 +30,7 @@ async fn scapy_uds_all_services_ipv4_and_ipv6() {
                 .p2_timeout(Duration::from_secs(1))
                 .build(),
         );
-        uds_services::exercise_services(&uds).await;
+        uds.tester_present().await.unwrap();
         uds.suppress_positive_responses()
             .tester_present()
             .await

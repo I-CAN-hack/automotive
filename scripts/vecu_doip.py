@@ -11,11 +11,9 @@ import socket
 import threading
 import time
 
-from scapy.all import Raw
 from scapy.contrib.automotive.doip import DoIP
-from scapy.contrib.automotive.ecu import EcuAnsweringMachine
 from scapy.contrib.automotive.uds import UDS
-from vecu_uds import ecu_responses
+from uds_ecu import SUPPRESSION_CASES, SuppressionAwareECU, ecu_responses
 
 VIN = b"WVWZZZ1JZXW000001"
 EID = b"\x00\x11\x22\x33\x44\x55"
@@ -60,7 +58,8 @@ def serve_connection(stream, args):
         stream.sendall(bytes(packet(version, 7)))
         # A diagnostic request can cross the alive request on the wire.
         # Both must be accepted while the client answers the alive check.
-        machine = EcuAnsweringMachine(supported_responses=ecu_responses(), basecls=UDS, verbose=False)
+        machine = SuppressionAwareECU(supported_responses=ecu_responses(), basecls=UDS,
+                                      verbose=False, suppression_case=args.suppression_case)
         alive_seen = False
         while True:
             request = read_packet(stream)
@@ -100,15 +99,21 @@ def serve_connection(stream, args):
                 ack += bytes(packet(version, 0x8001, source_address=target ^ 1,
                                     target_address=source) / UDS(b"\x62\x12\x34wrong"))
 
-            # Normalize suppression before Scapy's matching; keep NRC 0x78 and
-            # its mandatory final response, otherwise suppress positive replies.
-            suppress = len(data) > 1 and data[0] in {0x10, 0x11, 0x19, 0x27, 0x31, 0x3E} and data[1] & 0x80
-            normalized = data[:1] + bytes([data[1] & 0x7F]) + data[2:] if suppress else data
-            replies = machine.make_reply(UDS(normalized))
-            pending = any(bytes(reply) == b"\x7f" + data[:1] + b"\x78" for reply in replies)
-            response = b"".join(bytes(packet(version, 0x8001, source_address=target,
-                                             target_address=source) / reply)
-                                for reply in replies if not suppress or pending or bytes(reply)[0] == 0x7F)
+            replies = machine.make_reply(UDS(data))
+            def encode_response(reply):
+                return bytes(packet(version, 0x8001, source_address=target,
+                                    target_address=source) / reply)
+
+            if len(replies) > 1:
+                # Share UDS response-pending spacing with the CAN ECU. A normal
+                # single response still shares a TCP write with its DoIP ACK.
+                if args.case != "response-before-ack":
+                    stream.sendall(ack)
+                machine.send_reply(replies, send_function=lambda reply: stream.sendall(encode_response(reply)))
+                if args.case == "response-before-ack":
+                    stream.sendall(ack)
+                continue
+            response = b"".join(encode_response(reply) for reply in replies)
             output = response + ack if args.case == "response-before-ack" else ack + response
             if args.case == "fragmented":
                 for offset in range(0, len(output), 3):
@@ -123,6 +128,7 @@ def main():
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--case", default="normal")
+    parser.add_argument("--suppression-case", choices=SUPPRESSION_CASES)
     parser.add_argument("--announce-to", help="Unicast test destination port for passive reception")
     args = parser.parse_args()
     family = socket.AF_INET6 if ":" in args.host else socket.AF_INET

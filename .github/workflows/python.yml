@@ -74,7 +74,7 @@ jobs:
           print(pydoc.render_doc(automotive.sync.protocols.uds.UDSClient))"
       - name: Python DoIP ECU regression tests
         if: runner.os != 'Linux'
-        run: uv run --locked pytest tests/test_doip.py -q
+        run: uv run --locked pytest tests/test_doip.py tests/test_uds.py tests/test_uds_sync.py -q
       - name: Python Scapy ECU regression tests
         if: runner.os == 'Linux'
         run: uv run --locked pytest --run-vcan -q

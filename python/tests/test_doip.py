@@ -3,11 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import sys
-import tempfile
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
-from dataclasses import dataclass
 
 import pytest
 
@@ -18,45 +13,11 @@ from automotive.sync.transports.doip import DoIP as SyncDoIP
 from automotive.sync.transports.doip import discover as sync_discover
 from automotive.transports.doip import Discovery, DiscoveryConfig, DoIP, DoIPConfig, discover
 
-from .conftest import ROOT
-from .uds_services import exercise_services
-
-
-@dataclass
-class Ecu:
-    host: str
-    port: int
-
-    @property
-    def discovery(self) -> DiscoveryConfig:
-        host = f"[{self.host}]" if ":" in self.host else self.host
-        return DiscoveryConfig(bind_address=f"{host}:0", destination=f"{host}:{self.port}", timeout=0.1)
-
-
-@asynccontextmanager
-async def ecu(host: str = "127.0.0.1", case: str = "normal", announce_to: int | None = None) -> AsyncGenerator[Ecu]:
-    args = [sys.executable, str(ROOT / "scripts/vecu_doip.py"), "--host", host, "--case", case]
-    if announce_to is not None:
-        args += ["--announce-to", str(announce_to)]
-    with tempfile.TemporaryFile() as stderr:
-        process = await asyncio.create_subprocess_exec(*args, stdout=asyncio.subprocess.PIPE, stderr=stderr, cwd=ROOT)
-        try:
-            assert process.stdout is not None
-            ready = (await asyncio.wait_for(process.stdout.readline(), 10)).decode().strip()
-            assert ready.startswith("READY "), "Scapy ECU did not start"
-            yield Ecu(host, int(ready.removeprefix("READY ")))
-        except BaseException:
-            stderr.seek(0)
-            print(stderr.read().decode(errors="replace"), file=sys.stderr)
-            raise
-        finally:
-            if process.returncode is None:
-                process.terminate()
-            await asyncio.wait_for(process.wait(), 5)
+from .ecu import doip_ecu as ecu
 
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "::1"])
-async def test_discover_connect_and_all_uds_services(host: str) -> None:
+async def test_discover_and_connect(host: str) -> None:
     async with ecu(host) as server:
         vehicles = await discover(server.discovery)
         assert len(vehicles) == 1
@@ -65,10 +26,7 @@ async def test_discover_connect_and_all_uds_services(host: str) -> None:
         assert vehicle.vin == b"WVWZZZ1JZXW000001"
         async with await vehicle.connect(port=server.port) as transport:
             uds = UDSClient(transport, UDSConfig(p2_timeout=1, request_timeout=5))
-            await exercise_services(uds)
-            with uds.suppress_positive_responses():
-                await uds.tester_present()
-            await uds.tester_present()
+            assert await uds.read_data_by_identifier(0x1234) == b"deadbeef"
 
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "::1"])
@@ -80,16 +38,7 @@ async def test_sync_discovery_and_uds(host: str) -> None:
             assert len(vehicles) == 1
             with vehicles[0].connect(port=server.port) as transport:
                 uds = SyncUDSClient(transport, UDSConfig(p2_timeout=1, request_timeout=5))
-                uds.tester_present()
                 assert uds.read_data_by_identifier(0x1234) == b"deadbeef"
-                uds.write_data_by_identifier(0x1234, b"updated!")
-                assert uds.read_data_by_identifier(0x1234) == b"updated!"
-                assert uds.request_download_alfid(0, 0, 0x123456, 8, 3, 2) == 10
-                assert uds.transfer_data(1, b"download") is None
-                assert uds.request_transfer_exit() is None
-                assert uds.request_upload_alfid(0, 0, 0x123456, 8, 3, 2) == 10
-                assert uds.transfer_data(1) == b"download"
-                assert uds.request_transfer_exit() is None
             with SyncDoIP.connect(host, 0x1000, port=server.port) as transport:
                 assert SyncUDSClient(transport).read_data_by_identifier(0x1234) == b"deadbeef"
 

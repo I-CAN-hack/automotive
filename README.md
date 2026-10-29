@@ -81,9 +81,13 @@ scripts/set_up_vcan.sh
 cargo test --features test-vcan,serde
 ```
 
-The UDS tests exercise all 14 implemented service IDs against Scapy's
-`EcuAnsweringMachine`, including DID and memory writes followed by reads, and
-download/upload transfers. Scapy decodes requests and constructs responses.
+The UDS suite runs the same service, suppression, response-pending, validation,
+and timing scenarios against Scapy over each enabled transport. `test-vcan`
+selects CAN ISO-TP; `test-doip` selects both IPv4 and IPv6 DoIP. Run all three
+with `cargo test --features test-vcan,test-doip,serde`. Shared UDS response
+logic and fault cases live in `scripts/uds_ecu.py`; each transport supplies its
+own framing and socket setup. CAN-specific and DoIP-specific protocol checks
+remain in their respective test files.
 
 The setup script requires `sudo`. Windows-only adapters still require their
 Windows SDKs and drivers.

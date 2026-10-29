@@ -5,19 +5,23 @@ from __future__ import annotations
 import asyncio
 import socket
 import sys
-import tempfile
-from collections.abc import AsyncGenerator
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from collections.abc import AsyncGenerator, Callable, Generator
+from contextlib import AbstractAsyncContextManager, AbstractContextManager, asynccontextmanager, contextmanager
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Protocol
 
 import pytest
 
 from automotive.adapters import CanAdapter, SocketCanAdapter
+from automotive.sync.adapters import SocketCanAdapter as SyncSocketCanAdapter
+from automotive.sync.transports import Transport as SyncTransport
+from automotive.sync.transports.doip import DoIP as SyncDoIP
+from automotive.sync.transports.isotp import IsoTP as SyncIsoTP
+from automotive.transports import Transport
+from automotive.transports.doip import DoIP
 from automotive.transports.isotp import IsoTP, IsoTPConfig
 
-ROOT = Path(__file__).resolve().parents[2]
+from .ecu import ROOT, doip_ecu, scapy_process
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -77,7 +81,6 @@ def ecu_factory() -> EcuFactory:
     ) -> AsyncGenerator[ECU]:
         config = config or IsoTPConfig(tx_id=0x7A1, timeout=2.0)
         args = [
-            sys.executable,
             str(ROOT / "scripts" / script),
             "--iface",
             "vcan0",
@@ -102,31 +105,54 @@ def ecu_factory() -> EcuFactory:
             SocketCanAdapter("vcan0") as adapter,
             IsoTP(adapter, config) as transport,
         ):
-            with tempfile.TemporaryFile() as stderr:
-                process: asyncio.subprocess.Process | None = None
-                try:
-                    async with transport.recv() as ready:
-                        process = await asyncio.create_subprocess_exec(
-                            *args,
-                            stdout=asyncio.subprocess.DEVNULL,
-                            stderr=stderr,
-                            cwd=ROOT,
-                        )
-                        assert await asyncio.wait_for(anext(ready), 10) == b"\xaa"
-                    yield ECU(adapter, transport)
-                except BaseException:
-                    stderr.seek(0)
-                    output = stderr.read().decode(errors="replace")
-                    if output:
-                        print("Scapy ECU stderr:\n" + output, file=sys.stderr)
-                    raise
-                finally:
-                    if process is not None and process.returncode is None:
-                        process.terminate()
-                        try:
-                            await asyncio.wait_for(process.wait(), 3)
-                        except TimeoutError:
-                            process.kill()
-                            await process.wait()
+            ready = transport.recv()
+            async with scapy_process(args):
+                async with ready:
+                    assert await asyncio.wait_for(anext(ready), 10) == b"\xaa"
+                yield ECU(adapter, transport)
+
+    return spawn
+
+
+@dataclass
+class UdsECU:
+    transport: Transport
+    open_sync: Callable[[], AbstractContextManager[SyncTransport]]
+
+
+class UdsEcuFactory(Protocol):
+    def __call__(self, *, case: str | None = None) -> AbstractAsyncContextManager[UdsECU]: ...
+
+
+@pytest.fixture(
+    params=[
+        pytest.param("can", marks=pytest.mark.vcan),
+        pytest.param("127.0.0.1", id="doip-ipv4"),
+        pytest.param("::1", id="doip-ipv6"),
+    ]
+)
+def uds_ecu_factory(request: pytest.FixtureRequest, ecu_factory: EcuFactory) -> UdsEcuFactory:
+    """Run the same UDS assertions with CAN or either DoIP address family."""
+
+    @asynccontextmanager
+    async def spawn(*, case: str | None = None) -> AsyncGenerator[UdsECU]:
+        if request.param == "can":
+
+            @contextmanager
+            def open_sync() -> Generator[SyncTransport]:
+                with SyncSocketCanAdapter("vcan0") as adapter, SyncIsoTP.from_id(adapter, 0x7A1) as transport:
+                    yield transport
+
+            async with ecu_factory(case=case) as ecu:
+                yield UdsECU(ecu.transport, open_sync)
+        else:
+            async with (
+                doip_ecu(request.param, uds_case=case) as server,
+                await DoIP.connect(server.host, 0x1000, port=server.port) as transport,
+            ):
+                yield UdsECU(
+                    transport,
+                    lambda: SyncDoIP.connect(server.host, 0x1000, port=server.port),
+                )
 
     return spawn

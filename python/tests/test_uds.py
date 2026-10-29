@@ -11,22 +11,20 @@ from automotive.errors import NegativeResponseError, ProtocolDeviationError
 from automotive.protocols.uds import RoutineControlType, SessionType, UDSClient, UDSConfig
 from automotive.transports.isotp import IsoTP, IsoTPConfig
 
-from .conftest import EcuFactory
+from .conftest import EcuFactory, UdsEcuFactory
 from .uds_services import exercise_services
 
-pytestmark = pytest.mark.vcan
 
-
-async def test_all_implemented_service_ids(ecu_factory: EcuFactory) -> None:
-    async with ecu_factory() as ecu:
+async def test_all_implemented_service_ids(uds_ecu_factory: UdsEcuFactory) -> None:
+    async with uds_ecu_factory() as ecu:
         uds = UDSClient(ecu.transport, UDSConfig(p2_timeout=1.0, request_timeout=5.0))
         await exercise_services(uds)
 
 
-async def test_raw_memory_fields_in_download_and_upload(ecu_factory: EcuFactory) -> None:
+async def test_raw_memory_fields_in_download_and_upload(uds_ecu_factory: UdsEcuFactory) -> None:
     # Start with a fresh answering machine: completion-response records are
     # stateful, so a previous transfer-exit echo changes subsequent matching.
-    async with ecu_factory() as ecu:
+    async with uds_ecu_factory() as ecu:
         uds = UDSClient(ecu.transport, UDSConfig(p2_timeout=1.0, request_timeout=5.0))
         assert await uds.request_download(0, 0, b"\x12\x34\x56", b"\x00\x08") == 10
         await uds.transfer_data(1, b"rawbytes")
@@ -36,6 +34,7 @@ async def test_raw_memory_fields_in_download_and_upload(ecu_factory: EcuFactory)
         await uds.request_transfer_exit()
 
 
+@pytest.mark.vcan
 async def test_session_timing_survives_transport_idle_timeouts(ecu_factory: EcuFactory) -> None:
     async with (
         ecu_factory(case="repeated-pending") as ecu,
@@ -50,8 +49,8 @@ async def test_session_timing_survives_transport_idle_timeouts(ecu_factory: EcuF
 
 
 @pytest.mark.parametrize("strict", [True, False])
-async def test_suppressed_services_and_raw_outcomes(ecu_factory: EcuFactory, strict: bool) -> None:
-    async with ecu_factory() as ecu:
+async def test_suppressed_services_and_raw_outcomes(uds_ecu_factory: UdsEcuFactory, strict: bool) -> None:
+    async with uds_ecu_factory() as ecu:
         uds = UDSClient(ecu.transport, UDSConfig(strict=strict, p2_timeout=0.1, use_server_timing=False))
         assert await uds.request(0x3E, 0x80) is None
         with uds.suppress_positive_responses() as suppressed:
@@ -70,8 +69,8 @@ async def test_suppressed_services_and_raw_outcomes(ecu_factory: EcuFactory, str
 
 @pytest.mark.parametrize("case", ["pending-positive", "pending-negative", "pending-only", "repeated-pending"])
 @pytest.mark.parametrize("strict", [True, False])
-async def test_pending_responses(ecu_factory: EcuFactory, case: str, strict: bool) -> None:
-    async with ecu_factory(case=case) as ecu:
+async def test_pending_responses(uds_ecu_factory: UdsEcuFactory, case: str, strict: bool) -> None:
+    async with uds_ecu_factory(case=case) as ecu:
         uds = UDSClient(
             ecu.transport,
             UDSConfig(strict=strict, p2_timeout=0.1, p2_star_timeout=0.2, request_timeout=2.0, use_server_timing=False),
@@ -99,8 +98,8 @@ async def test_pending_responses(ecu_factory: EcuFactory, case: str, strict: boo
         ("extra-pending-data", b"\x7f\x3e\x78\xaa"),
     ],
 )
-async def test_strict_response_validation(ecu_factory: EcuFactory, case: str, expected: bytes) -> None:
-    async with ecu_factory(case=case) as ecu:
+async def test_strict_response_validation(uds_ecu_factory: UdsEcuFactory, case: str, expected: bytes) -> None:
+    async with uds_ecu_factory(case=case) as ecu:
         uds = UDSClient(ecu.transport, UDSConfig(p2_timeout=0.1, p2_star_timeout=0.2, use_server_timing=False))
         with pytest.raises(ProtocolDeviationError) as error, uds.suppress_positive_responses():
             await uds.tester_present()
@@ -117,8 +116,8 @@ async def test_strict_response_validation(ecu_factory: EcuFactory, case: str, ex
                 await permissive.tester_present()
 
 
-async def test_unknown_nrc_preserved(ecu_factory: EcuFactory) -> None:
-    async with ecu_factory(case="reserved-nrc") as ecu:
+async def test_unknown_nrc_preserved(uds_ecu_factory: UdsEcuFactory) -> None:
+    async with uds_ecu_factory(case="reserved-nrc") as ecu:
         for strict in (True, False):
             uds = UDSClient(ecu.transport, UDSConfig(strict=strict, p2_timeout=0.1))
             with pytest.raises(NegativeResponseError) as error, uds.suppress_positive_responses():
@@ -126,8 +125,8 @@ async def test_unknown_nrc_preserved(ecu_factory: EcuFactory) -> None:
             assert error.value.code == 0x15
 
 
-async def test_session_timing_retained_in_suppression_scope(ecu_factory: EcuFactory) -> None:
-    async with ecu_factory() as ecu:
+async def test_session_timing_retained_in_suppression_scope(uds_ecu_factory: UdsEcuFactory) -> None:
+    async with uds_ecu_factory() as ecu:
         uds = UDSClient(ecu.transport, UDSConfig(p2_timeout=0.1))
         timing = await uds.diagnostic_session_control(3)
         assert timing is not None and timing.p2_server_max == 1.0
@@ -137,8 +136,8 @@ async def test_session_timing_retained_in_suppression_scope(ecu_factory: EcuFact
         assert time.monotonic() - start >= 0.95
 
 
-async def test_overall_timeout_and_required_positive_response(ecu_factory: EcuFactory) -> None:
-    async with ecu_factory(case="silent") as ecu:
+async def test_overall_timeout_and_required_positive_response(uds_ecu_factory: UdsEcuFactory) -> None:
+    async with uds_ecu_factory(case="silent") as ecu:
         uds = UDSClient(ecu.transport, UDSConfig(p2_timeout=0.1, use_server_timing=False))
         with uds.suppress_positive_responses():
             await uds.tester_present()
@@ -149,6 +148,7 @@ async def test_overall_timeout_and_required_positive_response(ecu_factory: EcuFa
             await limited.tester_present()
 
 
+@pytest.mark.vcan
 async def test_cancelled_exchange_drains_before_next_request(ecu_factory: EcuFactory) -> None:
     async with ecu_factory(case="pending-positive") as ecu:
         uds = UDSClient(ecu.transport, UDSConfig(p2_timeout=0.1, p2_star_timeout=0.2))
@@ -176,6 +176,7 @@ async def test_cancelled_exchange_drains_before_next_request(ecu_factory: EcuFac
                         break
 
 
+@pytest.mark.vcan
 async def test_closing_adapter_interrupts_pending_exchange(ecu_factory: EcuFactory) -> None:
     async with ecu_factory(case="silent") as ecu:
         uds = UDSClient(ecu.transport, UDSConfig(p2_timeout=5.0))
@@ -189,6 +190,7 @@ async def test_closing_adapter_interrupts_pending_exchange(ecu_factory: EcuFacto
                 await asyncio.wait_for(pending, 1)
 
 
+@pytest.mark.vcan
 async def test_client_retains_adapter_after_python_owner_is_released(ecu_factory: EcuFactory) -> None:
     async with ecu_factory():
         adapter = SocketCanAdapter("vcan0")
@@ -199,6 +201,7 @@ async def test_client_retains_adapter_after_python_owner_is_released(ecu_factory
             assert await client.read_data_by_identifier(0x1234) == b"deadbeef"
 
 
+@pytest.mark.vcan
 async def test_suppression_scopes_are_nested_and_task_local(ecu_factory: EcuFactory) -> None:
     async with ecu_factory() as ecu, ecu.adapter.recv() as frames:
         uds = UDSClient(ecu.transport, UDSConfig(p2_timeout=0.1))
