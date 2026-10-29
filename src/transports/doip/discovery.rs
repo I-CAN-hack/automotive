@@ -183,7 +183,15 @@ impl Discovery {
                         bound = true;
                         break;
                     }
-                    Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => continue,
+                    // Windows also reports WSAEACCES for excluded ports or
+                    // sockets held with exclusive access. These candidates
+                    // are unavailable, but another dynamic port may work.
+                    Err(error)
+                        if error.kind() == std::io::ErrorKind::AddrInUse
+                            || (cfg!(windows) && error.raw_os_error() == Some(10013)) =>
+                    {
+                        continue;
+                    }
                     Err(error) => return Err(error.into()),
                 }
             }
