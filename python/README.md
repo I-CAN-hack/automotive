@@ -3,7 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/automotive.svg)](https://pypi.org/project/automotive/)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://i-can-hack.github.io/automotive/)
 
-A library for synchronous and asynchronous CAN, ISO-TP, UDS, and XCP, powered by the
+A library for synchronous and asynchronous CAN, ISO-TP, UDS, CCP, and XCP, powered by the
 `automotive` Rust crate. The distribution and import name are both `automotive`.
 Rust handles adapter I/O, protocol framing, validation, and timing; Python
 provides reusable configuration objects, typed values, context managers, and
@@ -96,6 +96,7 @@ print(uds.read_data_by_identifier(DataIdentifier.VIN))
 | `automotive.transports` | `automotive.sync.transports` |
 | `automotive.transports.isotp` | `automotive.sync.transports.isotp` |
 | `automotive.protocols.uds` | `automotive.sync.protocols.uds` |
+| `automotive.protocols.ccp` | `automotive.sync.protocols.ccp` |
 | `automotive.protocols.xcp` | `automotive.sync.protocols.xcp` |
 | `automotive.can` | `automotive.sync.can` |
 | `automotive.can.bitrate` | `automotive.sync.can.bitrate` |
@@ -134,6 +135,19 @@ Suppression scopes in the synchronous API are local to the
 calling thread and context. Ctrl+C interrupts a blocking wait; an active Rust UDS
 exchange still drains before the next request, matching async cancellation.
 
+## CCP
+
+CCP 2.1 memory transfers on Classical CAN are supported through
+`automotive.protocols.ccp` and `automotive.sync.protocols.ccp`.
+Configure `CCPConfig(byte_order="little")` or `"big"` to match the ECU;
+station addresses are always little endian. Connect directly to a known station,
+then use `set_mta()`, `upload()` and `download()` for RAM transfers, or
+`short_upload()` for reads at an explicit address. Transfer sizes are 1–5 bytes;
+`download6()` writes exactly six bytes. Each method sends one command.
+After active cancellation or timeout, reconnect and re-establish MTA before
+continuing. See the standalone `examples/ccp.py` and
+`examples/sync/ccp.py` for a 4 KiB flash read with hexdump output.
+
 ## XCP
 
 XCP over CAN, CAN FD, and Ethernet (TCP/UDP) is supported through
@@ -154,14 +168,18 @@ from automotive.transports.isotp import IsoTP, IsoTPConfig
 
 adapter_config = PeakConfig(
     bitrate=BitrateSettings(
-        bitrate=500_000, sample_point=0.8,
-        data_bitrate=2_000_000, data_sample_point=0.8,
+        bitrate=500_000,
+        sample_point=0.8,
+        data_bitrate=2_000_000,
+        data_sample_point=0.8,
     ),
     tx_timeout=1.0,
 )
 transport_config = IsoTPConfig(
     tx_id=Identifier.extended(0x18DA10F1),
-    fd=True, max_dlen=32, block_size=8,
+    fd=True,
+    max_dlen=32,
+    block_size=8,
     receive_separation_time_min=0.0003,
 )
 uds_config = UDSConfig(request_timeout=10.0, strict=True)

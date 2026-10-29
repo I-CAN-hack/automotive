@@ -3,6 +3,8 @@
 from ..errors import (
     AdapterError,
     AutomotiveError,
+    CCPError,
+    CCPResponseError,
     IsoTPError,
     NegativeResponseError,
     NotSupportedError,
@@ -17,6 +19,8 @@ from ..errors import (
 __all__ = [
     "AdapterError",
     "AutomotiveError",
+    "CCPError",
+    "CCPResponseError",
     "IsoTPError",
     "NegativeResponseError",
     "NotSupportedError",

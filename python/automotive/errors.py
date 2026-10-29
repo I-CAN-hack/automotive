@@ -15,6 +15,8 @@ Python task cancellation (``asyncio.CancelledError``).
 from ._native import (
     AdapterError,
     AutomotiveError,
+    CCPError,
+    CCPResponseError,
     IsoTPError,
     NegativeResponseError,
     NotSupportedError,
@@ -29,6 +31,8 @@ from ._native import (
 __all__ = [
     "AdapterError",
     "AutomotiveError",
+    "CCPError",
+    "CCPResponseError",
     "IsoTPError",
     "NegativeResponseError",
     "NotSupportedError",

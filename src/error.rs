@@ -40,6 +40,9 @@ pub enum Error {
     UDSError(#[from] crate::protocols::uds::Error),
 
     #[error(transparent)]
+    CCPError(#[from] crate::protocols::ccp::Error),
+
+    #[error(transparent)]
     XCPError(#[from] crate::protocols::xcp::Error),
 
     #[error(transparent)]

@@ -1,4 +1,4 @@
-"""Synchronous CAN, ISO-TP, UDS, and XCP with the same Rust implementation.
+"""Synchronous CAN, ISO-TP, UDS, CCP, and XCP with the same Rust implementation.
 
 Import blocking classes from automotive.sync.adapters,
 automotive.sync.transports.isotp, and automotive.sync.protocols.uds.
@@ -17,6 +17,8 @@ from .. import __version__
 from .errors import (
     AdapterError,
     AutomotiveError,
+    CCPError,
+    CCPResponseError,
     IsoTPError,
     NegativeResponseError,
     NotSupportedError,
@@ -31,6 +33,8 @@ from .errors import (
 __all__ = [
     "AdapterError",
     "AutomotiveError",
+    "CCPError",
+    "CCPResponseError",
     "IsoTPError",
     "NegativeResponseError",
     "NotSupportedError",

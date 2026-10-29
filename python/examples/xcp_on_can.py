@@ -5,6 +5,7 @@ import asyncio
 from automotive.adapters import CanAdapter
 from automotive.can import Frame
 from automotive.protocols.xcp import XCPCanConfig, XCPClient, XCPOnCAN
+from automotive.utils import hexdump
 
 
 async def main() -> None:
@@ -29,12 +30,7 @@ async def main() -> None:
         data.extend(await client.upload(min(chunk_size, 4096 - len(data))))
 
     # Print all data
-    for offset in range(0, len(data), 16):
-        chunk = data[offset : offset + 16]
-        hex_data = chunk.hex(" ")
-        ascii_data = "".join(chr(byte) if 32 <= byte < 127 else "." for byte in chunk)
-        address = 0x8000_0000 + offset // info.address_granularity
-        print(f"{address:08x}  {hex_data:<47}  |{ascii_data}|")
+    print(hexdump(data, 0x8000_0000, address_granularity=info.address_granularity))
 
 
 if __name__ == "__main__":

@@ -68,7 +68,7 @@ jobs:
       - name: Verify imports and installed documentation
         run: >
           uv run --locked python -c
-          "import automotive.adapters.j2534, automotive.protocols.uds;
+          "import automotive.adapters.j2534, automotive.protocols.uds, automotive.utils;
           import automotive.sync.adapters.j2534, automotive.sync.protocols.uds, automotive.sync.can.bitrate, pydoc;
           print(pydoc.render_doc(automotive.protocols.uds.UDSClient));
           print(pydoc.render_doc(automotive.sync.protocols.uds.UDSClient))"

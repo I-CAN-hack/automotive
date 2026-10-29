@@ -1,4 +1,4 @@
-"""Synchronous and asynchronous CAN, ISO-TP, UDS, and XCP powered by Rust.
+"""Synchronous and asynchronous CAN, ISO-TP, UDS, CCP, and XCP powered by Rust.
 
 Start with ``adapters.CanAdapter()``, ``IsoTP.from_id()``, and
 ``UDSClient(transport)``. Explicit config objects expose advanced settings.
@@ -14,6 +14,8 @@ from importlib.metadata import version as _distribution_version
 from .errors import (
     AdapterError,
     AutomotiveError,
+    CCPError,
+    CCPResponseError,
     IsoTPError,
     NegativeResponseError,
     NotSupportedError,
@@ -30,6 +32,8 @@ __version__ = _distribution_version("automotive")
 __all__ = [
     "AdapterError",
     "AutomotiveError",
+    "CCPError",
+    "CCPResponseError",
     "IsoTPError",
     "NegativeResponseError",
     "NotSupportedError",
