@@ -1,5 +1,10 @@
 //! Diagnostics over IP (ISO 13400-2) for [`crate::protocols::uds::UDSClient`].
 //!
+//! A vehicle-side DoIP entity can be an ECU or a gateway to several ECUs. Its IP
+//! address identifies the network endpoint; a logical address selects the ECU
+//! receiving diagnostic messages. Routing activation registers the tester's
+//! logical address on a TCP connection before diagnostics can be routed.
+//!
 //! [`discover`] actively identifies vehicles over IPv4 with no configuration.
 //! [`VehicleAnnouncement::connect`] connects to a discovered entity. For a known
 //! endpoint use [`DoIP::connect`]. [`Discovery`] also supports passive announcements,
@@ -17,6 +22,7 @@
 //! and periodic diagnostic payload 0x8004 are outside this implementation.
 
 mod config;
+mod connection;
 mod discovery;
 mod frame;
 
@@ -27,14 +33,14 @@ pub use discovery::{
 };
 
 use crate::{Result, Transport};
-use frame::*;
+use connection::{Connection, SendRequest};
+use frame::invalid;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{lookup_host, TcpSocket, TcpStream, ToSocketAddrs},
+    net::ToSocketAddrs,
     sync::{broadcast, mpsc, oneshot, watch, Mutex},
     task::JoinHandle,
-    time::{timeout, Instant},
+    time::timeout,
 };
 
 pub const DOIP_PORT: u16 = 13400;
@@ -57,14 +63,9 @@ pub enum Error {
     ReceiveOverflow,
 }
 
-struct Command {
-    data: Vec<u8>,
-    reply: oneshot::Sender<Result<()>>,
-}
-
 struct Inner {
     config: DoIPConfig,
-    commands: mpsc::Sender<Command>,
+    commands: mpsc::Sender<SendRequest>,
     messages: broadcast::Sender<Result<Vec<u8>>>,
     terminal: watch::Sender<Option<crate::Error>>,
     worker: JoinHandle<()>,
@@ -99,57 +100,26 @@ impl DoIP {
         config: DoIPConfig,
     ) -> Result<Self> {
         config.validate()?;
-        let mut stream = timeout(config.connect_timeout, async {
-            let mut last_error = None;
-            for address in lookup_host(address).await? {
-                if config
-                    .local_address
-                    .is_some_and(|local| local.is_ipv4() != address.is_ipv4())
-                {
-                    continue;
-                }
-                let socket = if address.is_ipv4() {
-                    TcpSocket::new_v4()?
-                } else {
-                    TcpSocket::new_v6()?
-                };
-                if let Some(local) = config.local_address {
-                    socket.bind(local)?;
-                }
-                match socket.connect(address).await {
-                    Ok(stream) => return Ok(stream),
-                    Err(error) => last_error = Some(error),
-                }
-            }
-            Err(last_error.unwrap_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::AddrNotAvailable,
-                    "no matching DoIP endpoint address",
-                )
-            }))
-        })
-        .await
-        .map_err(|_| crate::Error::Timeout)??;
-        stream.set_nodelay(true)?;
+        let mut stream = connection::connect_tcp(address, &config).await?;
         let peer_address = stream.peer_addr()?;
         let mut buffered = Vec::new();
+
+        // ISO 13400-2:2025 §12.5: activate routing before accepting diagnostic
+        // sends. §7.7, Table 12 defines A_DoIP_Routing_Activation.
         let entity_address = timeout(
             config.activation_timeout,
-            activate(&mut stream, &mut buffered, &config),
+            connection::activate_routing(&mut stream, &mut buffered, &config),
         )
         .await
         .map_err(|_| crate::Error::Timeout)??;
         let (commands, receiver) = mpsc::channel(16);
         let (messages, _) = broadcast::channel(64);
         let (terminal, _) = watch::channel(None);
-        let worker = tokio::spawn(run(
-            stream,
-            buffered,
-            config.clone(),
-            receiver,
-            messages.clone(),
-            terminal.clone(),
-        ));
+        // The worker owns the socket and partial frames. After a caller cancels,
+        // it still waits for the transmitted request's acknowledgement before
+        // transmitting another request.
+        let connection = Connection::new(stream, buffered, config.clone());
+        let worker = tokio::spawn(connection.run(receiver, messages.clone(), terminal.clone()));
         Ok(Self {
             inner: Arc::new(Inner {
                 config,
@@ -167,9 +137,11 @@ impl DoIP {
     pub fn config(&self) -> &DoIPConfig {
         &self.inner.config
     }
+
     pub fn peer_address(&self) -> SocketAddr {
         self.peer_address
     }
+
     /// Gateway address from routing activation; it may differ from the target ECU.
     pub fn entity_address(&self) -> u16 {
         self.entity_address
@@ -233,12 +205,12 @@ impl Transport for DoIP {
         if let Some(error) = self.inner.terminal.borrow().clone() {
             return Err(error);
         }
-        let (reply, result) = oneshot::channel();
+        let (completion, result) = oneshot::channel();
         self.inner
             .commands
-            .send(Command {
+            .send(SendRequest {
                 data: data.to_vec(),
-                reply,
+                completion,
             })
             .await
             .map_err(|_| crate::Error::Disconnected)?;
@@ -248,138 +220,4 @@ impl Transport for DoIP {
     fn recv(&self) -> impl crate::Stream<Item = Result<Vec<u8>>> + Unpin + '_ {
         self.recv_owned()
     }
-}
-
-async fn write(
-    stream: &mut TcpStream,
-    config: &DoIPConfig,
-    kind: u16,
-    payload: &[u8],
-) -> Result<()> {
-    timeout(
-        config.ack_timeout,
-        stream.write_all(&encode(config.protocol_version, kind, payload)),
-    )
-    .await
-    .map_err(|_| crate::Error::Timeout)??;
-    Ok(())
-}
-
-async fn activate(
-    stream: &mut TcpStream,
-    buffered: &mut Vec<u8>,
-    config: &DoIPConfig,
-) -> Result<u16> {
-    let mut payload = config.source_address.to_be_bytes().to_vec();
-    payload.push(config.activation_type);
-    payload.extend([0; 4]);
-    if let Some(oem) = config.activation_oem {
-        payload.extend(oem);
-    }
-    write(stream, config, ACTIVATION_REQUEST, &payload).await?;
-    loop {
-        while let Some(message) = decode(buffered, config.max_payload_size)? {
-            if message.version != config.protocol_version {
-                return Err(invalid("TCP protocol version changed"));
-            }
-            match message.kind {
-                ACTIVATION_RESPONSE => {
-                    let payload = &message.payload;
-                    if payload[..2] != config.source_address.to_be_bytes() {
-                        return Err(invalid("routing activation tester address mismatch"));
-                    }
-                    if payload[4] != 0x10 {
-                        return Err(Error::RoutingActivation(payload[4]).into());
-                    }
-                    return Ok(u16::from_be_bytes([payload[2], payload[3]]));
-                }
-                ALIVE_REQUEST => {
-                    write(
-                        stream,
-                        config,
-                        ALIVE_RESPONSE,
-                        &config.source_address.to_be_bytes(),
-                    )
-                    .await?
-                }
-                HEADER_NACK => return Err(Error::HeaderNack(message.payload[0]).into()),
-                _ => {}
-            }
-        }
-        if stream.read_buf(buffered).await? == 0 {
-            return Err(crate::Error::Disconnected);
-        }
-    }
-}
-
-struct Pending {
-    command: Command,
-    deadline: Instant,
-}
-
-async fn run(
-    mut stream: TcpStream,
-    mut buffered: Vec<u8>,
-    config: DoIPConfig,
-    mut commands: mpsc::Receiver<Command>,
-    messages: broadcast::Sender<Result<Vec<u8>>>,
-    terminal: watch::Sender<Option<crate::Error>>,
-) {
-    let mut pending: Option<Pending> = None;
-    let outcome: Result<()> = async {
-        loop {
-            while let Some(message) = decode(&mut buffered, config.max_payload_size)? {
-                if message.version != config.protocol_version { return Err(invalid("TCP protocol version changed")); }
-                let payload = &message.payload;
-                match message.kind {
-                    ALIVE_REQUEST => write(&mut stream, &config, ALIVE_RESPONSE, &config.source_address.to_be_bytes()).await?,
-                    DIAGNOSTIC => {
-                        if payload[..2] == config.target_address.to_be_bytes() && payload[2..4] == config.source_address.to_be_bytes() {
-                            let _ = messages.send(Ok(payload[4..].to_vec()));
-                        }
-                    }
-                    ACK | NACK => {
-                        let Some(active) = pending.as_ref() else { continue; };
-                        if payload[..2] != config.target_address.to_be_bytes() || payload[2..4] != config.source_address.to_be_bytes() {
-                            continue;
-                        }
-                        if !active.command.data.starts_with(&payload[5..]) { return Err(invalid("diagnostic ACK echo mismatch")); }
-                        let result = if message.kind == NACK {
-                            Err(Error::DiagnosticNack(payload[4]).into())
-                        } else if payload[4] != 0 {
-                            return Err(invalid("nonzero diagnostic ACK code"));
-                        } else { Ok(()) };
-                        let active = pending.take().unwrap();
-                        let _ = active.command.reply.send(result);
-                    }
-                    HEADER_NACK => return Err(Error::HeaderNack(payload[0]).into()),
-                    _ => {},
-                }
-            }
-            let deadline = pending.as_ref().map(|active| active.deadline);
-            tokio::select! {
-                biased;
-                _ = async { match deadline { Some(deadline) => tokio::time::sleep_until(deadline).await, None => std::future::pending().await } } => return Err(crate::Error::Timeout),
-                read = stream.read_buf(&mut buffered) => {
-                    if read? == 0 { return Err(crate::Error::Disconnected); }
-                }
-                command = commands.recv(), if pending.is_none() => {
-                    let Some(command) = command else { return Ok(()); };
-                    // A cancelled caller that never reached the wire needs no transmission.
-                    if command.reply.is_closed() { continue; }
-                    let mut payload = config.source_address.to_be_bytes().to_vec();
-                    payload.extend(config.target_address.to_be_bytes());
-                    payload.extend(&command.data);
-                    pending = Some(Pending { command, deadline: Instant::now() + config.ack_timeout });
-                    write(&mut stream, &config, DIAGNOSTIC, &payload).await?;
-                    pending.as_mut().unwrap().deadline = Instant::now() + config.ack_timeout;
-                }
-            }
-        }
-    }.await;
-    let error = outcome.err().unwrap_or(crate::Error::Disconnected);
-    if let Some(active) = pending {
-        let _ = active.command.reply.send(Err(error.clone()));
-    }
-    terminal.send_replace(Some(error));
 }
