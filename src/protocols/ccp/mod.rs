@@ -12,22 +12,26 @@
 
 mod constants;
 mod error;
-pub mod transport;
 mod types;
 
 pub use constants::*;
 pub use error::{Error, ErrorCode};
-pub use transport::{CCPCanConfig, CCPOnCAN, CCPTransport};
 pub use types::*;
 
-use crate::Result;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
+use crate::{
+    can::{AsyncCanAdapter, Frame},
+    Result, Stream, StreamExt,
+};
+use std::{
+    pin::Pin,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
 use tokio::sync::{Mutex, MutexGuard};
 
-/// A CCP command client retaining its CAN transport.
+/// A CCP command client retaining its CAN adapter and receive subscription.
 #[derive(Clone)]
 pub struct CCPClient {
     inner: Arc<Mutex<Session>>,
@@ -35,24 +39,19 @@ pub struct CCPClient {
 }
 
 impl CCPClient {
-    pub fn new(transport: impl CCPTransport + 'static) -> Result<Self> {
-        Self::with_config(transport, CCPConfig::default())
-    }
-
-    pub fn with_config(transport: impl CCPTransport + 'static, config: CCPConfig) -> Result<Self> {
-        if config.timeout.is_zero()
-            || std::time::Instant::now()
-                .checked_add(config.timeout)
-                .is_none()
-        {
-            return Err(Error::InvalidArgument(
-                "timeout must be positive and representable".into(),
-            )
-            .into());
-        }
+    /// Retain the adapter and subscribe before the first command is sent.
+    pub fn new(adapter: Arc<AsyncCanAdapter>, config: CCPConfig) -> Result<Self> {
+        config.validate()?;
+        let receiver = Box::pin(adapter.recv_filter(move |f| {
+            !f.loopback
+                && f.is_data()
+                && !f.is_fd()
+                && f.bus == config.bus
+                && f.id() == Some(config.rx_id)
+        }));
         Ok(Self {
             inner: Arc::new(Mutex::new(Session {
-                link: Some(Box::new(transport)),
+                link: Some(Connection { adapter, receiver }),
                 config,
                 station: None,
                 counter: 0,
@@ -77,7 +76,8 @@ impl CCPClient {
         self.closed.load(Ordering::Relaxed)
     }
 
-    /// Release the transport after the active exchange; does not send DISCONNECT.
+    /// Release the adapter and subscription after the active exchange.
+    /// Does not send DISCONNECT or close the shared adapter.
     pub async fn close(&self) {
         self.closed.store(true, Ordering::Relaxed);
         let mut session = self.inner.lock().await;
@@ -226,8 +226,13 @@ fn transfer_size(size: usize) -> Result<()> {
     Ok(())
 }
 
+struct Connection {
+    adapter: Arc<AsyncCanAdapter>,
+    receiver: Pin<Box<dyn Stream<Item = Frame> + Send>>,
+}
+
 struct Session {
-    link: Option<Box<dyn CCPTransport>>,
+    link: Option<Connection>,
     config: CCPConfig,
     station: Option<u16>,
     counter: u8,
@@ -278,9 +283,22 @@ impl Session {
         request: &[u8; 8],
     ) -> Result<[u8; 8]> {
         let link = self.link.as_mut().ok_or(crate::Error::Disconnected)?;
-        link.send(request).await?;
+        link.adapter
+            .send(
+                &Frame::builder(self.config.tx_id)
+                    .bus(self.config.bus)
+                    .data(request)
+                    .build()?,
+            )
+            .await?;
         loop {
-            let r = link.recv().await?;
+            let r = link
+                .receiver
+                .next()
+                .await
+                .ok_or(crate::Error::Disconnected)?
+                .data()
+                .to_vec();
             let Some(&pid) = r.first() else {
                 return Err(Error::MalformedResponse { response: r }.into());
             };

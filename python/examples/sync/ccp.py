@@ -1,18 +1,16 @@
 """Dump 4 KiB of ECU flash using CCP SHORT_UP."""
 
 from automotive.sync.adapters import CanAdapter
-from automotive.sync.protocols.ccp import CCPCanConfig, CCPClient, CCPConfig, CCPOnCAN
+from automotive.sync.protocols.ccp import CCPClient, CCPConfig
 from automotive.utils import hexdump
 
 
 def main() -> None:
-    can = CCPCanConfig(tx_id=0x6EC, rx_id=0x6ED)
-
-    config = CCPConfig(byte_order="little")
+    config = CCPConfig(tx_id=0x6EC, rx_id=0x6ED, byte_order="little")
     adapter = CanAdapter()
 
     # Connect to CCP
-    client = CCPClient(CCPOnCAN(adapter, can), config)
+    client = CCPClient(adapter, config)
     client.connect(station_address=0)
 
     # Read using SHORT_UP

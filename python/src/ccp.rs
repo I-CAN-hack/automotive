@@ -1,22 +1,18 @@
-mod transport;
-
-use crate::{config, errors::convert};
-use automotive::protocols::ccp::{self, CCPClient, CCPConfig};
+use crate::{config, errors::convert, runtime::CanAdapter};
+use automotive::{
+    can::Identifier,
+    protocols::ccp::{self, CCPClient, CCPConfig},
+};
 use pyo3::{
     exceptions::{PyConnectionError, PyValueError},
     prelude::*,
     types::{PyBytes, PyDict, PyTuple},
 };
 use strum::IntoEnumIterator;
-use transport::{State, Transport};
+use tokio::sync::watch;
 
 fn settings(obj: &Bound<'_, PyAny>) -> PyResult<CCPConfig> {
     let timeout = config::duration(obj.getattr("timeout")?.extract()?)?;
-    if timeout.is_zero() || std::time::Instant::now().checked_add(timeout).is_none() {
-        return Err(PyValueError::new_err(
-            "CCP timeout must be positive and representable",
-        ));
-    }
     let byte_order = match obj.getattr("byte_order")?.extract::<String>()?.as_str() {
         "little" => ccp::ByteOrder::LittleEndian,
         "big" => ccp::ByteOrder::BigEndian,
@@ -26,10 +22,15 @@ fn settings(obj: &Bound<'_, PyAny>) -> PyResult<CCPConfig> {
             ))
         }
     };
-    Ok(CCPConfig {
+    let config = CCPConfig {
+        tx_id: config::identifier(&obj.getattr("tx_id")?)?,
+        rx_id: config::identifier(&obj.getattr("rx_id")?)?,
+        bus: obj.getattr("bus")?.extract()?,
         timeout,
         byte_order,
-    })
+    };
+    config.validate().map_err(convert)?;
+    Ok(config)
 }
 
 #[pyfunction]
@@ -40,7 +41,11 @@ fn validate_ccp(config: &Bound<'_, PyAny>) -> PyResult<()> {
 #[pyfunction]
 fn ccp_defaults(py: Python<'_>) -> PyResult<Py<PyAny>> {
     let result = PyDict::new(py);
-    let config = CCPConfig::default();
+    let config = CCPConfig::new(
+        Identifier::standard(0).map_err(convert)?,
+        Identifier::standard(1).map_err(convert)?,
+    );
+    result.set_item("bus", config.bus)?;
     result.set_item("timeout", config.timeout.as_secs_f64())?;
     result.set_item(
         "byte_order",
@@ -182,16 +187,19 @@ impl Value {
 #[pyclass(name = "_CCP", module = "automotive._native")]
 pub struct Client {
     inner: CCPClient,
-    parent: std::sync::Arc<State>,
+    parent: watch::Sender<bool>,
 }
 
 #[pymethods]
 impl Client {
     #[new]
-    fn new(transport: &Transport, config: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn new(adapter: &CanAdapter, config: &Bound<'_, PyAny>) -> PyResult<Self> {
+        if *adapter.closed.borrow() {
+            return Err(PyConnectionError::new_err("CAN adapter is closed"));
+        }
         Ok(Self {
-            inner: transport.state.attach(settings(config)?)?,
-            parent: transport.state.clone(),
+            inner: CCPClient::new(adapter.inner.clone(), settings(config)?).map_err(convert)?,
+            parent: adapter.closed.clone(),
         })
     }
 
@@ -222,12 +230,11 @@ impl Client {
 
     #[getter]
     fn closed(&self) -> bool {
-        self.inner.is_closed() || self.parent.closed()
+        self.inner.is_closed() || *self.parent.borrow()
     }
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    transport::register(m)?;
     m.add_class::<Client>()?;
     m.add_function(wrap_pyfunction!(validate_ccp, m)?)?;
     m.add_function(wrap_pyfunction!(ccp_defaults, m)?)?;

@@ -3,18 +3,16 @@
 import asyncio
 
 from automotive.adapters import CanAdapter
-from automotive.protocols.ccp import CCPCanConfig, CCPClient, CCPConfig, CCPOnCAN
+from automotive.protocols.ccp import CCPClient, CCPConfig
 from automotive.utils import hexdump
 
 
 async def main() -> None:
-    can = CCPCanConfig(tx_id=0x6EC, rx_id=0x6ED)
-
-    config = CCPConfig(byte_order="little")
+    config = CCPConfig(tx_id=0x6EC, rx_id=0x6ED, byte_order="little")
     adapter = CanAdapter()
 
     # Connect to CCP
-    client = CCPClient(CCPOnCAN(adapter, can), config)
+    client = CCPClient(adapter, config)
     await client.connect(station_address=0)
 
     # Read using SHORT_UP

@@ -2,10 +2,7 @@
 
 use automotive::{
     can::{AsyncCanAdapter, CanAdapter, Frame, Identifier},
-    protocols::ccp::{
-        ByteOrder, CCPCanConfig, CCPClient, CCPConfig, CCPOnCAN, Command, Error, ErrorCode,
-        Resource,
-    },
+    protocols::ccp::{ByteOrder, CCPClient, CCPConfig, Command, Error, ErrorCode, Resource},
 };
 use std::{
     collections::VecDeque,
@@ -82,14 +79,14 @@ fn client(order: ByteOrder, extended: bool, timeout: Duration) -> (CCPClient, Pe
         incoming: rx,
         outgoing: tx,
     }));
-    let mut can = CCPCanConfig::new(id(0x6ec, extended), id(0x6ed, extended));
-    can.bus = 3;
     (
-        CCPClient::with_config(
-            CCPOnCAN::new(adapter, can).unwrap(),
+        CCPClient::new(
+            adapter,
             CCPConfig {
+                bus: 3,
                 byte_order: order,
                 timeout,
+                ..CCPConfig::new(id(0x6ec, extended), id(0x6ed, extended))
             },
         )
         .unwrap(),

@@ -1,9 +1,12 @@
 use std::time::Duration;
 
+use crate::{can::Identifier, Result};
+
 /// ECU byte order from its description file; CCP does not negotiate it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ByteOrder {
+    #[default]
     LittleEndian,
     BigEndian,
 }
@@ -25,21 +28,56 @@ impl ByteOrder {
     }
 }
 
-/// Command deadline and ECU address byte order. Station addresses are always LE.
+/// CCP CAN identifiers, adapter bus, command deadline and ECU address byte order.
+/// Supports 11-bit and 29-bit IDs. Station addresses are always little endian.
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(default))]
 pub struct CCPConfig {
+    /// CRO transmit identifier.
+    pub tx_id: Identifier,
+    /// DTO receive identifier.
+    pub rx_id: Identifier,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub bus: u8,
+    #[cfg_attr(feature = "serde", serde(default = "default_timeout"))]
     pub timeout: Duration,
+    #[cfg_attr(feature = "serde", serde(default))]
     pub byte_order: ByteOrder,
 }
 
-impl Default for CCPConfig {
-    fn default() -> Self {
+fn default_timeout() -> Duration {
+    Duration::from_secs(1)
+}
+
+impl CCPConfig {
+    /// Use bus zero, a one-second deadline and little-endian ECU addresses.
+    pub fn new(tx_id: Identifier, rx_id: Identifier) -> Self {
         Self {
-            timeout: Duration::from_secs(1),
+            tx_id,
+            rx_id,
+            bus: 0,
+            timeout: default_timeout(),
             byte_order: ByteOrder::LittleEndian,
         }
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        if self.tx_id == self.rx_id {
+            return Err(crate::Error::InvalidAdapterConfig(
+                "CCP transmit and receive identifiers must differ".into(),
+            ));
+        }
+        if self.timeout.is_zero()
+            || std::time::Instant::now()
+                .checked_add(self.timeout)
+                .is_none()
+        {
+            return Err(super::Error::InvalidArgument(
+                "timeout must be positive and representable".into(),
+            )
+            .into());
+        }
+        Ok(())
     }
 }
 

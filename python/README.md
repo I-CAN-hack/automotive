@@ -204,8 +204,10 @@ exchange still drains before the next request, matching async cancellation.
 
 CCP 2.1 memory transfers on Classical CAN are supported through
 `automotive.protocols.ccp` and `automotive.sync.protocols.ccp`.
-Configure `CCPConfig(byte_order="little")` or `"big"` to match the ECU;
-station addresses are always little endian. Connect directly to a known station,
+Construct `CCPClient(adapter, CCPConfig(tx_id=0x6EC, rx_id=0x6ED, byte_order="little"))`.
+Choose the adapter bus with `bus` and set `timeout` in seconds. Set `byte_order`
+to `"little"` or `"big"` to match the ECU; station addresses are always little
+endian. Connect directly to a known station,
 then use `set_mta()`, `upload()` and `download()` for RAM transfers, or
 `short_upload()` for reads at an explicit address. Transfer sizes are 1–5 bytes;
 `download6()` writes exactly six bytes. Each method sends one command.

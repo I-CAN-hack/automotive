@@ -15,33 +15,27 @@ from ..adapters import CanAdapter
 from ..can import Identifier
 from ._ccp_enums import Command, ErrorCode, Resource
 
+_DEFAULTS = _native.ccp_defaults()
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CCPConfig:
-    """Command deadline in seconds and ECU memory address byte order.
+    """CRO/DTO identifiers, adapter bus, deadline and ECU address byte order.
 
-    CCP does not negotiate byte order. Use the ECU description or a known
-    working trace. Station addresses are always little endian. No automatic
-    command retries are performed.
+    Transmit and receive IDs must differ and may be standard or extended.
+    The bus defaults to zero and the command deadline to one second.
+    CCP does not negotiate byte order; use the ECU description or a known
+    working trace. Station addresses are always little endian.
     """
-
-    timeout: float = _native.ccp_defaults()["timeout"]
-    byte_order: Literal["little", "big"] = _native.ccp_defaults()["byte_order"]
-
-    def __post_init__(self) -> None:
-        _native.validate_ccp(self)
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class CCPCanConfig:
-    """CRO/DTO identifiers and adapter bus for Classical CAN."""
 
     tx_id: int | Identifier
     rx_id: int | Identifier
-    bus: int = 0
+    bus: int = _DEFAULTS["bus"]
+    timeout: float = _DEFAULTS["timeout"]
+    byte_order: Literal["little", "big"] = _DEFAULTS["byte_order"]
 
     def __post_init__(self) -> None:
-        _native.validate_ccp_can(self)
+        _native.validate_ccp(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,21 +72,6 @@ class MemoryAddress:
     address_extension: int
 
 
-class CCPTransport(AsyncResource[_native._CCPTransport]):
-    """Exclusive packet transport; attach one CCP client.
-
-    Closing waits for the active command to finish or reach its deadline.
-    """
-
-
-class CCPOnCAN(CCPTransport):
-    """Retain the CAN adapter and subscribe before the first command."""
-
-    def __init__(self, adapter: CanAdapter, config: CCPCanConfig) -> None:
-        self.config = config
-        super().__init__(_native.open_ccp_can(adapter._native, config))
-
-
 class CCPClient(AsyncResource[_native._CCP]):
     """Serialized CCP session with one command per method call.
 
@@ -104,14 +83,15 @@ class CCPClient(AsyncResource[_native._CCP]):
     After an active command is cancelled, times out, or receives a malformed
     response, connect() again and re-establish MTA and privileges. The previous
     command may have executed. Negative responses raise CCPResponseError with
-    command, code, and data. Closing releases the transport after the active
-    command; disconnect() separately ends the ECU session.
+    command, code, and data. The client retains the adapter and subscribes
+    before the first command. Closing waits for the active command and releases
+    the subscription without closing the shared adapter; disconnect() separately
+    ends the ECU session. Closing the adapter invalidates the client.
     """
 
-    def __init__(self, transport: CCPTransport, config: CCPConfig | None = None) -> None:
-        self.transport = transport
-        self.config = config or CCPConfig()
-        super().__init__(_native._CCP(transport._native, self.config))
+    def __init__(self, adapter: CanAdapter, config: CCPConfig) -> None:
+        self.config = config
+        super().__init__(_native._CCP(adapter._native, config))
 
     async def connect(self, station_address: int = 0) -> None:
         """CONNECT to a known station; station addresses are always little endian."""
@@ -159,11 +139,8 @@ class CCPClient(AsyncResource[_native._CCP]):
 
 
 __all__ = [
-    "CCPCanConfig",
     "CCPClient",
     "CCPConfig",
-    "CCPOnCAN",
-    "CCPTransport",
     "Command",
     "ErrorCode",
     "Identification",
