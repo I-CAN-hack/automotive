@@ -40,6 +40,9 @@ def read_packet(stream):
 
 def serve_connection(stream, args):
     with stream:
+        # Send ACKs and spaced UDS replies promptly: Nagle plus delayed TCP
+        # acknowledgements can otherwise push replies past P2/P2* deadlines.
+        stream.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         stream.settimeout(10)
         activation = read_packet(stream)
         assert activation.payload_type == 5
