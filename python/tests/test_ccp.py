@@ -15,10 +15,9 @@ import pytest
 from automotive.adapters import SocketCanAdapter
 from automotive.can import Identifier
 from automotive.errors import CCPResponseError
-from automotive.protocols.ccp import CCPCanConfig, CCPClient, CCPConfig, CCPOnCAN, Resource
+from automotive.protocols.ccp import CCPClient, CCPConfig, Resource
 from automotive.sync.adapters import SocketCanAdapter as SyncAdapter
 from automotive.sync.protocols.ccp import CCPClient as SyncClient
-from automotive.sync.protocols.ccp import CCPOnCAN as SyncCAN
 
 ROOT = Path(__file__).resolve().parents[2]
 BASE = 0x8000_0000
@@ -60,11 +59,11 @@ async def test_scapy_memory_transfers_and_seed_key(
     tmp_path: Path, byte_order: Literal["little", "big"], extended: bool
 ) -> None:
     make_id = Identifier.extended if extended else Identifier.standard
-    can = CCPCanConfig(tx_id=make_id(0x6EC), rx_id=make_id(0x6ED))
+    config = CCPConfig(tx_id=make_id(0x6EC), rx_id=make_id(0x6ED), byte_order=byte_order)
     async with ecu(tmp_path, byte_order, extended) as (process, stats):
         async with (
             SocketCanAdapter("vcan0") as adapter,
-            CCPClient(CCPOnCAN(adapter, can), CCPConfig(byte_order=byte_order)) as client,
+            CCPClient(adapter, config) as client,
         ):
             await client.connect(0x1234)
             assert (await client.get_ccp_version()).major == 2
@@ -96,10 +95,10 @@ async def test_scapy_memory_transfers_and_seed_key(
 
 async def test_scapy_sync_memory_commands(tmp_path: Path) -> None:
     def exercise() -> None:
-        can = CCPCanConfig(tx_id=0x6EC, rx_id=0x6ED)
+        config = CCPConfig(tx_id=0x6EC, rx_id=0x6ED, byte_order="little")
         with (
             SyncAdapter("vcan0") as adapter,
-            SyncClient(SyncCAN(adapter, can), CCPConfig(byte_order="little")) as client,
+            SyncClient(adapter, config) as client,
         ):
             client.connect(0x1234)
             assert client.get_ccp_version().minor == 1

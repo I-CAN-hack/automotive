@@ -419,8 +419,25 @@ with different transmit and receive address bytes.
 ## CCP
 
 CCP 2.1 on Classical CAN is supported through `automotive::protocols::ccp`,
-with matching asynchronous and synchronous Python APIs. Configure the ECU's
-memory address byte order explicitly; station addresses are always little endian.
+with matching asynchronous and synchronous Python APIs. Pass a CAN adapter
+and `CCPConfig` directly to `CCPClient::new`. The configuration includes the
+CRO/DTO identifiers, adapter bus, command timeout and ECU memory address byte
+order. Station addresses are always little endian.
+
+```rust
+use automotive::{can::Identifier, protocols::ccp::{CCPClient, CCPConfig}};
+use std::sync::Arc;
+
+# fn ccp_example() -> automotive::Result<()> {
+let config = CCPConfig::new(Identifier::standard(0x6ec)?, Identifier::standard(0x6ed)?);
+let adapter = Arc::new(automotive::adapters::get_adapter()?);
+let client = CCPClient::new(adapter, config)?;
+# Ok(())
+# }
+```
+
+`CCPConfig::new` defaults to bus zero, a one-second timeout and little-endian
+ECU memory addresses. Set `byte_order` to match the ECU description.
 
 Commands share a serialized session and are never retried automatically.
 After cancellation, timeout or a malformed response, reconnect and re-establish

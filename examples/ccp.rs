@@ -4,20 +4,19 @@
 async fn main() -> automotive::Result<()> {
     use automotive::{
         can::Identifier,
-        protocols::ccp::{ByteOrder, CCPCanConfig, CCPClient, CCPConfig, CCPOnCAN},
+        protocols::ccp::{ByteOrder, CCPClient, CCPConfig},
         utils::hexdump,
     };
     use std::sync::Arc;
 
-    let can = CCPCanConfig::new(Identifier::standard(0x6ec)?, Identifier::standard(0x6ed)?);
     let config = CCPConfig {
         byte_order: ByteOrder::LittleEndian,
-        ..Default::default()
+        ..CCPConfig::new(Identifier::standard(0x6ec)?, Identifier::standard(0x6ed)?)
     };
     let adapter = Arc::new(automotive::adapters::get_adapter()?);
 
     // Connect to CCP
-    let client = CCPClient::with_config(CCPOnCAN::new(adapter, can)?, config)?;
+    let client = CCPClient::new(adapter, config)?;
     client.connect(0).await?;
 
     // Read using SHORT_UP

@@ -5,7 +5,6 @@ from __future__ import annotations
 from ..._base import Buffer
 from ...protocols import ccp as _ccp
 from ...protocols.ccp import (
-    CCPCanConfig,
     CCPConfig,
     Command,
     ErrorCode,
@@ -20,11 +19,8 @@ from .._runtime import call, run
 from ..adapters import CanAdapter
 
 __all__ = [
-    "CCPCanConfig",
     "CCPClient",
     "CCPConfig",
-    "CCPOnCAN",
-    "CCPTransport",
     "Command",
     "ErrorCode",
     "Identification",
@@ -35,32 +31,23 @@ __all__ = [
 ]
 
 
-class CCPTransport(_Resource[_ccp.CCPTransport]):
-    """Exclusive CCP packet transport with shared lifetime."""
-
-
-class CCPOnCAN(CCPTransport):
-    """Retain the adapter and subscribe to the configured DTO identifier."""
-
-    def __init__(self, adapter: CanAdapter, config: CCPCanConfig) -> None:
-        self.config = config
-        super().__init__(call(_ccp.CCPOnCAN, adapter._async, config))
-
-
 class CCPClient(_Resource[_ccp.CCPClient]):
     """Synchronous CCP; configuration, results and exceptions match the async API.
 
     After timeout, cancellation or a malformed response, reconnect and
     re-establish MTA and access privileges before continuing.
+    The client retains the adapter and subscribes before the first command.
+    Closing waits for the active command and releases the subscription without
+    closing the shared adapter; disconnect() separately ends the ECU session.
+    Closing the adapter invalidates the client.
     """
 
-    def __init__(self, transport: CCPTransport, config: CCPConfig | None = None) -> None:
-        self.transport = transport
-        super().__init__(call(_ccp.CCPClient, transport._async, config))
+    def __init__(self, adapter: CanAdapter, config: CCPConfig) -> None:
+        super().__init__(call(_ccp.CCPClient, adapter._async, config))
 
     @property
     def config(self) -> CCPConfig:
-        """Command deadline and ECU memory address byte order."""
+        """CAN identifiers, bus, deadline and ECU memory address byte order."""
         return self._async.config
 
     def connect(self, station_address: int = 0) -> None:

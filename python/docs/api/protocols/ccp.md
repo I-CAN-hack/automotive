@@ -1,12 +1,14 @@
 # CCP
 
 CCP 2.1 session and memory transfer commands on Classical CAN. Construct
-`CCPClient(CCPOnCAN(adapter, CCPCanConfig(...)), CCPConfig(...))`, then
+`CCPClient(adapter, CCPConfig(tx_id=0x6EC, rx_id=0x6ED))`, then
 `connect(station_address)` directly to a known ECU. The Rust implementation
 handles fixed eight-byte CRO/CRM framing, echoed command counters,
 serialization and deadlines. Standard and extended CAN identifiers are supported.
+`CCPConfig` combines the CRO/DTO identifiers with `bus` (default zero),
+`timeout` in seconds (default one) and ECU memory address byte order.
 
-Set `CCPConfig(byte_order="little")` or `"big"` to match the ECU's memory
+Set `byte_order="little"` or `"big"` in `CCPConfig` to match the ECU's memory
 address encoding. CCP does not negotiate byte order. Station addresses in
 CONNECT and DISCONNECT are always little endian.
 
@@ -28,8 +30,9 @@ the original deadline. After active cancellation, timeout, malformed response
 or an interrupting ECU event, reconnect and re-establish MTA and privileges.
 The interrupted command may already have executed. Negative responses raise
 `CCPResponseError` with raw `command`, `code`, and `data` attributes.
-Closing waits for the active exchange and releases the local transport;
-`disconnect()` separately ends the ECU session.
+Closing waits for the active exchange and releases the client's adapter and
+receive subscription. The shared adapter remains open; closing it invalidates
+the client. `disconnect()` separately ends the ECU session.
 
 This client implements CCP 2.1 sections 7, 12.1–12.9, 12.15 and 12.28.
 
@@ -48,6 +51,6 @@ under `automotive.sync.protocols.ccp`.
 
 ```{eval-rst}
 .. automodule:: automotive.sync.protocols.ccp
-   :members: CCPClient, CCPTransport, CCPOnCAN
+   :members: CCPClient, CCPConfig
    :imported-members:
 ```
