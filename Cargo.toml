@@ -3,7 +3,7 @@ name = "automotive"
 version = "0.5.1-alpha.1"
 edition = "2021"
 license = "MIT"
-keywords = ["automotive", "CAN", "UDS", "CCP", "XCP"]
+keywords = ["CAN", "UDS", "CCP", "XCP", "DoIP"]
 description = "Rust crate providing a variety of automotive related libraries, such as communicating with CAN interfaces and diagnostic APIs."
 repository = "https://github.com/I-CAN-hack/automotive"
 
@@ -26,7 +26,7 @@ vector-xl = ["dep:bindgen", "dep:libloading"]
 j2534 = ["dep:libloading", "dep:winreg"]
 panda = ["dep:rusb"]
 peak = ["dep:rusb"]
-socketcan = ["dep:libc", "dep:socket2"]
+socketcan = ["dep:libc"]
 
 # adapter tests
 test-j2534 = ["j2534"]
@@ -35,6 +35,7 @@ test-peak = ["peak"]
 test-socketcan = ["socketcan"]
 test-vcan = ["socketcan"]
 test-vector = ["vector-xl"]
+test-doip = []
 
 [dependencies]
 arrayvec = "0.7"
@@ -49,9 +50,9 @@ thiserror = "1.0.58"
 tokio = { version = "1.36.0", features = ["full"] }
 tokio-stream = "0.1.14"
 tracing = "0.1"
+socket2 = "0.6.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-socket2 = { version = "0.6.0", optional = true }
 libc = { version = "0.2.154", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]

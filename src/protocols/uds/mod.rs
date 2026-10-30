@@ -87,7 +87,7 @@ impl Response {
 }
 
 /// UDS Client. Generic over any [`Transport`] implementation so that it
-/// works equally with software ISO-TP ([`crate::transports::isotp::IsoTP`]) and
+/// works equally with DoIP ([`crate::transports::doip::DoIP`]), software ISO-TP ([`crate::transports::isotp::IsoTP`]) and
 /// hardware ISO 15765 (e.g. `J2534NativeIsoTP`).
 pub struct UDSClient<'a, T: Transport> {
     adapter: crate::shared::Shared<'a, T>,

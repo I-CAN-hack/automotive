@@ -1,11 +1,13 @@
 //! Transport layers for exchanging diagnostic messages.
 
+pub mod doip;
 pub mod isotp;
 
 /// Abstraction over anything that can exchange diagnostic PDUs over a transport layer.
 ///
-/// Two implementations ship with this workspace:
+/// Implementations shipped with this workspace:
 /// * [`isotp::IsoTP`] — software ISO-TP framing on top of any [`crate::can::CanAdapter`].
+/// * [`doip::DoIP`] — diagnostic messages over IPv4 or IPv6 TCP.
 /// * `J2534NativeIsoTP` — hardware ISO 15765 via a J2534 PassThru device; the
 ///   adapter firmware handles all framing, flow-control, and STmin timing.
 pub trait Transport {

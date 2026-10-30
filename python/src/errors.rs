@@ -1,6 +1,6 @@
 use automotive::{
     protocols::{ccp, uds, xcp},
-    transports::isotp,
+    transports::{doip, isotp},
     Error,
 };
 use pyo3::{create_exception, exceptions::*, prelude::*};
@@ -34,6 +34,12 @@ create_exception!(
     IsoTPError,
     AutomotiveError,
     "An ISO-TP exchange failed."
+);
+create_exception!(
+    automotive,
+    DoIPError,
+    AutomotiveError,
+    "A DoIP connection, discovery, or diagnostic transport failed."
 );
 create_exception!(
     automotive,
@@ -105,6 +111,18 @@ pub fn convert(error: Error) -> PyErr {
             | isotp::Error::DataTooLarge,
         ) => PyValueError::new_err(message),
         Error::IsoTPError(_) => IsoTPError::new_err(message),
+        Error::DoIPError(doip::Error::InvalidConfig(_)) => PyValueError::new_err(message),
+        Error::DoIPError(error) => Python::attach(|py| {
+            let result = DoIPError::new_err(message);
+            let code = match error {
+                doip::Error::RoutingActivation(code)
+                | doip::Error::HeaderNack(code)
+                | doip::Error::DiagnosticNack(code) => Some(code),
+                _ => None,
+            };
+            let _ = result.value(py).setattr("code", code);
+            result
+        }),
         Error::UDSError(uds::Error::NegativeResponse(code)) => Python::attach(|py| {
             let error = NegativeResponseError::new_err(message);
             let _ = error.value(py).setattr("code", code.as_raw());
@@ -200,6 +218,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         NotSupportedError,
         TransmissionCancelledError,
         IsoTPError,
+        DoIPError,
         UDSError,
         NegativeResponseError,
         ProtocolDeviationError,

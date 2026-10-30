@@ -28,6 +28,7 @@ enum WireValue {
 
 pub enum Transport {
     Software(IsoTP<'static>),
+    DoIP(automotive::transports::doip::DoIP),
     #[cfg(target_os = "windows")]
     Native(Arc<automotive::adapters::j2534::J2534NativeIsoTP>),
 }
@@ -36,6 +37,7 @@ impl Transport {
     fn stream(&self) -> PduStream {
         match self {
             Self::Software(transport) => Box::pin(transport.clone().into_recv()),
+            Self::DoIP(transport) => Box::pin(transport.recv_owned()),
             #[cfg(target_os = "windows")]
             Self::Native(transport) => Box::pin(transport.recv_owned()),
         }
@@ -46,6 +48,7 @@ impl automotive::Transport for Transport {
     async fn send<'a>(&'a self, data: &'a [u8]) -> automotive::Result<()> {
         match self {
             Self::Software(transport) => transport.send(data).await,
+            Self::DoIP(transport) => transport.send(data).await,
             #[cfg(target_os = "windows")]
             Self::Native(transport) => transport.send(data).await,
         }
@@ -65,7 +68,7 @@ pub struct State {
 }
 
 impl State {
-    fn new(inner: Transport, parent: Option<watch::Sender<bool>>) -> Arc<Self> {
+    pub(crate) fn new(inner: Transport, parent: Option<watch::Sender<bool>>) -> Arc<Self> {
         Arc::new(Self {
             inner: Arc::new(inner),
             gate: Mutex::new(()),
@@ -221,6 +224,9 @@ impl PyTransport {
     fn aclose<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let state = self.state.clone();
         state.closed.send_replace(true);
+        if let Transport::DoIP(transport) = &*state.inner {
+            transport.close();
+        }
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             #[cfg(target_os = "windows")]
             if let Transport::Native(native) = &*state.inner {

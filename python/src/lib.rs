@@ -4,6 +4,7 @@ use pyo3::prelude::*;
 
 mod ccp;
 mod config;
+mod doip;
 mod errors;
 mod runtime;
 mod uds;
@@ -14,6 +15,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     errors::register(m)?;
     config::register(m)?;
     runtime::register(m)?;
+    doip::register(m)?;
     m.add_class::<uds::Client>()?;
     xcp::register(m)?;
     ccp::register(m)?;

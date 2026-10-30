@@ -33,6 +33,9 @@ pub enum Error {
     #[error(transparent)]
     IsoTPError(#[from] crate::transports::isotp::Error),
 
+    #[error(transparent)]
+    DoIPError(#[from] crate::transports::doip::Error),
+
     #[cfg(any(feature = "panda", feature = "peak"))]
     #[error(transparent)]
     LibUsbError(#[from] rusb::Error),

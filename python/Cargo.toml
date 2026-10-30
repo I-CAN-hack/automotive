@@ -3,6 +3,7 @@ name = "automotive-python"
 version = "0.5.1-alpha.1"
 edition = "2021"
 license = "MIT"
+keywords = ["CAN", "UDS", "CCP", "XCP", "DoIP"]
 publish = false
 description = "Python bindings for the automotive Rust crate"
 repository = "https://github.com/I-CAN-hack/automotive"

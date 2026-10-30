@@ -10,7 +10,7 @@ Welcome to the `automotive` crate documentation. The purpose of this crate is to
 - `automotive::adapters` contains the feature-gated hardware adapters: `j2534`,
   `panda`, `peak`, `socketcan`, and `vector`, plus the `get_adapter()` discovery
   helper.
-- `automotive::transports` contains ISO-TP and the diagnostic `Transport` interface.
+- `automotive::transports` contains ISO-TP, DoIP, and the diagnostic `Transport` interface.
 - `automotive::protocols` contains `uds`, which uses a `Transport`, and `xcp`,
   which exchanges XCP packets over raw CAN/CAN FD or Ethernet TCP/UDP.
   `ccp` provides CCP 2.1 session and memory commands over Classical CAN.
@@ -19,8 +19,59 @@ Welcome to the `automotive` crate documentation. The purpose of this crate is to
 Hardware adapter types use the `Adapter` suffix: `PandaAdapter`, `PeakAdapter`,
 `SocketCanAdapter`, `VectorAdapter`, and `J2534Adapter`. Message transports
 implement `Transport`; the current implementations are `IsoTP` and
-`J2534NativeIsoTP`. UDS depends on this shared interface so additional transports,
-such as DoIP and HSFZ, can implement it independently of CAN.
+`J2534NativeIsoTP`, and `DoIP`. UDS depends on this shared interface; DoIP uses
+ordinary IPv4/IPv6 sockets independently of CAN.
+
+## DoIP and UDS over Ethernet
+
+DoIP works on Windows, Linux, and macOS without a hardware-adapter feature.
+Active discovery needs no configuration:
+
+```rust,no_run
+use automotive::{protocols::uds::UDSClient, transports::doip::discover};
+
+# async fn example() -> automotive::Result<()> {
+for vehicle in discover().await? {
+    let transport = vehicle.connect().await?;
+    let uds = UDSClient::new(&transport);
+    println!("{:?}", uds.read_data_by_identifier(0xf190).await?);
+}
+# Ok(())
+# }
+```
+
+`DoIP::connect("192.168.0.10:13400", 0x1000)` connects directly to a known ECU.
+`Discovery::bind(DiscoveryConfig::default().passive())?.recv().await` listens
+for announcements without transmitting. `DiscoveryConfig::ipv6(interface_index)`
+selects an adapter for IPv6 multicast; link-local TCP endpoints include a numeric
+scope ID. Ordinary unicast connections follow OS routing. Config types expose
+source binding, VIN/EID filters, version, routing activation, timeouts, and limits.
+Discovery normally collects responses for two seconds. A vehicle reporting
+incomplete VIN/GID synchronization with a valid VIN or GID starts a five-second
+timer, followed by another identification request and response collection window.
+Repeated responses from that vehicle do not restart its timer.
+Alive checks run in the background and sends wait for DoIP acknowledgements.
+This is an unsecured physical-addressed transport; TLS and OEM authentication
+are not implemented. See [the Rust example](examples/doip.rs).
+
+For a directly connected ECU on Linux, run `sudo scripts/set_up_doip.sh eth0`.
+The adapter name and tester addresses are configurable; defaults are
+`169.254.0.1/16` and `fe80::1/64`. Then, from `python/`, run
+`uv run examples/doip.py --ipv4 --discovery active --local-address 169.254.0.1/16`.
+Use `--ipv6 --adapter eth0` for IPv6 multicast, or `--discovery passive` to listen
+before powering up the ECU. Each discovered entity is queried for its VIN using
+UDS DID `0xF190`.
+The blocking example at `python/examples/sync/doip.py` accepts the same options.
+The Rust example also accepts these options:
+`cargo run --example doip -- --adapter eth0 --ipv6 --discovery active`.
+All three examples default to tester address `0x0E89`, configurable through
+`--source-address`. Active IPv4 requires `--local-address`, e.g. `169.254.0.1/16`;
+IPv6 requires `--adapter` for its link-local multicast scope (Rust resolves its
+index using Linux sysfs). IPv4 needs no adapter name. Passive IPv4 listens on all
+interfaces and its TCP connections follow OS routing; active IPv4 binds its
+discovery and TCP sockets to the configured source address.
+The setup script also keeps NetworkManager from replacing the settings and,
+when `iptables`/`ip6tables` are available, allows DoIP UDP reception on that adapter.
 
 ## Python library
 
@@ -52,9 +103,13 @@ scripts/set_up_vcan.sh
 cargo test --features test-vcan,serde
 ```
 
-The UDS tests exercise all 14 implemented service IDs against Scapy's
-`EcuAnsweringMachine`, including DID and memory writes followed by reads, and
-download/upload transfers. Scapy decodes requests and constructs responses.
+The UDS suite runs the same service, suppression, response-pending, validation,
+and timing scenarios against Scapy over each enabled transport. `test-vcan`
+selects CAN ISO-TP; `test-doip` selects both IPv4 and IPv6 DoIP. Run all three
+with `cargo test --features test-vcan,test-doip,serde`. Shared UDS response
+logic and fault cases live in `scripts/uds_ecu.py`; each transport supplies its
+own framing and socket setup. CAN-specific and DoIP-specific protocol checks
+remain in their respective test files.
 
 The setup script requires `sudo`. Windows-only adapters still require their
 Windows SDKs and drivers.

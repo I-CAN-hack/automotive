@@ -1,49 +1,19 @@
-#![cfg(all(target_os = "linux", feature = "test-vcan"))]
+#![cfg(any(all(target_os = "linux", feature = "test-vcan"), feature = "test-doip"))]
 
-use automotive::adapters::socketcan::SocketCanConfig;
-use automotive::can::AsyncCanAdapter;
-use automotive::can::Identifier;
 use automotive::protocols::uds::Error as UDSError;
 use automotive::protocols::uds::NegativeResponseCode;
 use automotive::protocols::uds::{
     DTCFormatIdentifier, ProtocolDeviation, RequestOutcome, RoutineControlType, ServiceIdentifier,
     UDSClient, UDSConfig,
 };
-use automotive::transports::isotp::{IsoTP, IsoTPConfig};
 use automotive::Error;
-use automotive::StreamExt;
-use std::process::{Child, Command};
 use std::time::Duration;
 
-static VECU_STARTUP_TIMEOUT_MS: u64 = 10000;
-
-struct ChildGuard(Child);
-impl Drop for ChildGuard {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-async fn vecu_spawn(adapter: &AsyncCanAdapter) -> ChildGuard {
-    vecu_spawn_with_case(adapter, None).await
-}
-
-async fn vecu_spawn_with_case(adapter: &AsyncCanAdapter, case: Option<&str>) -> ChildGuard {
-    let stream = adapter
-        .recv()
-        .timeout(std::time::Duration::from_millis(VECU_STARTUP_TIMEOUT_MS));
-    tokio::pin!(stream);
-
-    let mut command = Command::new("scripts/vecu_uds.py");
-    if let Some(case) = case {
-        command.args(["--suppression-case", case]);
-    }
-    let vecu = ChildGuard(command.spawn().unwrap());
-    stream.next().await.unwrap().expect("vecu did not start");
-
-    vecu
-}
+#[path = "common/uds_ecu.rs"]
+mod uds_ecu;
+#[path = "common/uds.rs"]
+mod uds_services;
+use uds_ecu::Backend;
 
 fn suppression_config(strict: bool) -> UDSConfig {
     UDSConfig::builder()
@@ -52,19 +22,6 @@ fn suppression_config(strict: bool) -> UDSConfig {
         .p2_star_timeout(Duration::from_millis(200))
         .use_server_timing(false)
         .build()
-}
-
-fn vcan_adapter() -> AsyncCanAdapter {
-    automotive::adapters::socketcan::SocketCanAdapter::new_async(SocketCanConfig::new("vcan0"))
-        .unwrap()
-}
-
-fn suppression_transport(adapter: &AsyncCanAdapter) -> IsoTP<'_> {
-    let config = IsoTPConfig::builder(Identifier::standard(0x7a1).unwrap())
-        .timeout(Duration::from_secs(2))
-        .build()
-        .unwrap();
-    IsoTP::new(adapter, config)
 }
 
 fn assert_deviation(error: Error, expected: ProtocolDeviation, payload: &[u8]) {
@@ -80,153 +37,21 @@ fn assert_deviation(error: Error, expected: ProtocolDeviation, payload: &[u8]) {
     }
 }
 
-#[tokio::test]
-#[serial_test::serial]
-async fn uds_test_sids() {
-    let adapter =
-        automotive::adapters::socketcan::SocketCanAdapter::new_async(SocketCanConfig::new("vcan0"))
-            .unwrap();
-    let _vecu = vecu_spawn(&adapter).await;
-
-    let isotp_config = IsoTPConfig::builder(Identifier::standard(0x7a1).unwrap())
-        .timeout(std::time::Duration::from_millis(1000))
-        .build()
-        .unwrap();
-
-    let isotp = IsoTP::new(&adapter, isotp_config);
+async fn uds_test_sids(backend: Backend) {
+    let ecu = backend.spawn(None).await;
     let uds_config = UDSConfig::builder()
         .p2_timeout(Duration::from_secs(1))
         .build();
-    let uds = UDSClient::with_config(&isotp, uds_config);
+    let uds = UDSClient::with_config(&ecu.transport, uds_config);
 
-    uds.tester_present().await.unwrap();
-
-    let resp = uds.diagnostic_session_control(0x2).await;
-    let security_access_denied =
-        UDSError::NegativeResponse(NegativeResponseCode::SecurityAccessDenied);
-    assert!(matches!(resp, Err(Error::UDSError(e)) if e == security_access_denied));
-
-    let timing = uds.diagnostic_session_control(3).await.unwrap().unwrap();
-    assert_eq!(timing.p2_server_max, Duration::from_secs(1));
-    assert_eq!(timing.p2_star_server_max, Duration::from_secs(5));
-
-    assert_eq!(uds.ecu_reset(1).await.unwrap(), None);
-    assert_eq!(uds.ecu_reset(4).await.unwrap(), Some(2));
-
-    assert_eq!(
-        uds.security_access(1, None).await.unwrap(),
-        Some(b"seed".to_vec())
-    );
-    let wrong_key = uds.security_access(2, Some(b"bad!")).await;
-    assert!(matches!(
-        wrong_key,
-        Err(Error::UDSError(UDSError::NegativeResponse(
-            NegativeResponseCode::InvalidKey
-        )))
-    ));
-    assert_eq!(uds.security_access(2, Some(b"key!")).await.unwrap(), None);
-
-    assert_eq!(
-        uds.read_data_by_identifier(0x1234).await.unwrap(),
-        b"deadbeef"
-    );
-    uds.write_data_by_identifier(0x1234, b"updated!")
-        .await
-        .unwrap();
-    assert_eq!(
-        uds.read_data_by_identifier(0x1234).await.unwrap(),
-        b"updated!"
-    );
-
-    let dtcs = uds
-        .read_dtc_information_number_of_dtc_by_status_mask(0xff)
-        .await
-        .unwrap();
-    assert_eq!(dtcs.dtc_status_availability_mask, 0xff);
-    assert_eq!(
-        dtcs.dtc_format_identifier,
-        DTCFormatIdentifier::ISO_14229_1_DTCFormat
-    );
-    assert_eq!(dtcs.dtc_count, 2);
-
-    let address = 0x123456;
-    let size = 8;
-    assert_eq!(
-        uds.read_memory_by_address_alfid(address, size, 3, 2)
-            .await
-            .unwrap(),
-        b"abcdefgh"
-    );
-    uds.write_memory_by_address_alfid(address, size, 3, 2, b"written!")
-        .await
-        .unwrap();
-    assert_eq!(
-        uds.read_memory_by_address_alfid(address, size, 3, 2)
-            .await
-            .unwrap(),
-        b"written!"
-    );
-
-    assert_eq!(
-        uds.routine_control(RoutineControlType::Start, 0x1234, None)
-            .await
-            .unwrap(),
-        Some(vec![0])
-    );
-    assert_eq!(
-        uds.routine_control(RoutineControlType::Stop, 0x1234, None)
-            .await
-            .unwrap(),
-        None
-    );
-    assert_eq!(
-        uds.routine_control(RoutineControlType::RequestResults, 0x1234, None)
-            .await
-            .unwrap(),
-        Some(b"done".to_vec())
-    );
-
-    assert_eq!(
-        uds.request_download_alfid(0, 0, address, size, 3, 2)
-            .await
-            .unwrap(),
-        10
-    );
-    assert_eq!(uds.transfer_data(1, Some(b"download")).await.unwrap(), None);
-    assert_eq!(uds.request_transfer_exit(None).await.unwrap(), None);
-    assert_eq!(
-        uds.read_memory_by_address_alfid(address, size, 3, 2)
-            .await
-            .unwrap(),
-        b"download"
-    );
-
-    assert_eq!(
-        uds.request_upload_alfid(0, 0, address, size, 3, 2)
-            .await
-            .unwrap(),
-        10
-    );
-    assert_eq!(
-        uds.transfer_data(1, None).await.unwrap(),
-        Some(b"download".to_vec())
-    );
-    assert_eq!(
-        uds.request_transfer_exit(Some(&[0xaa, 0x55]))
-            .await
-            .unwrap(),
-        Some(vec![0xaa, 0x55])
-    );
+    uds_services::exercise_services(&uds).await;
 }
 
-#[tokio::test]
-#[serial_test::serial]
-async fn uds_suppressed_services_accept_silence_in_both_modes() {
+async fn uds_suppressed_services_accept_silence_in_both_modes(backend: Backend) {
     for strict in [true, false] {
-        let adapter = vcan_adapter();
-        let _vecu = vecu_spawn(&adapter).await;
-        let transport = suppression_transport(&adapter);
-        let uds = UDSClient::with_config(&transport, suppression_config(strict));
+        let ecu = backend.spawn(None).await;
+        let transport = &ecu.transport;
+        let uds = UDSClient::with_config(transport, suppression_config(strict));
         let suppressed = uds.suppress_positive_responses();
 
         let start = tokio::time::Instant::now();
@@ -294,9 +119,7 @@ async fn uds_suppressed_services_accept_silence_in_both_modes() {
     }
 }
 
-#[tokio::test]
-#[serial_test::serial]
-async fn uds_suppressed_pending_replies_require_a_final_response() {
+async fn uds_suppressed_pending_replies_require_a_final_response(backend: Backend) {
     for strict in [true, false] {
         for case in [
             "pending-positive",
@@ -304,15 +127,14 @@ async fn uds_suppressed_pending_replies_require_a_final_response() {
             "pending-only",
             "repeated-pending",
         ] {
-            let adapter = vcan_adapter();
-            let _vecu = vecu_spawn_with_case(&adapter, Some(case)).await;
-            let transport = suppression_transport(&adapter);
+            let ecu = backend.spawn(Some(case)).await;
+            let transport = &ecu.transport;
             let mut config = suppression_config(strict);
             if case == "pending-only" {
                 // Pending state must not be inferred from different timer values.
                 config.p2_star_timeout = config.p2_timeout;
             }
-            let uds = UDSClient::with_config(&transport, config);
+            let uds = UDSClient::with_config(transport, config);
             let start = tokio::time::Instant::now();
             let result = uds.request(0x3e, Some(0x80), None).await;
             match case {
@@ -357,15 +179,14 @@ async fn uds_suppressed_pending_replies_require_a_final_response() {
     }
 }
 
-#[tokio::test]
-#[serial_test::serial]
-async fn uds_strict_suppression_rejects_unexpected_positive_replies_and_bad_echoes() {
+async fn uds_strict_suppression_rejects_unexpected_positive_replies_and_bad_echoes(
+    backend: Backend,
+) {
     for case in ["positive", "bad-echo"] {
-        let adapter = vcan_adapter();
-        let _vecu = vecu_spawn_with_case(&adapter, Some(case)).await;
-        let transport = suppression_transport(&adapter);
+        let ecu = backend.spawn(Some(case)).await;
+        let transport = &ecu.transport;
         for strict in [true, false] {
-            let uds = UDSClient::with_config(&transport, suppression_config(strict));
+            let uds = UDSClient::with_config(transport, suppression_config(strict));
             for use_view in [false, true] {
                 let result = if use_view {
                     uds.suppress_positive_responses()
@@ -396,14 +217,11 @@ async fn uds_strict_suppression_rejects_unexpected_positive_replies_and_bad_echo
     }
 }
 
-#[tokio::test]
-#[serial_test::serial]
-async fn uds_suppressed_final_responses_still_validate_service_records() {
-    let adapter = vcan_adapter();
-    let _vecu = vecu_spawn_with_case(&adapter, Some("malformed-final")).await;
-    let transport = suppression_transport(&adapter);
+async fn uds_suppressed_final_responses_still_validate_service_records(backend: Backend) {
+    let ecu = backend.spawn(Some("malformed-final")).await;
+    let transport = &ecu.transport;
     for strict in [true, false] {
-        let uds = UDSClient::with_config(&transport, suppression_config(strict));
+        let uds = UDSClient::with_config(transport, suppression_config(strict));
         let suppressed = uds.suppress_positive_responses();
         let results = [
             suppressed.diagnostic_session_control(3).await.map(|_| ()),
@@ -462,9 +280,7 @@ async fn uds_suppressed_final_responses_still_validate_service_records() {
     }
 }
 
-#[tokio::test]
-#[serial_test::serial]
-async fn uds_suppressed_pending_pdus_are_validated_before_extending_the_wait() {
+async fn uds_suppressed_pending_pdus_are_validated_before_extending_the_wait(backend: Backend) {
     for (case, payload, deviation) in [
         (
             "wrong-pending-sid",
@@ -483,11 +299,10 @@ async fn uds_suppressed_pending_pdus_are_validated_before_extending_the_wait() {
             },
         ),
     ] {
-        let adapter = vcan_adapter();
-        let _vecu = vecu_spawn_with_case(&adapter, Some(case)).await;
-        let transport = suppression_transport(&adapter);
+        let ecu = backend.spawn(Some(case)).await;
+        let transport = &ecu.transport;
         for strict in [true, false] {
-            let uds = UDSClient::with_config(&transport, suppression_config(strict));
+            let uds = UDSClient::with_config(transport, suppression_config(strict));
             let result = uds.suppress_positive_responses().tester_present().await;
             if strict {
                 assert_deviation(result.unwrap_err(), deviation.clone(), &payload);
@@ -498,15 +313,12 @@ async fn uds_suppressed_pending_pdus_are_validated_before_extending_the_wait() {
     }
 }
 
-#[tokio::test]
-#[serial_test::serial]
-async fn uds_suppression_preserves_required_and_overall_timeouts() {
+async fn uds_suppression_preserves_required_and_overall_timeouts(backend: Backend) {
     for case in ["silent", "pending-only"] {
-        let adapter = vcan_adapter();
-        let _vecu = vecu_spawn_with_case(&adapter, Some(case)).await;
-        let transport = suppression_transport(&adapter);
+        let ecu = backend.spawn(Some(case)).await;
+        let transport = &ecu.transport;
         let config = suppression_config(true);
-        let uds = UDSClient::with_config(&transport, config);
+        let uds = UDSClient::with_config(transport, config);
         if case == "silent" {
             uds.suppress_positive_responses()
                 .tester_present()
@@ -536,7 +348,7 @@ async fn uds_suppression_preserves_required_and_overall_timeouts() {
             request_timeout: Some(Duration::from_millis(50)),
             ..config
         };
-        let uds = UDSClient::with_config(&transport, config);
+        let uds = UDSClient::with_config(transport, config);
         assert!(matches!(
             uds.suppress_positive_responses().tester_present().await,
             Err(Error::Timeout)
@@ -544,14 +356,11 @@ async fn uds_suppression_preserves_required_and_overall_timeouts() {
     }
 }
 
-#[tokio::test]
-#[serial_test::serial]
-async fn uds_suppressed_session_silence_preserves_shared_server_timings() {
-    let adapter = vcan_adapter();
-    let _vecu = vecu_spawn(&adapter).await;
-    let transport = suppression_transport(&adapter);
+async fn uds_suppressed_session_silence_preserves_shared_server_timings(backend: Backend) {
+    let ecu = backend.spawn(None).await;
+    let transport = &ecu.transport;
     let uds = UDSClient::with_config(
-        &transport,
+        transport,
         UDSConfig::builder()
             .p2_timeout(Duration::from_millis(100))
             .build(),
@@ -571,14 +380,11 @@ async fn uds_suppressed_session_silence_preserves_shared_server_timings() {
     assert!(start.elapsed() >= timing.p2_server_max);
 }
 
-#[tokio::test]
-#[serial_test::serial]
-async fn uds_suppressed_unknown_response_codes_are_preserved_in_both_modes() {
-    let adapter = vcan_adapter();
-    let _vecu = vecu_spawn_with_case(&adapter, Some("reserved-nrc")).await;
-    let transport = suppression_transport(&adapter);
+async fn uds_suppressed_unknown_response_codes_are_preserved_in_both_modes(backend: Backend) {
+    let ecu = backend.spawn(Some("reserved-nrc")).await;
+    let transport = &ecu.transport;
     for strict in [true, false] {
-        let uds = UDSClient::with_config(&transport, suppression_config(strict));
+        let uds = UDSClient::with_config(transport, suppression_config(strict));
         assert!(matches!(
             uds.suppress_positive_responses().tester_present().await,
             Err(Error::UDSError(UDSError::NegativeResponse(
@@ -587,3 +393,65 @@ async fn uds_suppressed_unknown_response_codes_are_preserved_in_both_modes() {
         ));
     }
 }
+
+// Each scenario is written once and appears as a separately named test for
+// every enabled transport. Only CAN tests need serialization around vcan0.
+macro_rules! uds_suite {
+    ($module:ident, $backend:expr, [$($attribute:meta),*]) => {
+        mod $module {
+            use super::*;
+            #[tokio::test]
+            $(#[$attribute])*
+            async fn uds_test_sids() {
+                super::uds_test_sids($backend).await;
+            }
+            #[tokio::test]
+            $(#[$attribute])*
+            async fn uds_suppressed_services_accept_silence_in_both_modes() {
+                super::uds_suppressed_services_accept_silence_in_both_modes($backend).await;
+            }
+            #[tokio::test]
+            $(#[$attribute])*
+            async fn uds_suppressed_pending_replies_require_a_final_response() {
+                super::uds_suppressed_pending_replies_require_a_final_response($backend).await;
+            }
+            #[tokio::test]
+            $(#[$attribute])*
+            async fn uds_strict_suppression_rejects_unexpected_positive_replies_and_bad_echoes() {
+                super::uds_strict_suppression_rejects_unexpected_positive_replies_and_bad_echoes($backend).await;
+            }
+            #[tokio::test]
+            $(#[$attribute])*
+            async fn uds_suppressed_final_responses_still_validate_service_records() {
+                super::uds_suppressed_final_responses_still_validate_service_records($backend).await;
+            }
+            #[tokio::test]
+            $(#[$attribute])*
+            async fn uds_suppressed_pending_pdus_are_validated_before_extending_the_wait() {
+                super::uds_suppressed_pending_pdus_are_validated_before_extending_the_wait($backend).await;
+            }
+            #[tokio::test]
+            $(#[$attribute])*
+            async fn uds_suppression_preserves_required_and_overall_timeouts() {
+                super::uds_suppression_preserves_required_and_overall_timeouts($backend).await;
+            }
+            #[tokio::test]
+            $(#[$attribute])*
+            async fn uds_suppressed_session_silence_preserves_shared_server_timings() {
+                super::uds_suppressed_session_silence_preserves_shared_server_timings($backend).await;
+            }
+            #[tokio::test]
+            $(#[$attribute])*
+            async fn uds_suppressed_unknown_response_codes_are_preserved_in_both_modes() {
+                super::uds_suppressed_unknown_response_codes_are_preserved_in_both_modes($backend).await;
+            }
+        }
+    };
+}
+
+#[cfg(all(target_os = "linux", feature = "test-vcan"))]
+uds_suite!(can, Backend::Can, [serial_test::serial]);
+#[cfg(feature = "test-doip")]
+uds_suite!(doip_ipv4, Backend::DoipV4, []);
+#[cfg(feature = "test-doip")]
+uds_suite!(doip_ipv6, Backend::DoipV6, []);

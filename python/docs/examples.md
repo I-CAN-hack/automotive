@@ -37,6 +37,33 @@ Read diagnostic data through a persistent UDS client.
 :language: python
 ```
 
+## Discover vehicles and use UDS over DoIP
+
+Select `--discovery active` (default) or `--discovery passive`, and `--ipv4`
+(default) or `--ipv6`. IPv6 requires `--adapter eth0` to select the multicast
+interface. Active IPv4 requires `--local-address`, e.g. `169.254.0.1/16`, to bind
+its source IP and derive the subnet broadcast. Passive IPv4 needs neither
+`--adapter` nor `--local-address`.
+For a directly connected ECU on Linux, first run
+`sudo scripts/set_up_doip.sh eth0` from the repository root. From `python/`:
+
+```sh
+uv run examples/doip.py --ipv4 --discovery active --local-address 169.254.0.1/16
+uv run examples/doip.py --adapter eth0 --ipv6 --discovery active
+uv run examples/doip.py --ipv4 --discovery passive
+uv run examples/doip.py --adapter eth0 --ipv6 --discovery passive
+```
+
+Each example connects to discovered entities and reads UDS VIN (`0xF190`).
+Passive mode runs until Ctrl+C; start it before powering up the ECU. Active
+mode uses a two-second collection window. The tester logical address defaults
+to `0x0E89`; use `--source-address` to override it. The Rust example
+(`cargo run --example doip -- ...`) accepts the same options.
+
+```{literalinclude} ../examples/doip.py
+:language: python
+```
+
 ## XCP on CAN and Ethernet
 
 Both examples set MTA, read 4 KiB with an explicit loop of UPLOAD commands,
@@ -106,6 +133,15 @@ Their setup, requests, output, and flow follow the corresponding Rust programs.
 ### Query an ECU with UDS
 
 ```{literalinclude} ../examples/sync/uds.py
+:language: python
+```
+
+### Discover vehicles and use UDS over DoIP
+
+The blocking example accepts the same arguments and reads the same UDS VIN.
+Replace `examples/doip.py` with `examples/sync/doip.py` in the commands above.
+
+```{literalinclude} ../examples/sync/doip.py
 :language: python
 ```
 
