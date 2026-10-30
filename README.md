@@ -48,8 +48,26 @@ scope ID. Ordinary unicast connections follow OS routing. Config types expose
 source binding, VIN/EID filters, version, routing activation, timeouts, and limits.
 Alive checks run in the background and sends wait for DoIP acknowledgements.
 This is an unsecured physical-addressed transport; TLS and OEM authentication
-are not implemented. See [DoIP design and implementation comparison](docs/doip.md)
-and [the Rust example](examples/doip.rs).
+are not implemented. See [the Rust example](examples/doip.rs).
+
+For a directly connected ECU on Linux, run `sudo scripts/set_up_doip.sh eth0`.
+The adapter name and tester addresses are configurable; defaults are
+`169.254.0.1/16` and `fe80::1/64`. Then, from `python/`, run
+`uv run examples/doip.py --ipv4 --discovery active --local-address 169.254.0.1/16`.
+Use `--ipv6 --adapter eth0` for IPv6 multicast, or `--discovery passive` to listen
+before powering up the ECU. Each discovered entity is queried for its VIN using
+UDS DID `0xF190`.
+The blocking example at `python/examples/sync/doip.py` accepts the same options.
+The Rust example also accepts these options:
+`cargo run --example doip -- --adapter eth0 --ipv6 --discovery active`.
+All three examples default to tester address `0x0E89`, configurable through
+`--source-address`. Active IPv4 requires `--local-address`, e.g. `169.254.0.1/16`;
+IPv6 requires `--adapter` for its link-local multicast scope (Rust resolves its
+index using Linux sysfs). IPv4 needs no adapter name. Passive IPv4 listens on all
+interfaces and its TCP connections follow OS routing; active IPv4 binds its
+discovery and TCP sockets to the configured source address.
+The setup script also keeps NetworkManager from replacing the settings and,
+when `iptables`/`ip6tables` are available, allows DoIP UDP reception on that adapter.
 
 ## Python library
 

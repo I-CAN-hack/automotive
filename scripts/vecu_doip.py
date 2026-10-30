@@ -13,9 +13,8 @@ import time
 
 from scapy.contrib.automotive.doip import DoIP
 from scapy.contrib.automotive.uds import UDS
-from uds_ecu import SUPPRESSION_CASES, SuppressionAwareECU, ecu_responses
+from uds_ecu import SUPPRESSION_CASES, VIN, SuppressionAwareECU, ecu_responses
 
-VIN = b"WVWZZZ1JZXW000001"
 EID = b"\x00\x11\x22\x33\x44\x55"
 GID = b"\xaa\xbb\xcc\xdd\xee\xff"
 ECU_ADDRESS = 0x1000

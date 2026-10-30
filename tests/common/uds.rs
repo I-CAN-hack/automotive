@@ -34,6 +34,10 @@ pub async fn exercise_services<T: Transport>(uds: &UDSClient<'_, T>) {
     assert_eq!(uds.security_access(2, Some(b"key!")).await.unwrap(), None);
 
     assert_eq!(
+        uds.read_data_by_identifier(0xf190).await.unwrap(),
+        b"WVWZZZ1JZXW000001"
+    );
+    assert_eq!(
         uds.read_data_by_identifier(0x1234).await.unwrap(),
         b"deadbeef"
     );

@@ -7,6 +7,8 @@ from scapy.contrib.automotive.ecu import EcuAnsweringMachine
 from scapy.contrib.automotive.uds import UDS
 from scapy.plist import PacketList
 
+VIN = b"WVWZZZ1JZXW000001"
+
 SUPPRESSION_CASES = (
     "silent", "positive", "pending-positive", "pending-negative",
     "pending-only", "repeated-pending", "malformed-final", "bad-echo",
@@ -120,6 +122,8 @@ def ecu_responses():
             requestServiceId=0x27, negativeResponseCode=0x35)),
         EcuResponse(responses=uds.UDS() / uds.UDS_RDBIPR(dataIdentifier=0x1234)
             / Raw(bytes(did_record)), answers=read_did),
+        EcuResponse(responses=uds.UDS() / uds.UDS_RDBIPR(dataIdentifier=0xf190)
+            / Raw(VIN)),
         EcuResponse(responses=uds.UDS() / uds.UDS_WDBIPR(dataIdentifier=0x1234),
             answers=write_did),
         EcuResponse(responses=uds.UDS() / uds.UDS_RMBAPR(), answers=read_memory),

@@ -60,6 +60,49 @@ The matching blocking functions live in `automotive.sync.transports.doip`.
 See the [DoIP API](https://i-can-hack.github.io/automotive/api/transports/doip.html)
 and async/sync [examples](https://i-can-hack.github.io/automotive/examples.html).
 TLS and OEM authentication are not implemented.
+
+For a directly connected ECU on Linux, configure the Ethernet adapter from the
+repository root, then run any of the four discovery combinations from `python/`:
+
+```sh
+sudo scripts/set_up_doip.sh eth0
+cd python
+uv run examples/doip.py --ipv4 --discovery active --local-address 169.254.0.1/16
+uv run examples/doip.py --adapter eth0 --ipv6 --discovery active
+uv run examples/doip.py --ipv4 --discovery passive
+uv run examples/doip.py --adapter eth0 --ipv6 --discovery passive
+```
+
+The setup script defaults to tester addresses `169.254.0.1/16` and `fe80::1/64`.
+Override them with `sudo scripts/set_up_doip.sh eth0 169.254.10.1/16 fe80::1234/64`;
+use addresses distinct from the ECU and an IPv4 subnet matching its configuration.
+It enables IPv6, disables router advertisements/SLAAC, adds the static addresses
+and brings the adapter up. When NetworkManager is running, it first marks the
+adapter unmanaged so it retains these settings. Restore normal management after
+testing with `sudo nmcli device set eth0 managed yes`. Existing addresses/routes
+are retained; the static configuration lasts until reboot/reconfiguration.
+When `iptables`/`ip6tables` are available, it also allows incoming UDP ports
+`13400` and `49152–65535` on that adapter for announcements and discovery replies.
+These firewall rules last until a firewall reload or reboot. Unicast replies to
+broadcast/multicast requests may otherwise be dropped by a stateful firewall.
+
+The examples read VIN through UDS DID `0xF190` on each discovered entity, using
+tester address `0x0E89` (override with `--source-address 0x0E89`). Active mode
+collects replies for two seconds. Passive mode listens until Ctrl+C; start it
+before powering up the ECU to receive unsolicited announcements. Active IPv4
+requires `--local-address`, e.g. `169.254.0.1/16`, to bind the source IP and derive
+the subnet broadcast. Passive IPv4 needs no local address: it listens on all
+interfaces, and diagnostic TCP connections follow OS routing.
+Incoming UDP port `13400` must be allowed on each receiving interface; the setup
+script opens the firewall only for the adapter passed to it.
+IPv6 requires `--adapter` to select the link-local multicast interface and retains
+link-local scopes. IPv4 needs no adapter name.
+Replace `examples/doip.py` with `examples/sync/doip.py` for the blocking version.
+The Rust example has the same options:
+`cargo run --example doip -- --adapter eth0 --ipv6 --discovery active` from the
+repository root. Rust resolves IPv6 adapter indices using Linux sysfs; the
+Python examples and library support all three desktop platforms.
+
 Run `uv run pytest tests/test_doip.py tests/test_uds.py tests/test_uds_sync.py -q`
 for Scapy ECU tests on any platform; `--run-vcan` is not required.
 

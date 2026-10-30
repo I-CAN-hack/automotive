@@ -23,6 +23,7 @@ async def exercise_services(uds: UDSClient) -> None:
     assert bad_key.value.code == 0x35
     assert await uds.security_access(2, memoryview(b"key!")) is None
 
+    assert await uds.read_data_by_identifier(0xF190) == b"WVWZZZ1JZXW000001"
     assert await uds.read_data_by_identifier(0x1234) == b"deadbeef"
     await uds.write_data_by_identifier(0x1234, bytearray(b"updated!"))
     assert await uds.read_data_by_identifier(0x1234) == b"updated!"

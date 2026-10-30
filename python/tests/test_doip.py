@@ -7,8 +7,9 @@ import asyncio
 import pytest
 
 from automotive.errors import DoIPError
-from automotive.protocols.uds import UDSClient, UDSConfig
+from automotive.protocols.uds import DataIdentifier, UDSClient, UDSConfig
 from automotive.sync.protocols.uds import UDSClient as SyncUDSClient
+from automotive.sync.transports.doip import Discovery as SyncDiscovery
 from automotive.sync.transports.doip import DoIP as SyncDoIP
 from automotive.sync.transports.doip import discover as sync_discover
 from automotive.transports.doip import Discovery, DiscoveryConfig, DoIP, DoIPConfig, discover
@@ -24,9 +25,14 @@ async def test_discover_and_connect(host: str) -> None:
         vehicle = vehicles[0]
         assert vehicle.host == host
         assert vehicle.vin == b"WVWZZZ1JZXW000001"
-        async with await vehicle.connect(port=server.port) as transport:
+        config = DoIPConfig(
+            source_address=0x0E89,
+            protocol_version=vehicle.protocol_version,
+            local_address=f"{server.host}:0" if ":" not in host else f"[{server.host}]:0",
+        )
+        async with await vehicle.connect(config, port=server.port) as transport:
             uds = UDSClient(transport, UDSConfig(p2_timeout=1, request_timeout=5))
-            assert await uds.read_data_by_identifier(0x1234) == b"deadbeef"
+            assert await uds.read_data_by_identifier(DataIdentifier.VIN) == vehicle.vin
 
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "::1"])
@@ -36,9 +42,10 @@ async def test_sync_discovery_and_uds(host: str) -> None:
         def exchange() -> None:
             vehicles = sync_discover(server.discovery)
             assert len(vehicles) == 1
-            with vehicles[0].connect(port=server.port) as transport:
+            config = DoIPConfig(source_address=0x0E89, protocol_version=vehicles[0].protocol_version)
+            with vehicles[0].connect(config, port=server.port) as transport:
                 uds = SyncUDSClient(transport, UDSConfig(p2_timeout=1, request_timeout=5))
-                assert uds.read_data_by_identifier(0x1234) == b"deadbeef"
+                assert uds.read_data_by_identifier(DataIdentifier.VIN) == vehicles[0].vin
             with SyncDoIP.connect(host, 0x1000, port=server.port) as transport:
                 assert SyncUDSClient(transport).read_data_by_identifier(0x1234) == b"deadbeef"
 
@@ -55,6 +62,10 @@ async def test_passive_announcements_and_explicit_trigger(host: str) -> None:
         async with ecu(host, announce_to=port) as server:
             announcement = await asyncio.wait_for(listener.recv(), 2)
             assert announcement.logical_address == 0x1000
+            doip_config = DoIPConfig(source_address=0x0E89, protocol_version=announcement.protocol_version)
+            async with await announcement.connect(doip_config, port=server.port) as transport:
+                uds = UDSClient(transport, UDSConfig(p2_timeout=1, request_timeout=5))
+                assert await uds.read_data_by_identifier(DataIdentifier.VIN) == announcement.vin
             async with await Discovery.bind(server.discovery) as requests:
                 await requests.request()
                 assert (await asyncio.wait_for(requests.recv(), 2)).eid == announcement.eid
@@ -62,6 +73,24 @@ async def test_passive_announcements_and_explicit_trigger(host: str) -> None:
     # Explicit close must release port 13400 while the Python object still exists.
     async with await Discovery.listen(config):
         pass
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "::1"])
+async def test_sync_passive_discovery_and_vin(host: str) -> None:
+    endpoint = f"[{host}]" if ":" in host else host
+    config = DiscoveryConfig(bind_address=f"{endpoint}:0", destination=f"{endpoint}:13400")
+    with SyncDiscovery.listen(config) as listener:
+        async with ecu(host, announce_to=13400) as server:
+
+            def exchange() -> None:
+                vehicle = listener.recv()
+                assert vehicle.vin == b"WVWZZZ1JZXW000001"
+                config = DoIPConfig(source_address=0x0E89, protocol_version=vehicle.protocol_version)
+                with vehicle.connect(config, port=server.port) as transport:
+                    uds = SyncUDSClient(transport, UDSConfig(p2_timeout=1, request_timeout=5))
+                    assert uds.read_data_by_identifier(DataIdentifier.VIN) == vehicle.vin
+
+            await asyncio.wait_for(asyncio.to_thread(exchange), 5)
 
 
 async def test_raw_transport_and_error_codes() -> None:
