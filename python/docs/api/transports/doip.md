@@ -13,8 +13,13 @@ for vehicle in await discover():
         print(await UDSClient(transport).read_data_by_identifier(DataIdentifier.VIN))
 ```
 
-Defaults trigger IPv4 identification, collect unique vehicles for two seconds,
-and use tester address 0x0E00. `DoIPConfig` and `DiscoveryConfig` provide optional
+Defaults trigger IPv4 identification, collect unique vehicles for two seconds
+per request, and use tester address 0x0E00. Incomplete VIN/GID synchronization
+with a valid VIN or GID starts a five-second per-vehicle timer. After expiry,
+discovery sends another identification request and collects fresh responses.
+Duplicate responses do not restart the timer; `DiscoveryConfig.timeout` controls
+each response window, so synchronization can extend the total discovery time.
+`DoIPConfig` and `DiscoveryConfig` provide optional
 overrides. Discovery uses version 255; connections to discovered vehicles adopt
 the advertised version, while direct connections default to version 2.
 

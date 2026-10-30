@@ -46,6 +46,10 @@ for announcements without transmitting. `DiscoveryConfig::ipv6(interface_index)`
 selects an adapter for IPv6 multicast; link-local TCP endpoints include a numeric
 scope ID. Ordinary unicast connections follow OS routing. Config types expose
 source binding, VIN/EID filters, version, routing activation, timeouts, and limits.
+Discovery normally collects responses for two seconds. A vehicle reporting
+incomplete VIN/GID synchronization with a valid VIN or GID starts a five-second
+timer, followed by another identification request and response collection window.
+Repeated responses from that vehicle do not restart its timer.
 Alive checks run in the background and sends wait for DoIP acknowledgements.
 This is an unsecured physical-addressed transport; TLS and OEM authentication
 are not implemented. See [the Rust example](examples/doip.rs).

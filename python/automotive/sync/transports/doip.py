@@ -69,7 +69,11 @@ def _announcement(value: _doip.VehicleAnnouncement) -> VehicleAnnouncement:
 
 
 def discover(config: DiscoveryConfig | None = None) -> list[VehicleAnnouncement]:
-    """Trigger identification and collect unique vehicles; defaults to IPv4 and two seconds."""
+    """Collect unique vehicles, waiting and requesting again for incomplete VIN/GID synchronization.
+
+    Defaults to IPv4 with two-second response windows. A valid VIN or GID with
+    incomplete synchronization adds a five-second per-vehicle wait and another request.
+    """
     return [_announcement(value) for value in run(_doip.discover, config)]
 
 

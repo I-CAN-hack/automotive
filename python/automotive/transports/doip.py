@@ -45,7 +45,10 @@ class DiscoveryConfig:
     """Optional discovery overrides, using IP endpoints with explicit ports.
 
     Defaults send IPv4 limited broadcast from an ephemeral source port and
-    collect responses for two seconds. Set ``bind_address`` to select a local
+    collect responses for two seconds per request. Incomplete VIN/GID
+    synchronization with a valid VIN or GID adds a five-second per-vehicle wait,
+    then another request and collection window. Duplicate responses do not
+    restart that timer. Set ``bind_address`` to select a local
     source IP; a subnet-directed broadcast destination can select the route on
     a multihomed host. Passive IPv4 reception normally binds ``0.0.0.0:13400``
     to receive announcements from all adapters. IPv6 multicast requires an OS
@@ -53,8 +56,9 @@ class DiscoveryConfig:
 
     ``vin`` (17 raw bytes) and ``eid`` (six bytes) select identification request
     variants and filter replies; they are mutually exclusive. Version 255
-    discovers all supported versions. ``timeout`` is seconds. Socket sharing
-    is opt-in; Windows may distribute unicast packets among shared listeners.
+    discovers all supported versions. ``timeout`` is the response collection
+    window in seconds after each request. Socket sharing is opt-in; Windows may
+    distribute unicast packets among shared listeners.
     """
 
     bind_address: str = "0.0.0.0:0"
@@ -146,7 +150,11 @@ class DoIP(Transport):
 
 
 async def discover(config: DiscoveryConfig | None = None) -> list[VehicleAnnouncement]:
-    """Trigger identification and collect unique vehicle responses (two seconds by default)."""
+    """Collect unique vehicles, waiting and requesting again for incomplete VIN/GID synchronization.
+
+    Response windows default to two seconds. A valid VIN or GID with incomplete
+    synchronization adds a five-second per-vehicle wait before another request.
+    """
     return [VehicleAnnouncement(**value) for value in await _native.discover_doip(config or DiscoveryConfig())]
 
 

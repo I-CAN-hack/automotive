@@ -48,7 +48,10 @@ remain necessary. The Rust crate retains feature flags for Rust applications.
 ## DoIP over IPv4 and IPv6
 
 `await automotive.transports.doip.discover()` triggers identification using IPv4
-broadcast and collects unique vehicles for two seconds. Connect to a result with
+broadcast and normally collects unique vehicles for two seconds. Vehicles with
+incomplete VIN/GID synchronization and a valid VIN or GID add a five-second
+per-vehicle wait, then another identification request and collection window.
+Duplicate responses do not restart the synchronization timer. Connect to a result with
 `await vehicle.connect()`, or connect directly with
 `await DoIP.connect("192.168.0.10", 0x1000)`. Pass the resulting transport to
 `UDSClient` as usual. No CAN adapter or administrator privileges are needed.
@@ -88,7 +91,8 @@ broadcast/multicast requests may otherwise be dropped by a stateful firewall.
 
 The examples read VIN through UDS DID `0xF190` on each discovered entity, using
 tester address `0x0E89` (override with `--source-address 0x0E89`). Active mode
-collects replies for two seconds. Passive mode listens until Ctrl+C; start it
+normally collects replies for two seconds, with the synchronization wait described
+above when needed. Passive mode listens until Ctrl+C; start it
 before powering up the ECU to receive unsolicited announcements. Active IPv4
 requires `--local-address`, e.g. `169.254.0.1/16`, to bind the source IP and derive
 the subnet broadcast. Passive IPv4 needs no local address: it listens on all

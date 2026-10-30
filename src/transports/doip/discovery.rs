@@ -4,6 +4,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::net::UdpSocket;
+use tokio::time::Instant;
 
 use super::{frame::*, DoIP, DoIPConfig, Error, DOIP_PORT};
 use crate::Result;
@@ -20,6 +21,8 @@ pub enum VehicleIdentification {
 
 /// UDP discovery settings. Defaults send an IPv4 limited broadcast from a
 /// dynamic port (49152–65535) and collect responses for two seconds.
+/// Incomplete VIN/GID synchronization extends discovery by a five-second
+/// per-vehicle wait followed by another request and response collection window.
 ///
 /// Passive reception uses [`Self::passive`], which binds port 13400 and sends
 /// nothing. IPv4 passive listeners normally bind 0.0.0.0 to receive broadcasts
@@ -41,7 +44,9 @@ pub struct DiscoveryConfig {
     /// Protocol version 0xff identifies vehicles regardless of their version.
     pub protocol_version: u8,
     pub identification: VehicleIdentification,
-    /// Collection window; ISO 13400-2 Table 12 specifies at least two seconds.
+    /// Response collection window after each request; defaults to two seconds.
+    /// Incomplete VIN/GID synchronization adds a five-second per-vehicle wait
+    /// and another request (ISO 13400-2:2025 Figure 10 and Table 12).
     pub timeout: Duration,
     /// Opt-in socket sharing. A second listener may receive only some unicast
     /// packets on Windows; leave disabled unless sharing multicast reception.
@@ -132,6 +137,17 @@ impl VehicleAnnouncement {
 pub struct Discovery {
     socket: UdpSocket,
     config: DiscoveryConfig,
+}
+
+struct VehicleDiscoveryTimer {
+    vin: Option<[u8; 17]>,
+    gid: Option<[u8; 6]>,
+    deadline: Option<Instant>,
+}
+
+fn valid_identifier(bytes: &[u8]) -> bool {
+    // ISO 13400-2:2025 Table 1: all-zero and all-0xff identifiers are not set.
+    !bytes.iter().all(|byte| *byte == 0) && !bytes.iter().all(|byte| *byte == 0xff)
 }
 
 impl Discovery {
@@ -301,14 +317,55 @@ impl Discovery {
         }
     }
 
-    /// Trigger identification and collect unique entity responses for `timeout`.
-    /// The deadline is fixed even if malformed or repeated datagrams arrive.
+    /// Trigger identification and collect unique entity responses.
+    /// An incomplete VIN/GID synchronization status with a valid VIN or GID starts
+    /// a five-second timer for that vehicle. On expiry, request identification
+    /// again and collect responses for another `timeout` window. Each vehicle's
+    /// timer starts only once; duplicate responses do not extend discovery.
     pub async fn discover(&self) -> Result<Vec<VehicleAnnouncement>> {
         self.request().await?;
-        let deadline = tokio::time::Instant::now() + self.config.timeout;
+        let mut response_deadline = Instant::now() + self.config.timeout;
+        let mut synchronization: Vec<VehicleDiscoveryTimer> = Vec::new();
         let mut vehicles: Vec<VehicleAnnouncement> = Vec::new();
-        while let Ok(result) = tokio::time::timeout_at(deadline, self.recv()).await {
-            let vehicle = result?;
+        loop {
+            let synchronization_deadline = synchronization
+                .iter()
+                .filter_map(|vehicle| vehicle.deadline)
+                .min();
+            let deadline = synchronization_deadline.unwrap_or(response_deadline);
+            let now = Instant::now();
+            if now >= deadline {
+                if synchronization_deadline.is_none() {
+                    break;
+                }
+                for vehicle in &mut synchronization {
+                    if vehicle.deadline.is_some_and(|deadline| deadline <= now) {
+                        vehicle.deadline = None;
+                    }
+                }
+                self.request().await?;
+                response_deadline = response_deadline.max(Instant::now() + self.config.timeout);
+                continue;
+            }
+            let vehicle = match tokio::time::timeout_at(deadline, self.recv()).await {
+                Ok(result) => result?,
+                Err(_) => continue,
+            };
+            let vin = valid_identifier(&vehicle.vin).then_some(vehicle.vin);
+            let gid = valid_identifier(&vehicle.gid).then_some(vehicle.gid);
+            if let Some(known) = synchronization.iter_mut().find(|known| {
+                (vin.is_some() && known.vin == vin) || (gid.is_some() && known.gid == gid)
+            }) {
+                known.vin = vin.or(known.vin);
+                known.gid = gid.or(known.gid);
+            } else if vehicle.vin_gid_sync_status == Some(0x10) && (vin.is_some() || gid.is_some())
+            {
+                synchronization.push(VehicleDiscoveryTimer {
+                    vin,
+                    gid,
+                    deadline: Some(Instant::now() + Duration::from_secs(5)),
+                });
+            }
             if let Some(previous) = vehicles.iter_mut().find(|previous| {
                 previous.address.ip() == vehicle.address.ip() && previous.eid == vehicle.eid
             }) {
@@ -321,7 +378,8 @@ impl Discovery {
     }
 }
 
-/// Identify vehicles using IPv4 limited broadcast, with a two-second collection window.
+/// Identify vehicles using IPv4 limited broadcast, with two-second response windows.
+/// Incomplete VIN/GID synchronization adds a five-second wait and another request.
 pub async fn discover() -> Result<Vec<VehicleAnnouncement>> {
     discover_with_config(DiscoveryConfig::default()).await
 }
