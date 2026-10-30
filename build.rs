@@ -25,6 +25,7 @@ fn build_vxlapi() {
         "xlGetChannelIndex",
         "xlGetChannelMask",
         "xlGetDriverConfig",
+        "xlGetErrorString",
         "xlOpenDriver",
         "xlOpenPort",
     ];

@@ -1,3 +1,4 @@
+use std::ffi::CStr;
 use std::sync::LazyLock;
 
 use crate::adapters::vector::bindings as xl;
@@ -20,12 +21,35 @@ fn vxlapi64() -> Result<&'static xl::Xl> {
     XL.as_ref().map_err(|e| e.clone())
 }
 
+fn xl_status_description(status: i32) -> String {
+    unsafe {
+        match vxlapi64() {
+            Ok(api) => {
+                let message = api.xlGetErrorString(status);
+                if message.is_null() {
+                    format!("error code {status}")
+                } else {
+                    CStr::from_ptr(message).to_string_lossy().into_owned()
+                }
+            }
+            Err(_) => format!("error code {status}"),
+        }
+    }
+}
+
+fn driver_error(operation: &str, status: i32) -> Error {
+    Error::DriverError(format!(
+        "{operation} failed, {}",
+        xl_status_description(status)
+    ))
+}
+
 pub fn xl_open_driver() -> Result<()> {
     let status = unsafe { vxlapi64()?.xlOpenDriver() };
 
     match status as u32 {
         xl::XL_SUCCESS => Ok(()),
-        _ => Err(Error::DriverError(format!("xlOpenDriver failed, err {}", status)).into()),
+        _ => Err(driver_error("xlOpenDriver", status).into()),
     }
 }
 
@@ -34,7 +58,7 @@ pub fn xl_close_driver() -> Result<()> {
 
     match status as u32 {
         xl::XL_SUCCESS => Ok(()),
-        _ => Err(Error::DriverError(format!("xlCloseDriver failed, err {}", status)).into()),
+        _ => Err(driver_error("xlCloseDriver", status).into()),
     }
 }
 
@@ -64,9 +88,7 @@ pub fn xl_get_driver_config(channel_idx: usize) -> Result<ChannelConfig> {
                     hw_channel: channel.hwChannel as u32,
                 })
             }
-            _ => {
-                Err(Error::DriverError(format!("xlGetDriverConfig failed, err {}", status)).into())
-            }
+            _ => Err(driver_error("xlGetDriverConfig", status).into()),
         }
     }
 }
@@ -92,7 +114,7 @@ pub fn xl_get_application_config(app_name: &str, app_channel: u32) -> Result<Cha
                 hw_index,
                 hw_channel,
             }),
-            _ => Err(Error::DriverError(format!("xlGetApplConfig failed, err {}", status)).into()),
+            _ => Err(driver_error("xlGetApplConfig", status).into()),
         }
     }
 }
@@ -141,7 +163,7 @@ pub fn xl_open_port(user_name: &str, access_mask: XLaccess, init: bool) -> Resul
                 port_handle,
                 permission_mask,
             }),
-            _ => Err(Error::DriverError(format!("xlOpenPort failed, err {}", status)).into()),
+            _ => Err(driver_error("xlOpenPort", status).into()),
         }
     }
 }
@@ -151,7 +173,7 @@ pub fn xl_close_port(port_handle: &PortHandle) -> Result<()> {
         let status = vxlapi64()?.xlClosePort(port_handle.port_handle);
         match status as u32 {
             xl::XL_SUCCESS => Ok(()),
-            _ => Err(Error::DriverError(format!("xlClosePort failed, err {}", status)).into()),
+            _ => Err(driver_error("xlClosePort", status).into()),
         }
     }
 }
@@ -166,9 +188,7 @@ pub fn xl_activate_channel(port_handle: &PortHandle, access_mask: XLaccess) -> R
         );
         match status as u32 {
             xl::XL_SUCCESS => Ok(()),
-            _ => {
-                Err(Error::DriverError(format!("xlActivateChannel failed, err {}", status)).into())
-            }
+            _ => Err(driver_error("xlActivateChannel", status).into()),
         }
     }
 }
@@ -178,9 +198,7 @@ pub fn xl_deactivate_channel(port_handle: &PortHandle, access_mask: XLaccess) ->
         let status = vxlapi64()?.xlDeactivateChannel(port_handle.port_handle, access_mask);
         match status as u32 {
             xl::XL_SUCCESS => Ok(()),
-            _ => Err(
-                Error::DriverError(format!("xlDeactivateChannel failed, err {}", status)).into(),
-            ),
+            _ => Err(driver_error("xlDeactivateChannel", status).into()),
         }
     }
 }
@@ -196,10 +214,7 @@ pub fn xl_can_fd_set_configuration(
             vxlapi64()?.xlCanFdSetConfiguration(port_handle.port_handle, access_mask, &mut config);
         match status as u32 {
             xl::XL_SUCCESS => Ok(()),
-            _ => Err(
-                Error::DriverError(format!("xlCanFdSetConfiguration failed, err {}", status))
-                    .into(),
-            ),
+            _ => Err(driver_error("xlCanFdSetConfiguration", status).into()),
         }
     }
 }
@@ -226,7 +241,7 @@ pub fn xl_can_transmit_ex(
 
         match status as u32 {
             xl::XL_SUCCESS | xl::XL_ERR_QUEUE_IS_FULL => Ok(msg_cnt_sent),
-            _ => Err(Error::DriverError(format!("xlCanTransmitEx failed, err {}", status)).into()),
+            _ => Err(driver_error("xlCanTransmitEx", status).into()),
         }
     }
 }
@@ -241,7 +256,7 @@ pub fn xl_can_receive(port_handle: &PortHandle) -> Result<Option<XLcanRxEvent>> 
                 Ok(Some(event))
             }
             xl::XL_ERR_QUEUE_IS_EMPTY => Ok(None),
-            _ => Err(Error::DriverError(format!("xlCanReceive failed, err {}", status)).into()),
+            _ => Err(driver_error("xlCanReceive", status).into()),
         }
     }
 }
