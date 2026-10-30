@@ -6,10 +6,12 @@ Prints READY <port> after both sockets and the Scapy response definitions are re
 """
 
 import argparse
+import errno
 import selectors
 import socket
 import threading
 import time
+from contextlib import contextmanager
 
 from scapy.contrib.automotive.doip import DoIP
 from scapy.contrib.automotive.uds import UDS
@@ -36,6 +38,30 @@ def read_packet(stream):
 
     header = exact(8)
     return DoIP(header + exact(int.from_bytes(header[4:8], "big")))
+
+
+@contextmanager
+def bind_sockets(host, port):
+    """TCP and UDP sockets bound to the same local port."""
+    family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    max_attempts = 100 if port == 0 else 1
+    for attempt in range(max_attempts):
+        with socket.socket(family, socket.SOCK_STREAM) as tcp, socket.socket(family, socket.SOCK_DGRAM) as udp:
+            if family == socket.AF_INET6:
+                tcp.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+                udp.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+            try:
+                tcp.bind((host, port))
+                udp.bind((host, tcp.getsockname()[1]))
+            except OSError as error:
+                # A free TCP port can be unavailable for UDP. Windows also
+                # reports excluded or exclusively held ports as WSAEACCES.
+                unavailable = error.errno == errno.EADDRINUSE or getattr(error, "winerror", None) in {10013, 10048}
+                if not unavailable or attempt + 1 == max_attempts:
+                    raise
+                continue
+            yield tcp, udp
+            return
 
 
 def serve_connection(stream, args):
@@ -133,14 +159,8 @@ def main():
     parser.add_argument("--suppression-case", choices=SUPPRESSION_CASES)
     parser.add_argument("--announce-to", help="Unicast test destination port for passive reception")
     args = parser.parse_args()
-    family = socket.AF_INET6 if ":" in args.host else socket.AF_INET
-    with socket.socket(family, socket.SOCK_STREAM) as tcp, socket.socket(family, socket.SOCK_DGRAM) as udp:
-        if family == socket.AF_INET6:
-            tcp.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
-            udp.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
-        tcp.bind((args.host, args.port))
+    with bind_sockets(args.host, args.port) as (tcp, udp):
         port = tcp.getsockname()[1]
-        udp.bind((args.host, port))
         tcp.listen()
         selector = selectors.DefaultSelector()
         selector.register(tcp, selectors.EVENT_READ)
