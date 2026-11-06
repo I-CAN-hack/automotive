@@ -206,9 +206,7 @@ class UDSClient:
 
         Rust rejects invalid widths or values that do not fit before sending.
         """
-        return run(
-            self._async.write_memory_by_address_alfid, memory_address, address_width, size_width, data
-        )
+        return run(self._async.write_memory_by_address_alfid, memory_address, address_width, size_width, data)
 
     def read_dtc_information_number_of_dtc_by_status_mask(self, mask: int) -> DTCReportNumberByStatusMask | None:
         """Return the number of DTCs matching a status mask (SID 0x19/0x01).
