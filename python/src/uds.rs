@@ -25,7 +25,7 @@ enum Command {
     ReadMemory(Vec<u8>, Vec<u8>),
     ReadMemoryAlfid(u64, u64, usize, usize),
     WriteMemory(Vec<u8>, Vec<u8>, Vec<u8>),
-    WriteMemoryAlfid(u64, u64, usize, usize, Vec<u8>),
+    WriteMemoryAlfid(u64, usize, usize, Vec<u8>),
     Dtc(u8),
     Routine(u8, u16, Option<Vec<u8>>),
     Download(u8, u8, Vec<u8>, Vec<u8>),
@@ -117,8 +117,8 @@ impl Command {
                 Self::WriteMemory(a, b, c)
             }
             "write_memory_by_address_alfid" => {
-                let (a, b, c, d, e) = args.extract()?;
-                Self::WriteMemoryAlfid(a, b, c, d, e)
+                let (a, b, c, d) = args.extract()?;
+                Self::WriteMemoryAlfid(a, b, c, d)
             }
             "read_dtc_information_number_of_dtc_by_status_mask" => {
                 Self::Dtc(args.extract::<(u8,)>()?.0)
@@ -207,8 +207,8 @@ impl Command {
                 client.write_memory_by_address(&a, &b, &c).await?;
                 Value::None
             }
-            Self::WriteMemoryAlfid(a, b, c, d, e) => {
-                client.write_memory_by_address_alfid(a, b, c, d, &e).await?;
+            Self::WriteMemoryAlfid(a, b, c, d) => {
+                client.write_memory_by_address_alfid(a, b, c, &d).await?;
                 Value::None
             }
             Self::Dtc(a) => {

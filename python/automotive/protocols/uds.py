@@ -286,21 +286,20 @@ class UDSClient:
         )
 
     async def write_memory_by_address_alfid(
-        self, memory_address: int, memory_size: int, address_width: int, size_width: int, data: Buffer
+        self, memory_address: int, address_width: int, size_width: int, data: Buffer
     ) -> None:
-        """Write memory with unsigned 64-bit address/size and byte widths 1–8.
+        """Write memory with a numeric address and size inferred from data.
 
         Args:
             memory_address: Numeric memory address.
-            memory_size: Number of memory bytes to write.
-            address_width: Address field width in bytes.
-            size_width: Size field width in bytes.
+            address_width: Address field width in bytes, 1–8.
+            size_width: Size field width in bytes, 1–8.
             data: Memory data, copied before asynchronous work.
 
         Rust rejects invalid widths or values that do not fit before sending.
         """
         await self._call(
-            "write_memory_by_address_alfid", memory_address, memory_size, address_width, size_width, buffer_bytes(data)
+            "write_memory_by_address_alfid", memory_address, address_width, size_width, buffer_bytes(data)
         )
 
     async def read_dtc_information_number_of_dtc_by_status_mask(self, mask: int) -> DTCReportNumberByStatusMask | None:

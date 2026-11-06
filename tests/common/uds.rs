@@ -68,7 +68,7 @@ pub async fn exercise_services<T: Transport>(uds: &UDSClient<'_, T>) {
             .unwrap(),
         b"abcdefgh"
     );
-    uds.write_memory_by_address_alfid(address, size, 3, 2, b"written!")
+    uds.write_memory_by_address_alfid(address, 3, 2, b"written!")
         .await
         .unwrap();
     assert_eq!(

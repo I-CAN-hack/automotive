@@ -33,7 +33,7 @@ async def test_all_implemented_uds_service_ids(uds_ecu_factory: UdsEcuFactory) -
                 assert report.dtc_format_identifier == DTCFormatIdentifier.ISO_14229_1_DTC_FORMAT
                 assert report.dtc_count == 2
                 assert uds.read_memory_by_address_alfid(0x123456, 8, 3, 2) == b"abcdefgh"
-                uds.write_memory_by_address_alfid(0x123456, 8, 3, 2, b"written!")
+                uds.write_memory_by_address_alfid(0x123456, 3, 2, b"written!")
                 assert uds.read_memory_by_address(b"\x12\x34\x56", b"\x00\x08") == b"written!"
                 uds.write_memory_by_address(b"\x12\x34\x56", b"\x00\x08", b"restored")
                 assert uds.routine_control(RoutineControlType.START, 0x1234) == b"\x00"
