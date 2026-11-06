@@ -4,6 +4,7 @@ use thiserror::Error;
 
 /// The main error type for the library. Each module has it's own error type that is contained by this error.
 #[derive(Error, Debug, Clone)]
+#[non_exhaustive]
 pub enum Error {
     #[error("Not Found")]
     NotFound,

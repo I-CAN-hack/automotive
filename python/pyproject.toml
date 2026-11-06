@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "automotive"
-version = "0.5.1a1"
+version = "0.6.0"
 description = "Synchronous and asynchronous CAN, ISO-TP, DoIP, UDS, CCP, and XCP powered by Rust"
 keywords = ["automotive", "CAN", "ISO-TP", "DoIP", "UDS", "CCP", "XCP"]
 readme = "README.md"
