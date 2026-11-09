@@ -695,7 +695,7 @@ impl<'a, T: Transport> UDSClient<'a, T> {
         Ok(())
     }
 
-    /// 0x3D - Write Memory By Address with numeric address and size.
+    /// 0x3D - Write Memory By Address with a numeric address and size inferred from `data`.
     ///
     /// `address_width` and `size_width` are byte counts from 1 to 8, in that
     /// order. Invalid widths return [`Error::InvalidMemoryValueWidth`]; values
@@ -703,13 +703,12 @@ impl<'a, T: Transport> UDSClient<'a, T> {
     pub async fn write_memory_by_address_alfid(
         &self,
         memory_address: u64,
-        memory_size: u64,
         address_width: usize,
         size_width: usize,
         data: &[u8],
     ) -> Result<()> {
         let address = memory_bytes(memory_address, address_width)?;
-        let size = memory_bytes(memory_size, size_width)?;
+        let size = memory_bytes(data.len() as u64, size_width)?;
         self.write_memory_by_address(&address, &size, data).await
     }
 

@@ -37,7 +37,7 @@ async def exercise_services(uds: UDSClient) -> None:
 
     address, size = 0x123456, 8
     assert await uds.read_memory_by_address_alfid(address, size, 3, 2) == b"abcdefgh"
-    await uds.write_memory_by_address_alfid(address, size, 3, 2, b"written!")
+    await uds.write_memory_by_address_alfid(address, 3, 2, b"written!")
     assert await uds.read_memory_by_address(b"\x12\x34\x56", b"\x00\x08") == b"written!"
     await uds.write_memory_by_address(b"\x12\x34\x56", b"\x00\x08", b"restored")
     assert await uds.read_memory_by_address_alfid(address, size, 3, 2) == b"restored"

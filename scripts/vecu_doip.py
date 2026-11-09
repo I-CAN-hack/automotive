@@ -13,9 +13,16 @@ import threading
 import time
 from contextlib import contextmanager
 
-from scapy.contrib.automotive.doip import DoIP
-from scapy.contrib.automotive.uds import UDS
-from uds_ecu import SUPPRESSION_CASES, VIN, SuppressionAwareECU, ecu_responses
+import scapy.main
+
+# Scapy 2.8 writes data caches without locking. Parallel ECU startup can read
+# partial pickles, and Windows cannot delete them while another process writes.
+# Disable caching before importing packet definitions that load these tables.
+scapy.main.SCAPY_CACHE_FOLDER = None
+
+from scapy.contrib.automotive.doip import DoIP  # noqa: E402
+from scapy.contrib.automotive.uds import UDS  # noqa: E402
+from uds_ecu import SUPPRESSION_CASES, VIN, SuppressionAwareECU, ecu_responses  # noqa: E402
 
 EID = b"\x00\x11\x22\x33\x44\x55"
 GID = b"\xaa\xbb\xcc\xdd\xee\xff"
