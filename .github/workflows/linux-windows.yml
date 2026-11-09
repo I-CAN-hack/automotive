@@ -16,7 +16,10 @@ jobs:
           rustup target add x86_64-pc-windows-gnu
       - name: Install dependencies
         run: |
-          sudo apt-get -y install clang gcc-mingw-w64-x86-64 libclang-dev
+          sudo apt-get -y install clang gcc-mingw-w64-x86-64 libclang-dev llvm-dev
+          # Bindgen's Clang headers and libclang must come from the same LLVM installation.
+          echo "CLANG_PATH=$(/usr/bin/llvm-config --bindir)/clang" >> "$GITHUB_ENV"
+          echo "LIBCLANG_PATH=$(/usr/bin/llvm-config --libdir)" >> "$GITHUB_ENV"
       - name: Build Rust library
         run: cargo build --verbose --target=x86_64-pc-windows-gnu --features=all
       - name: Build Rust examples
