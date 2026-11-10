@@ -35,12 +35,25 @@ Hardware is released when its last owner is dropped. For deterministic cleanup,
 use `aclose()` or `async with` in the async API, or `close()` or `with` in the
 sync API.
 
-`await adapter.recv_for(duration)` collects CAN frames for the given number of
-seconds and returns them as a list in receive order, including transmit echoes.
-Use `adapter.recv_for(duration)` in the sync API. Each call closes its own
-subscription on return and leaves existing `recv()` subscriptions unaffected.
-Reception starts when awaited (or called in the sync API) and finishes early
-if the adapter closes.
+`adapter.recv_for(duration)` subscribes immediately and returns an independent
+receiver including transmit echoes. Its timer and waiting start on the first
+`anext()` or `async for` iteration, so create it before sending. The sync API
+uses the same pattern with `next()` or `for`. The receiver closes when its
+duration ends and leaves existing `recv()` subscriptions unaffected:
+
+```python
+responses = adapter.recv_for(0.1)
+await adapter.send(request)
+received = [frame async for frame in responses]
+```
+
+The synchronous equivalent is:
+
+```python
+responses = adapter.recv_for(0.1)
+adapter.send(request)
+received = list(responses)
+```
 
 ## Asynchronous API
 

@@ -48,6 +48,8 @@ live in `automotive::adapters`.
 receive frames as a stream:
 
 ```rust,no_run
+use std::time::Duration;
+
 use automotive::{
     adapters::get_adapter,
     can::{Frame, Identifier},
@@ -57,7 +59,7 @@ use automotive::{
 #[tokio::main]
 async fn main() -> automotive::Result<()> {
     let adapter = get_adapter()?;
-    let mut frames = adapter.recv();
+    let mut frames = adapter.recv_for(Duration::from_millis(100));
     let frame = Frame::builder(Identifier::standard(0x541)?)
         .data(&[0xff; 8])
         .build()?;
@@ -74,7 +76,8 @@ async fn main() -> automotive::Result<()> {
 `send().await` waits for transmit confirmation. Confirmation accuracy depends
 on the adapter and driver; backends without hardware confirmation emulate it.
 Receive streams include transmit echoes, marked with `frame.loopback`.
-Use `recv_for(duration).await` to collect frames for a fixed period.
+`recv_for(duration)` subscribes immediately and returns a stream. Its timer and
+waiting start when the stream is first consumed, so create it before sending.
 
 `Frame::builder` supports standard and extended identifiers, CAN FD, and bitrate
 switching. See the [CAN API](https://docs.rs/automotive/latest/automotive/can/)

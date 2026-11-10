@@ -29,6 +29,18 @@ async def test_can_frame_round_trip() -> None:
         sender.close()
 
 
+async def test_recv_for_subscribes_before_blocking_iteration() -> None:
+    frame = Frame(id=0x456, data=b"response")
+
+    def exchange() -> None:
+        with SocketCanAdapter("vcan0") as sender, SocketCanAdapter("vcan0") as monitor:
+            responses = monitor.recv_for(0.05)
+            sender.send(frame)
+            assert list(responses) == [frame]
+
+    await asyncio.to_thread(exchange)
+
+
 @pytest.mark.parametrize("fd,brs", [(False, None), (True, None), (True, False), (True, True)])
 @pytest.mark.parametrize("batch_send", [True, False])
 async def test_isotp_segmented_echo_and_receive_timeout(

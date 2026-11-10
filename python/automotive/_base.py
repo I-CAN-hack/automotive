@@ -67,7 +67,8 @@ class Receiver(AsyncIterator[T], Generic[T]):
     Create the receiver before sending a request. Dropping it releases the
     subscription. ``async with`` and aclose() support deterministic cleanup.
     A transport timeout raises ``TimeoutError``; another ``anext(receiver)``
-    may continue reception. Closing the receiver or its owner ends iteration.
+    may continue reception. A finite adapter receive window ends iteration at
+    its deadline. Closing the receiver or its owner also ends iteration.
     """
 
     def __init__(self, native: _native._Receiver, convert: Callable[[Any], T]) -> None:
