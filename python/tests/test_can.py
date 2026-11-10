@@ -63,7 +63,6 @@ async def test_recv_for() -> None:
         SocketCanAdapter("vcan0") as monitor,
         monitor.recv() as independent,
     ):
-
         # recv_for subscribes eagerly but starts its timer only when consumed.
         responses = monitor.recv_for(0.1)
         for frame in expected:
