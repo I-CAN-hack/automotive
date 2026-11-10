@@ -228,15 +228,16 @@ class CanAdapter:
         """
         return Receiver(self._native.recv(), Frame._from_native)
 
-    async def recv_for(self, duration: float) -> list[Frame]:
-        """Collect CAN frames, including transmit echoes, for duration seconds.
+    def recv_for(self, duration: float) -> Receiver[Frame]:
+        """Subscribe now and receive CAN frames for duration seconds when consumed.
 
-        Returns frames in receive order, or finishes early if the adapter closes.
-        Uses an independent subscription that closes on return or cancellation;
-        existing recv() subscriptions are unaffected. Reception starts when
-        awaited. duration must be finite and nonnegative.
+        Returns an async iterator including transmit echoes. The independent
+        subscription is created immediately, but its duration starts on the
+        first anext() or async-for iteration. It finishes early if the adapter
+        closes and does not affect existing recv() subscriptions. duration must
+        be finite and nonnegative.
         """
-        return [Frame._from_native(frame) for frame in await self._native.recv_for(duration)]
+        return Receiver(self._native.recv_for(duration), Frame._from_native)
 
 
 class SocketCanAdapter(CanAdapter):

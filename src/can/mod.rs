@@ -16,26 +16,76 @@ mod identifier;
 pub use frame::{ErrorFlag, Frame, FrameBuilder, FrameContent};
 pub use identifier::{ExtendedId, Identifier, StandardId};
 
+/// A lazily consumed, time-limited receive iterator.
+///
+/// The duration starts on the first call to [`Iterator::next`]. Receive errors
+/// are yielded as items because they can occur after the iterator is created.
+pub struct RecvFor<'a, T: CanAdapter + ?Sized> {
+    adapter: &'a mut T,
+    duration: Duration,
+    started: Option<Instant>,
+    pending: VecDeque<Frame>,
+    finished: bool,
+}
+
+impl<'a, T: CanAdapter + ?Sized> RecvFor<'a, T> {
+    fn new(adapter: &'a mut T, duration: Duration) -> Self {
+        Self {
+            adapter,
+            duration,
+            started: None,
+            pending: VecDeque::new(),
+            finished: false,
+        }
+    }
+}
+
+impl<T: CanAdapter + ?Sized> Iterator for RecvFor<'_, T> {
+    type Item = crate::Result<Frame>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.finished {
+            return None;
+        }
+        let started = *self.started.get_or_insert_with(Instant::now);
+
+        loop {
+            if let Some(frame) = self.pending.pop_front() {
+                return Some(Ok(frame));
+            }
+            if started.elapsed() >= self.duration {
+                self.finished = true;
+                return None;
+            }
+
+            match self.adapter.recv() {
+                Ok(frames) => self.pending.extend(frames),
+                Err(error) => {
+                    self.finished = true;
+                    return Some(Err(error));
+                }
+            }
+
+            if self.pending.is_empty() {
+                let remaining = self.duration.saturating_sub(started.elapsed());
+                std::thread::sleep(remaining.min(Duration::from_millis(1)));
+            }
+        }
+    }
+}
+
 /// Trait for a Blocking CAN Adapter
 pub trait CanAdapter {
     fn send(&mut self, frames: &mut VecDeque<crate::can::Frame>) -> crate::Result<()>;
     fn recv(&mut self) -> crate::Result<Vec<Frame>>;
 
-    /// Collect frames, including transmit echoes, for the given duration.
+    /// Receive frames, including transmit echoes, for the given duration.
     ///
-    /// Returns frames in receive order. The backend's receive timeout can
-    /// extend the collection past the requested duration.
-    fn recv_for(&mut self, duration: Duration) -> crate::Result<Vec<Frame>> {
-        let start = Instant::now();
-        let mut frames = Vec::new();
-        while start.elapsed() < duration {
-            let batch = self.recv()?;
-            if batch.is_empty() {
-                std::thread::sleep(Duration::from_millis(1));
-            }
-            frames.extend(batch);
-        }
-        Ok(frames)
+    /// The call itself does not receive or block; the duration starts when the
+    /// returned iterator is first advanced. The backend's receive timeout can
+    /// extend iteration past the requested duration.
+    fn recv_for(&mut self, duration: Duration) -> RecvFor<'_, Self> {
+        RecvFor::new(self, duration)
     }
 
     /// Whether this backend can cancel all pending TX before accepting new TX.

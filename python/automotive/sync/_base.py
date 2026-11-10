@@ -52,9 +52,10 @@ class Receiver(Iterator[T], Generic[T]):
 
     Create the subscription before sending. Each next() blocks until a value,
     a protocol timeout, or closure. A timeout raises TimeoutError and leaves the
-    subscription usable. Closing the receiver or its owner ends iteration.
-    Dropping the receiver releases the subscription. A with block or close()
-    supports deterministic cleanup.
+    subscription usable. A finite adapter receive window ends iteration at its
+    deadline. Closing the receiver or its owner also ends iteration. Dropping
+    the receiver releases the subscription. A with block or close() supports
+    deterministic cleanup.
     """
 
     def __init__(self, receiver: _AsyncReceiver[T]) -> None:

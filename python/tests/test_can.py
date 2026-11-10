@@ -64,13 +64,12 @@ async def test_recv_for() -> None:
         monitor.recv() as independent,
     ):
 
-        async def transmit() -> None:
-            await asyncio.sleep(0.01)
-            for frame in expected:
-                await sender.send(frame)
-
-        received, _ = await asyncio.gather(monitor.recv_for(0.1), transmit())
+        # recv_for subscribes eagerly but starts its timer only when consumed.
+        responses = monitor.recv_for(0.1)
+        for frame in expected:
+            await sender.send(frame)
+        received = [frame async for frame in responses]
         assert received == expected
         for frame in expected:
             assert await asyncio.wait_for(anext(independent), 1) == frame
-        assert await monitor.recv_for(0.01) == []
+        assert [frame async for frame in monitor.recv_for(0.01)] == []

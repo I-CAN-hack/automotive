@@ -119,6 +119,7 @@ fn bulk_send_sync<T: CanAdapter>(adapter: &mut T) {
 
     let received: Vec<Frame> = adapter
         .recv_for(Duration::from_millis(BULK_SYNC_TIMEOUT_MS))
+        .collect::<automotive::Result<Vec<_>>>()
         .unwrap()
         .into_iter()
         .filter(|frame| frame.loopback)
@@ -313,15 +314,19 @@ async fn vcan_recv_for() {
         Frame::remote(0, Identifier::standard(0x321).unwrap(), 8).unwrap(),
     ];
 
-    let transmit = async {
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        for frame in &frames {
-            sender.send(frame).await.unwrap();
-        }
-    };
-    let (received, ()) = tokio::join!(adapter.recv_for(Duration::from_millis(100)), transmit);
+    // recv_for subscribes eagerly but starts its timer only when consumed.
+    let received = adapter.recv_for(Duration::from_millis(100));
+    for frame in &frames {
+        sender.send(frame).await.unwrap();
+    }
+    let received: Vec<_> = received.collect().await;
     assert_eq!(received, frames);
-    assert_eq!(raw.recv_for(Duration::from_millis(5)).unwrap(), frames);
+    assert_eq!(
+        raw.recv_for(Duration::from_millis(5))
+            .collect::<automotive::Result<Vec<_>>>()
+            .unwrap(),
+        frames
+    );
     // Timed collection leaves other receive subscriptions untouched.
     for frame in &frames {
         assert_eq!(
@@ -333,8 +338,16 @@ async fn vcan_recv_for() {
         );
     }
 
-    assert!(raw.recv_for(Duration::from_millis(5)).unwrap().is_empty());
-    assert!(adapter.recv_for(Duration::from_millis(5)).await.is_empty());
+    assert!(raw
+        .recv_for(Duration::from_millis(5))
+        .collect::<automotive::Result<Vec<_>>>()
+        .unwrap()
+        .is_empty());
+    assert!(adapter
+        .recv_for(Duration::from_millis(5))
+        .collect::<Vec<_>>()
+        .await
+        .is_empty());
 }
 
 #[cfg(feature = "test-vcan")]

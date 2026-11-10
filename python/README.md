@@ -185,12 +185,25 @@ async receivers support `async for` and `anext()`. Drop or close raw ISO-TP
 receivers before making UDS requests on the same transport. Native J2534
 transports and reusable device handles have synchronous counterparts too.
 
-`await adapter.recv_for(duration)` collects CAN frames for the given number of
-seconds and returns a `list[Frame]` in receive order, including transmit echoes.
-Use `adapter.recv_for(duration)` in the synchronous API. Each call uses an
-independent subscription that closes when collection ends; existing `recv()`
-subscriptions are unaffected. Reception starts when awaited (or called in the
-sync API) and finishes early if the adapter closes.
+`adapter.recv_for(duration)` subscribes immediately and returns an independent
+receiver including transmit echoes. Its timer and waiting start on the first
+`anext()` or `async for` iteration, so create it before sending. The sync API
+uses the same pattern with `next()` or `for`. The receiver closes when its
+duration ends and leaves existing `recv()` subscriptions unaffected:
+
+```python
+responses = adapter.recv_for(0.1)
+await adapter.send(request)
+received = [frame async for frame in responses]
+```
+
+The synchronous equivalent is:
+
+```python
+responses = adapter.recv_for(0.1)
+adapter.send(request)
+received = list(responses)
+```
 
 One background event loop runs the existing async implementation and shuts down
 at process exit. Adapter construction opens hardware synchronously in both APIs,

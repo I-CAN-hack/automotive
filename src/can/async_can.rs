@@ -329,21 +329,30 @@ impl AsyncCanAdapter {
         self.recv_filter(|_| true)
     }
 
-    /// Collect frames, including transmit echoes, for the given duration.
+    /// Receive frames, including transmit echoes, for the given duration.
     ///
-    /// Creates an independent subscription when polled and closes it on return
-    /// or cancellation. Returns frames in receive order, or finishes early if
-    /// the adapter closes. Existing receive subscriptions are unaffected.
-    pub async fn recv_for(&self, duration: Duration) -> Vec<Frame> {
-        let mut stream = self.recv();
-        let mut frames = Vec::new();
-        let _ = tokio::time::timeout(duration, async {
-            while let Some(frame) = stream.next().await {
-                frames.push(frame);
+    /// Creates an independent subscription immediately, while the duration
+    /// starts when the returned stream is first polled. This lets callers
+    /// subscribe, send a frame, and then consume every response without a
+    /// subscription race. The stream finishes when the duration expires or the
+    /// adapter closes. Existing receive subscriptions are unaffected.
+    pub fn recv_for(&self, duration: Duration) -> impl Stream<Item = Frame> {
+        let mut frames = self.recv();
+
+        Box::pin(stream! {
+            let deadline = tokio::time::sleep(duration);
+            tokio::pin!(deadline);
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = &mut deadline => return,
+                    frame = frames.next() => match frame {
+                        Some(frame) => yield frame,
+                        None => return,
+                    },
+                }
             }
         })
-        .await;
-        frames
     }
 
     /// Receive frames that match a filter. Useful in combination with stream adapters.
