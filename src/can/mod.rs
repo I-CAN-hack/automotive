@@ -75,6 +75,24 @@ impl<T: CanAdapter + ?Sized> Iterator for RecvFor<'_, T> {
 }
 
 /// Trait for a Blocking CAN Adapter
+///
+/// Adapters can be selected at runtime using trait objects:
+///
+/// ```
+/// use automotive::can::{CanAdapter, Frame};
+/// use std::collections::VecDeque;
+///
+/// fn receive(adapter: &mut dyn CanAdapter) -> automotive::Result<Vec<Frame>> {
+///     adapter.recv()
+/// }
+///
+/// fn send(
+///     adapter: &mut Box<dyn CanAdapter + Send>,
+///     frames: &mut VecDeque<Frame>,
+/// ) -> automotive::Result<()> {
+///     adapter.send(frames)
+/// }
+/// ```
 pub trait CanAdapter {
     fn send(&mut self, frames: &mut VecDeque<crate::can::Frame>) -> crate::Result<()>;
     fn recv(&mut self) -> crate::Result<Vec<Frame>>;
@@ -84,7 +102,10 @@ pub trait CanAdapter {
     /// The call itself does not receive or block; the duration starts when the
     /// returned iterator is first advanced. The backend's receive timeout can
     /// extend iteration past the requested duration.
-    fn recv_for(&mut self, duration: Duration) -> RecvFor<'_, Self> {
+    fn recv_for(&mut self, duration: Duration) -> RecvFor<'_, Self>
+    where
+        Self: Sized,
+    {
         RecvFor::new(self, duration)
     }
 
