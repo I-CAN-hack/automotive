@@ -59,6 +59,7 @@ pub struct PandaAdapter {
     timeout: std::time::Duration,
     dat: Vec<u8>,
     default_brs: bool,
+    supports_fd: bool,
 }
 
 #[allow(dead_code)]
@@ -93,11 +94,12 @@ impl PandaAdapter {
                 continue;
             }
 
-            let panda = PandaAdapter {
+            let mut panda = PandaAdapter {
                 dat: vec![],
                 handle: device.open()?,
                 timeout: std::time::Duration::from_millis(100),
                 default_brs: bitrate_cfg.data.is_some(),
+                supports_fd: false,
             };
 
             panda.handle.claim_interface(0)?;
@@ -109,6 +111,7 @@ impl PandaAdapter {
             }
 
             let hw_type = panda.get_hw_type()?;
+            panda.supports_fd = supports_can_fd(hw_type);
             warn_if_fd_unsupported(hw_type, resolved_bitrate_cfg.data_kbps.is_some());
 
             panda.set_safety_model(SafetyModel::AllOutput)?;
@@ -270,7 +273,7 @@ impl CanAdapter for PandaAdapter {
             .read_bulk(Endpoint::CanRead as u8, &mut buf, self.timeout)?;
         self.dat.extend_from_slice(&buf[0..recv]);
 
-        let frames = usb_protocol::unpack_can_buffer(&mut self.dat);
+        let frames = usb_protocol::unpack_can_buffer(&mut self.dat, self.supports_fd);
 
         // Recover from unpacking errors, can_reset_communications() doesn't work properly
         match frames {

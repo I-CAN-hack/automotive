@@ -70,12 +70,15 @@ pub fn pack_can_buffer(frames: &[Frame]) -> Result<Vec<Vec<u8>>, Error> {
     Ok(ret)
 }
 
-pub fn unpack_can_buffer(dat: &mut Vec<u8>) -> Result<Vec<Frame>, Error> {
+pub fn unpack_can_buffer(dat: &mut Vec<u8>, supports_fd: bool) -> Result<Vec<Frame>, Error> {
     let mut ret = vec![];
     while dat.len() >= CANPACKET_HEAD_SIZE {
         let bus = (dat[0] >> 1) & 0b111;
         let dlc = (dat[0] >> 4) & 0b1111;
-        let fd = (dat[0] & 0b1) != 0;
+        // This bit was reserved (and left uninitialized) before panda firmware
+        // repurposed it as an FD flag. Ignore it on hardware that cannot receive
+        // CAN-FD frames, where it may still contain an arbitrary value.
+        let fd = supports_fd && (dat[0] & 0b1) != 0;
         let id: u32 = ((dat[4] as u32) << 24
             | (dat[3] as u32) << 16
             | (dat[2] as u32) << 8
@@ -132,7 +135,7 @@ mod tests {
             209, 128, 1, 0, 0, 170, 0, 0, 0, 0, 0, 0, 13, 69, 0, 0, 8, 0, 0, 27, 0, 0, 0, 0, 0, 1,
             0, 0, 255, 250, 0, 0, 0, 0, 199, 116, 151, 129,
         ];
-        let frames = unpack_can_buffer(&mut buffer).unwrap();
+        let frames = unpack_can_buffer(&mut buffer, true).unwrap();
 
         // All data is consumed
         assert_eq!(buffer.len(), 0);
@@ -157,7 +160,7 @@ mod tests {
             208, 128,
         ];
 
-        unpack_can_buffer(&mut buffer).unwrap();
+        unpack_can_buffer(&mut buffer, true).unwrap();
         assert_eq!(buffer.len(), 2);
     }
 
@@ -185,8 +188,26 @@ mod tests {
 
         let buffer = pack_can_buffer(&frames).unwrap();
         let mut buffer = buffer.concat();
-        let unpacked = unpack_can_buffer(&mut buffer).unwrap();
+        let unpacked = unpack_can_buffer(&mut buffer, true).unwrap();
         assert_eq!(frames, unpacked);
+    }
+
+    #[test]
+    fn fd_bit_is_gated_by_hardware_capability() {
+        let frame = Frame::builder(Identifier::standard(0x123).unwrap())
+            .fd(true)
+            .data(&[1, 2, 3, 4, 5, 6, 7, 8])
+            .build()
+            .unwrap();
+        let encoded = pack_can_buffer(&[frame]).unwrap().concat();
+
+        let mut fd_buffer = encoded.clone();
+        let fd_frames = unpack_can_buffer(&mut fd_buffer, true).unwrap();
+        assert!(fd_frames[0].is_fd());
+
+        let mut classic_buffer = encoded;
+        let classic_frames = unpack_can_buffer(&mut classic_buffer, false).unwrap();
+        assert!(!classic_frames[0].is_fd());
     }
 
     #[test]
@@ -196,7 +217,7 @@ mod tests {
             0, 0, 255, 250, 0, 0, 0, 0, 199, 116, 151, 129,
         ];
         assert!(matches!(
-            unpack_can_buffer(&mut buffer),
+            unpack_can_buffer(&mut buffer, true),
             Err(Error::MalformedFrame)
         ));
     }
