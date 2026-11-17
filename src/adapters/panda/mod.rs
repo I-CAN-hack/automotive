@@ -18,10 +18,10 @@ use tracing::{info, warn};
 const USB_VIDS: &[u16] = &[0xbbaa, 0x3801];
 const USB_PIDS: &[u16] = &[0xddee, 0xddcc];
 // CAN packet versions known to use the wire format implemented in `usb_protocol`.
-// Older firmware hardcoded an incrementing integer (4). Newer firmware derives the
-// version from a hash of the packet definition, so it reports a different value (157)
-// even though the actual packet layout is unchanged.
-const SUPPORTED_CAN_PACKET_VERSIONS: &[u8] = &[4, 157];
+// Firmware before panda#2371 reports three one-byte versions. Newer firmware reports
+// two little-endian SHA-256-derived hashes for the health and CAN packet definitions.
+const SUPPORTED_LEGACY_CAN_PACKET_VERSIONS: &[u8] = &[4];
+const SUPPORTED_CAN_PACKET_VERSION_HASHES: &[u32] = &[0x75ab_f276, 0x83e4_60b9];
 const MAX_BULK_SIZE: usize = 16384;
 const PANDA_BUS_CNT: usize = 3;
 const PANDA_NOMINAL_SAMPLE_POINT: f64 = 0.8;
@@ -61,11 +61,29 @@ pub struct PandaAdapter {
     default_brs: bool,
 }
 
-#[allow(dead_code)]
-struct Versions {
-    health_version: u8,
-    can_version: u8,
-    can_health_version: u8,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CanPacketVersion {
+    Legacy(u8),
+    Hash(u32),
+}
+
+impl CanPacketVersion {
+    fn parse_packet_versions_response(versions: &[u8]) -> Option<Self> {
+        match versions {
+            [_, can_version, _] => Some(Self::Legacy(*can_version)),
+            [_, _, _, _, can_0, can_1, can_2, can_3] => Some(Self::Hash(u32::from_le_bytes([
+                *can_0, *can_1, *can_2, *can_3,
+            ]))),
+            _ => None,
+        }
+    }
+
+    fn is_supported(self) -> bool {
+        match self {
+            Self::Legacy(version) => SUPPORTED_LEGACY_CAN_PACKET_VERSIONS.contains(&version),
+            Self::Hash(version) => SUPPORTED_CAN_PACKET_VERSION_HASHES.contains(&version),
+        }
+    }
 }
 
 unsafe impl Send for PandaAdapter {}
@@ -103,8 +121,8 @@ impl PandaAdapter {
             panda.handle.claim_interface(0)?;
 
             // Check panda firmware version
-            let versions = panda.get_packets_versions()?;
-            if !SUPPORTED_CAN_PACKET_VERSIONS.contains(&versions.can_version) {
+            let can_packet_version = panda.get_can_packet_version()?;
+            if !can_packet_version.is_supported() {
                 return Err(Error::WrongFirmwareVersion.into());
             }
 
@@ -187,18 +205,16 @@ impl PandaAdapter {
     /// Get the hardware type of the panda. Usefull to detect if it supports CAN-FD.
     pub fn get_hw_type(&self) -> Result<HwType> {
         let hw_type = self.usb_read_control(Endpoint::HwType, 1)?;
-        HwType::from_repr(hw_type[0]).ok_or(Error::UnknownHwType.into())
+        hw_type
+            .first()
+            .and_then(|hw_type| HwType::from_repr(*hw_type))
+            .ok_or(Error::UnknownHwType.into())
     }
 
-    fn get_packets_versions(&self) -> Result<Versions> {
-        let versions = self.usb_read_control(Endpoint::PacketsVersions, 3)?;
-        Ok({
-            Versions {
-                health_version: versions[0],
-                can_version: versions[1],
-                can_health_version: versions[2],
-            }
-        })
+    fn get_can_packet_version(&self) -> Result<CanPacketVersion> {
+        let versions = self.usb_read_control(Endpoint::PacketsVersions, 8)?;
+        CanPacketVersion::parse_packet_versions_response(&versions)
+            .ok_or(Error::WrongFirmwareVersion.into())
     }
 
     fn can_reset_communications(&self) -> Result<()> {
@@ -214,9 +230,10 @@ impl PandaAdapter {
             rusb::Recipient::Device,
         );
 
-        // TOOD: Check if we got the expected amount of data?
-        self.handle
-            .read_control(request_type, endpoint as u8, 0, 0, &mut buf, self.timeout)?;
+        let received =
+            self.handle
+                .read_control(request_type, endpoint as u8, 0, 0, &mut buf, self.timeout)?;
+        buf.truncate(received);
         Ok(buf)
     }
 
@@ -376,4 +393,50 @@ fn default_data_sample_point(data_bitrate: u32) -> f64 {
 
 fn sample_point_matches(actual: f64, expected: f64) -> bool {
     (actual - expected).abs() < 1e-9
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_legacy_can_packet_version() {
+        assert_eq!(
+            CanPacketVersion::parse_packet_versions_response(&[18, 4, 5]),
+            Some(CanPacketVersion::Legacy(4))
+        );
+    }
+
+    #[test]
+    fn parses_hashed_can_packet_version() {
+        assert_eq!(
+            CanPacketVersion::parse_packet_versions_response(&[
+                0xac, 0xee, 0x30, 0xd3, 0x76, 0xf2, 0xab, 0x75,
+            ]),
+            Some(CanPacketVersion::Hash(0x75ab_f276))
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_packet_version_responses() {
+        for versions in [&[][..], &[18, 4][..], &[0; 4][..], &[0; 7][..], &[0; 9][..]] {
+            assert_eq!(
+                CanPacketVersion::parse_packet_versions_response(versions),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn recognizes_supported_can_packet_versions() {
+        for version in SUPPORTED_LEGACY_CAN_PACKET_VERSIONS {
+            assert!(CanPacketVersion::Legacy(*version).is_supported());
+        }
+        for version in SUPPORTED_CAN_PACKET_VERSION_HASHES {
+            assert!(CanPacketVersion::Hash(*version).is_supported());
+        }
+
+        assert!(!CanPacketVersion::Legacy(3).is_supported());
+        assert!(!CanPacketVersion::Hash(0x1234_5678).is_supported());
+    }
 }
